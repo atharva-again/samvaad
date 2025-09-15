@@ -1,0 +1,26 @@
+
+# Core web framework
+fastapi==0.116.1
+uvicorn==0.35.0
+
+# Vector database
+chromadb==1.0.20
+
+# Embeddings and LLMs
+openai==1.106.0
+sentence-transformers==5.1.0
+tiktoken==0.11.0
+google-genai==1.36.0
+
+# Document loaders and parsing
+pymupdf==1.24.2
+pypdf==6.0.0
+unstructured==0.18.14
+beautifulsoup4==4.13.5
+requests==2.32.5
+
+# Environment variables
+python-dotenv==1.1.1
+
+# Additional dependencies for enhanced RAG
+anthropic==0.7.8
