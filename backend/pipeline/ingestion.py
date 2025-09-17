@@ -66,41 +66,49 @@ def parse_file(filename: str, content_type: str, contents: bytes) -> Tuple[str, 
 
 def chunk_text(text: str, chunk_size: int = 200) -> List[str]:
     """
-    Split text into chunks using recursive character text splitter.
+    Split text into chunks using recursive token-based splitter.
     Uses separators in order: ["\n\n", "\n", ".", "?", "!", " ", ""]
-    Chunk size: 200 characters, no overlaps.
+    Chunk size: 200 tokens, no overlaps.
     """
+    from transformers import AutoTokenizer
+    import threading
+
+    # Use a singleton tokenizer to avoid repeated loading
+    _tokenizer = getattr(chunk_text, "_tokenizer", None)
+    _tokenizer_lock = getattr(chunk_text, "_tokenizer_lock", None)
+    if _tokenizer is None:
+        if _tokenizer_lock is None:
+            _tokenizer_lock = threading.Lock()
+            setattr(chunk_text, "_tokenizer_lock", _tokenizer_lock)
+        with _tokenizer_lock:
+            _tokenizer = getattr(chunk_text, "_tokenizer", None)
+            if _tokenizer is None:
+                _tokenizer = AutoTokenizer.from_pretrained("BAAI/bge-m3")
+                setattr(chunk_text, "_tokenizer", _tokenizer)
+
     separators = ["\n\n", "\n", ".", "?", "!", " ", ""]
-    
+
+    def num_tokens(text):
+        return len(_tokenizer.encode(text, add_special_tokens=False))
+
     def split_text_recursive(text: str, separators: List[str]) -> List[str]:
-        """Recursively split text using the provided separators."""
         if not text.strip():
             return []
-        
-        # If text is already small enough, return it
-        if len(text) <= chunk_size:
+        if num_tokens(text) <= chunk_size:
             return [text.strip()] if text.strip() else []
-        
-        # Try each separator in order
+
         for separator in separators:
             if separator in text:
                 splits = text.split(separator)
                 result = []
                 current_chunk = ""
-                
                 for split in splits:
-                    # Add separator back except for empty string separator
                     split_with_sep = split + (separator if separator != "" else "")
-                    
-                    # If adding this split would exceed chunk size
-                    if len(current_chunk) + len(split_with_sep) > chunk_size:
-                        # Save current chunk if it has content
+                    # If adding this split would exceed chunk_size tokens
+                    if num_tokens(current_chunk + split_with_sep) > chunk_size:
                         if current_chunk.strip():
                             result.append(current_chunk.strip())
-                        
-                        # If this split is still too large, recursively split it
-                        if len(split_with_sep) > chunk_size:
-                            # Remove the separator we just added for recursive call
+                        if num_tokens(split_with_sep) > chunk_size:
                             split_for_recursion = split if separator != "" else split_with_sep
                             recursive_splits = split_text_recursive(split_for_recursion, separators[separators.index(separator)+1:])
                             result.extend(recursive_splits)
@@ -109,21 +117,19 @@ def chunk_text(text: str, chunk_size: int = 200) -> List[str]:
                             current_chunk = split_with_sep
                     else:
                         current_chunk += split_with_sep
-                
-                # Add any remaining content
                 if current_chunk.strip():
                     result.append(current_chunk.strip())
-                
                 return result
-        
-        # If no separators worked, force split at chunk_size
+        # If no separators worked, force split at chunk_size tokens
+        tokens = _tokenizer.encode(text, add_special_tokens=False)
         chunks = []
-        for i in range(0, len(text), chunk_size):
-            chunk = text[i:i + chunk_size].strip()
-            if chunk:
-                chunks.append(chunk)
+        for i in range(0, len(tokens), chunk_size):
+            chunk_tokens = tokens[i:i + chunk_size]
+            chunk = _tokenizer.decode(chunk_tokens)
+            if chunk.strip():
+                chunks.append(chunk.strip())
         return chunks
-    
+
     return split_text_recursive(text, separators)
 
 
