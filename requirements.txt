@@ -2,6 +2,7 @@
 # Core web framework
 fastapi==0.116.1
 uvicorn==0.35.0
+python-multipart
 
 # Vector database
 chromadb==1.0.20
@@ -13,7 +14,7 @@ tiktoken==0.11.0
 google-genai==1.36.0
 
 # Document loaders and parsing
-pymupdf==1.24.2
+docling>=2.53.0
 
 beautifulsoup4==4.13.5
 requests==2.32.5

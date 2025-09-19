@@ -1,7 +1,7 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import JSONResponse
 from typing import List
-from backend.pipeline.ingestion import parse_file, chunk_text
+from pipeline.ingestion import parse_file, chunk_text
 
 
 app = FastAPI(title="Samvaad RAG Backend")
