@@ -1,7 +1,73 @@
+"""
+Document ingestion pipeline with Docling integration.
+
+Fixes applied:
+- Suppressed pin_memory warnings for CPU-only usage
+- Fixed file access errors during temporary file cleanup
+- Added robust retry logic for file deletion
+- Configured environment for CPU-only operation
+"""
+
 from utils.filehash_db import chunk_exists, add_chunk
 from utils.hashing import generate_file_id, generate_chunk_id
-import fitz  # PyMuPDF
+from docling.document_converter import DocumentConverter
+from docling.chunking import HybridChunker
+from docling_core.transforms.chunker.hierarchical_chunker import HierarchicalChunker
+from docling_core.transforms.chunker.tokenizer.huggingface import HuggingFaceTokenizer
+from transformers import AutoTokenizer
 from typing import Tuple, List
+import tempfile
+import os
+import time
+import warnings
+
+# Suppress pin_memory warning for CPU-only usage
+warnings.filterwarnings("ignore", message="'pin_memory' argument is set as true but no accelerator is found")
+warnings.filterwarnings("ignore", message=".*pin_memory.*", category=UserWarning)
+warnings.filterwarnings("ignore", message=".*accelerator.*", category=UserWarning)
+warnings.filterwarnings("ignore", message=".*CUDA.*", category=UserWarning)
+warnings.filterwarnings("ignore", message=".*GPU.*", category=UserWarning)
+os.environ["TOKENIZERS_PARALLELISM"] = "false"  # Suppress tokenizer warnings
+os.environ["OMP_NUM_THREADS"] = "1"  # Limit OpenMP threads for CPU usage
+os.environ["CUDA_VISIBLE_DEVICES"] = ""  # Ensure CPU-only operation
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = ""  # Disable CUDA memory allocator
+
+# Initialize Docling components for CPU usage (no GPU acceleration)
+_converter = None
+_chunker = None
+
+# Initialize Docling components for CPU usage (no GPU acceleration)
+_converter = None
+_chunker = None
+
+def get_docling_converter():
+    """Get a singleton Docling DocumentConverter instance."""
+    global _converter
+    if _converter is None:
+        _converter = DocumentConverter()
+    return _converter
+
+def get_docling_chunker():
+    """Get a singleton Docling HierarchicalChunker instance configured for 200 tokens, no overlap."""
+    global _chunker
+    if _chunker is None:
+        # Use HierarchicalChunker for document-based chunking without overlap
+        from docling_core.transforms.chunker.hierarchical_chunker import HierarchicalChunker
+        
+        # Use the same tokenizer as before for consistency
+        tokenizer = HuggingFaceTokenizer(
+            tokenizer=AutoTokenizer.from_pretrained("BAAI/bge-m3"),
+            max_tokens=200  # Set to 200 tokens as requested
+        )
+        
+        # For pure hierarchical chunking without overlap, use HierarchicalChunker
+        # HybridChunker applies token-aware refinements which might cause overlap
+        _chunker = HierarchicalChunker(
+            tokenizer=tokenizer,
+            merge_list_items=False  # Disable merging to avoid overlap
+        )
+    return _chunker
+
 
 def find_new_chunks(chunks, file_id):
     """
@@ -44,47 +110,152 @@ def update_chunk_file_db(new_chunks, file_id):
 
 def parse_file(filename: str, content_type: str, contents: bytes) -> Tuple[str, str]:
     """
-    Parse PDF or text file contents and return extracted text and error (if any).
+    Parse files using Docling for PDFs and other supported formats, 
+    or simple text parsing for .txt files.
+    Returns (text, error) for compatibility, but now also stores the DoclingDocument globally for chunking.
     """
     text = ""
     error = None
-    if filename.lower().endswith(".pdf") or content_type == "application/pdf":
-        try:
-            with fitz.open(stream=contents, filetype="pdf") as doc:
-                text = "\n".join(page.get_text() for page in doc)
-        except Exception as e:
-            error = f"PDF parsing error: {e}"
-    elif filename.lower().endswith(".txt") or content_type.startswith("text/"):
+    
+    # Handle .txt files directly (maintain existing support)
+    if filename.lower().endswith(".txt") or content_type.startswith("text/"):
         try:
             text = contents.decode("utf-8")
+            # Store this as a simple text flag for chunking
+            parse_file._last_document = None
+            parse_file._last_was_text = True
         except Exception as e:
             error = f"Text parsing error: {e}"
-    else:
-        error = "Unsupported file type. Only PDF and text files are supported."
+        return text, error
+    
+    # Use Docling for all other supported formats (PDF, DOCX, PPTX, etc.)
+    temp_file_path = None
+    try:
+        converter = get_docling_converter()
+        
+        # Create a temporary file since Docling works with file paths
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(filename)[1]) as temp_file:
+            temp_file.write(contents)
+            temp_file.flush()
+            temp_file_path = temp_file.name
+            
+        # Convert document using Docling
+        result = converter.convert(temp_file_path)
+        # Store the DoclingDocument for advanced chunking
+        parse_file._last_document = result.document
+        parse_file._last_was_text = False
+        # Export to markdown for text preview/compatibility
+        text = result.document.export_to_markdown()
+                
+    except Exception as e:
+        error = f"Document parsing error: {str(e)}"
+        parse_file._last_document = None
+        parse_file._last_was_text = True
+    finally:
+        # Clean up temporary file with retry logic
+        if temp_file_path:
+            _cleanup_temp_file(temp_file_path)
+    
     return text, error
+
+
+def _cleanup_temp_file(file_path: str, max_retries: int = 5):
+    """
+    Safely clean up temporary file with retry logic to handle file access issues.
+    """
+    for attempt in range(max_retries):
+        try:
+            if os.path.exists(file_path):
+                os.unlink(file_path)
+                return  # Success
+        except OSError as e:
+            if attempt < max_retries - 1:
+                # Wait progressively longer before retrying
+                time.sleep(0.2 * (attempt + 1))
+            else:
+                # If all retries failed, just warn and continue
+                print(f"Warning: Could not delete temporary file {file_path} after {max_retries} attempts: {e}")
+                break
 
 
 def chunk_text(text: str, chunk_size: int = 200) -> List[str]:
     """
-    Split text into chunks using recursive token-based splitter.
-    Uses separators in order: ["\n\n", "\n", ".", "?", "!", " ", ""]
-    Chunk size: 200 tokens, no overlaps.
+    Use Docling's hierarchical chunker with 200 tokens, no overlap.
+    If we have a DoclingDocument from parsing, use it directly.
+    For simple text, create a basic DoclingDocument and chunk it.
+    """
+    try:
+        # Check if we have a DoclingDocument from the previous parse_file call
+        docling_doc = getattr(parse_file, '_last_document', None)
+        was_text = getattr(parse_file, '_last_was_text', True)
+        
+        if docling_doc is not None and not was_text:
+            # Use the existing DoclingDocument from Docling parsing
+            chunker = get_docling_chunker()
+            chunks = list(chunker.chunk(dl_doc=docling_doc))
+            
+            # Extract the contextualized text from chunks
+            chunk_texts = []
+            for chunk in chunks:
+                chunk_text = chunker.contextualize(chunk=chunk)
+                if chunk_text.strip():
+                    chunk_texts.append(chunk_text.strip())
+            
+            return chunk_texts
+        else:
+            # For simple text files, create a basic DoclingDocument
+            from docling_core.types.doc.document import DoclingDocument
+            from docling_core.types.doc.labels import DocItemLabel
+            from docling_core.types.doc.text import TextItem
+            
+            # Create a basic DoclingDocument from the text
+            doc = DoclingDocument()
+            
+            # Add the text as a single text item
+            text_item = TextItem(
+                label=DocItemLabel.TEXT,
+                text=text
+            )
+            doc.texts.append(text_item)
+            
+            # Get the chunker and process the document
+            chunker = get_docling_chunker()
+            chunks = list(chunker.chunk(dl_doc=doc))
+            
+            # Extract the contextualized text from chunks
+            chunk_texts = []
+            for chunk in chunks:
+                chunk_text = chunker.contextualize(chunk=chunk)
+                if chunk_text.strip():
+                    chunk_texts.append(chunk_text.strip())
+            
+            return chunk_texts
+        
+    except Exception as e:
+        # Fallback to simple splitting if Docling chunking fails
+        print(f"Warning: Docling chunking failed ({e}), falling back to simple chunking")
+        return _fallback_chunk_text(text, chunk_size)
+
+
+def _fallback_chunk_text(text: str, chunk_size: int = 200) -> List[str]:
+    """
+    Fallback chunking method using the original token-based approach.
     """
     from transformers import AutoTokenizer
     import threading
 
     # Use a singleton tokenizer to avoid repeated loading
-    _tokenizer = getattr(chunk_text, "_tokenizer", None)
-    _tokenizer_lock = getattr(chunk_text, "_tokenizer_lock", None)
+    _tokenizer = getattr(_fallback_chunk_text, "_tokenizer", None)
+    _tokenizer_lock = getattr(_fallback_chunk_text, "_tokenizer_lock", None)
     if _tokenizer is None:
         if _tokenizer_lock is None:
             _tokenizer_lock = threading.Lock()
-            setattr(chunk_text, "_tokenizer_lock", _tokenizer_lock)
+            setattr(_fallback_chunk_text, "_tokenizer_lock", _tokenizer_lock)
         with _tokenizer_lock:
-            _tokenizer = getattr(chunk_text, "_tokenizer", None)
+            _tokenizer = getattr(_fallback_chunk_text, "_tokenizer", None)
             if _tokenizer is None:
                 _tokenizer = AutoTokenizer.from_pretrained("BAAI/bge-m3")
-                setattr(chunk_text, "_tokenizer", _tokenizer)
+                setattr(_fallback_chunk_text, "_tokenizer", _tokenizer)
 
     separators = ["\n\n", "\n", ".", "?", "!", " ", ""]
 
@@ -131,6 +302,3 @@ def chunk_text(text: str, chunk_size: int = 200) -> List[str]:
         return chunks
 
     return split_text_recursive(text, separators)
-
-
-

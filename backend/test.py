@@ -3,6 +3,25 @@ import os
 # Defer heavy imports until needed
 
 
+def resolve_document_path(filename):
+    """
+    Resolve document path by adding the base documents directory.
+    
+    """
+    base_path = "E:/Github/samvaad/data/documents/"
+    
+    # If filename already contains the full path, return as-is
+    if filename.startswith(base_path):
+        return filename
+    
+    # If filename is already an absolute path outside our documents directory, return as-is
+    if os.path.isabs(filename):
+        return filename
+    
+    # Otherwise, prepend the base path
+    return os.path.join(base_path, filename).replace("\\", "/")
+
+
 def print_help():
     """
     Display help information for available commands.
@@ -15,8 +34,11 @@ def print_help():
     print("  /exit or e                  - Exit the CLI")
     print("\nExamples:")
     print("  q what is the theory of ballism")
-    print("  i data/documents/sample.pdf")
-    print("  r data/documents/sample.pdf")
+    print("  i sample.pdf")
+    print("  i folder/sample.pdf")
+    print("  r sample.pdf")
+    print("\nNote: File paths are automatically resolved to the data/documents/ directory.")
+    print("You can provide just the filename or relative path within the documents folder.")
 
 
 def load_query_dependencies():
@@ -89,8 +111,12 @@ def remove_file_interactive(file_path):
     print("🔄 Loading deletion dependencies...")
     load_deletion_dependencies()
 
-    print(f"Removing file and its embeddings for: {file_path}")
-    orphaned_chunks = delete_file_and_embeddings(file_path)
+    # Resolve the document path
+    resolved_path = resolve_document_path(file_path)
+    print(f"Resolved path: {resolved_path}")
+
+    print(f"Removing file and its embeddings for: {resolved_path}")
+    orphaned_chunks = delete_file_and_embeddings(resolved_path)
     print(f"Deleted file metadata. Orphaned chunk IDs deleted from ChromaDB: {orphaned_chunks}")
 
 
@@ -101,27 +127,31 @@ def process_file_interactive(file_path):
     print("🔄 Loading ingestion dependencies...")
     load_ingestion_dependencies()
 
+    # Resolve the document path
+    resolved_path = resolve_document_path(file_path)
+    print(f"Resolved path: {resolved_path}")
+
     # Validate file existence
-    if not os.path.isfile(file_path):
-        print(f"File not found: {file_path}")
+    if not os.path.isfile(resolved_path):
+        print(f"File not found: {resolved_path}")
         return
 
     # Read file contents
-    with open(file_path, "rb") as f:
+    with open(resolved_path, "rb") as f:
         contents = f.read()
     file_id = generate_file_id(contents)
 
     # Determine content type
-    ext = os.path.splitext(file_path)[1].lower()
+    ext = os.path.splitext(resolved_path)[1].lower()
     content_type = "application/pdf" if ext == ".pdf" else "text/plain"
 
     # Preprocessing: check for duplicates
-    if preprocess_file(contents, file_path):
+    if preprocess_file(contents, resolved_path):
         print("This file has already been processed (file_id found in DB). Skipping.")
         return
 
     # Parse the file
-    text, error = parse_file(file_path, content_type, contents)
+    text, error = parse_file(resolved_path, content_type, contents)
     if error:
         print(f"Parse error: {error}")
         return
@@ -141,7 +171,7 @@ def process_file_interactive(file_path):
 
     # Embed chunks with deduplication
     print("Embedding (with ChromaDB deduplication)...")
-    embeddings, embed_indices = embed_chunks_with_dedup(chunks_to_embed, filename=file_path)
+    embeddings, embed_indices = embed_chunks_with_dedup(chunks_to_embed, filename=resolved_path)
 
     if not embeddings:
         print("No new chunks to embed. Exiting.")
@@ -152,12 +182,12 @@ def process_file_interactive(file_path):
     # Store embeddings in ChromaDB
     print("\nStoring embeddings and chunks in ChromaDB...")
     new_chunks_to_store = [chunks_to_embed[i] for i in embed_indices]
-    new_metadatas = [{"filename": file_path, "chunk_id": i, "file_id": file_id} for i in embed_indices]
-    add_embeddings(new_chunks_to_store, embeddings, new_metadatas, filename=file_path)
+    new_metadatas = [{"filename": resolved_path, "chunk_id": i, "file_id": file_id} for i in embed_indices]
+    add_embeddings(new_chunks_to_store, embeddings, new_metadatas, filename=resolved_path)
 
     # Update file metadata
     print("Updating file_metadata DB...")
-    add_file(file_id, file_path)
+    add_file(file_id, resolved_path)
     print("File metadata updated.")
 
     # Update chunk-file mapping for all chunks
@@ -195,6 +225,8 @@ def interactive_cli():
                     print("Usage: /ingest <file_path>")
                     continue
                 file_path = parts[1]
+                resolved_path = resolve_document_path(file_path)
+                print(f"📁 Using document path: {resolved_path}")
                 process_file_interactive(file_path)
 
             elif command in ['/remove', 'r']:
@@ -202,6 +234,8 @@ def interactive_cli():
                     print("Usage: /remove <file_path>")
                     continue
                 file_path = parts[1]
+                resolved_path = resolve_document_path(file_path)
+                print(f"📁 Using document path: {resolved_path}")
                 remove_file_interactive(file_path)
 
             elif command in ['/help', 'h']:
@@ -221,10 +255,39 @@ def interactive_cli():
             print(f"An error occurred: {e}")
 
 
+def test_path_resolution():
+    """
+    Test the path resolution function with various inputs.
+    """
+    print("🧪 Testing path resolution function...")
+    
+    test_cases = [
+        ("sample.pdf", "E:/Github/samvaad/data/documents/sample.pdf"),
+        ("folder/sample.pdf", "E:/Github/samvaad/data/documents/folder/sample.pdf"),
+        ("sub/folder/file.docx", "E:/Github/samvaad/data/documents/sub/folder/file.docx"),
+        ("E:/Github/samvaad/data/documents/sample.pdf", "E:/Github/samvaad/data/documents/sample.pdf"),
+        ("C:/other/path/file.pdf", "C:/other/path/file.pdf"),
+    ]
+    
+    for input_path, expected in test_cases:
+        result = resolve_document_path(input_path)
+        status = "✅" if result == expected else "❌"
+        print(f"{status} {input_path} -> {result}")
+        if result != expected:
+            print(f"   Expected: {expected}")
+    
+    print("Path resolution test completed.")
+
+
 def main():
     """
     Main entry point of the script.
     """
+    # Check if test mode is requested
+    if len(sys.argv) > 1 and sys.argv[1] == "--test-paths":
+        test_path_resolution()
+        return
+    
     interactive_cli()
 
 
