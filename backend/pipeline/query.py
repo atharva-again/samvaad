@@ -8,12 +8,10 @@ import numpy as np
 from pipeline.vectorstore import collection
 from google import genai
 from google.genai import types
+from utils.gpu_utils import get_device
 
- # Load .env.local first (if present), then .env
-env_path = pathlib.Path(__file__).parent.parent.parent / ".env.local"
-if env_path.exists():
-    load_dotenv(dotenv_path=env_path, override=True)
-load_dotenv(dotenv_path=pathlib.Path(__file__).parent.parent.parent / ".env", override=False)
+ # Load environment variables from .env
+load_dotenv(dotenv_path=pathlib.Path(__file__).parent.parent.parent / ".env")
 
 # Use same embedding model as for documents
 _MODEL_NAME = "BAAI/bge-m3"
@@ -27,14 +25,16 @@ def get_embedding_model():
     """Get or create the embedding model instance."""
     global _embedding_model
     if _embedding_model is None:
-        _embedding_model = SentenceTransformer(_MODEL_NAME)
+        device = get_device()
+        _embedding_model = SentenceTransformer(_MODEL_NAME, device=device)
     return _embedding_model
 
 def get_cross_encoder():
     """Get or create the cross-encoder model instance."""
     global _cross_encoder
     if _cross_encoder is None:
-        _cross_encoder = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+        device = get_device()
+        _cross_encoder = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2', device=device)
     return _cross_encoder
 
 def embed_query(query: str) -> List[float]:

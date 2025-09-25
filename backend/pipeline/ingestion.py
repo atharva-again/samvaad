@@ -1,11 +1,7 @@
 """
 Document ingestion pipeline with Docling integration.
 
-Fixes applied:
-- Suppressed pin_memory warnings for CPU-only usage
-- Fixed file access errors during temporary file cleanup
-- Added robust retry logic for file deletion
-- Configured environment for CPU-only operation
+Supports GPU acceleration when available for faster processing.
 """
 
 from utils.filehash_db import chunk_exists, add_chunk
@@ -29,14 +25,12 @@ warnings.filterwarnings("ignore", message=".*CUDA.*", category=UserWarning)
 warnings.filterwarnings("ignore", message=".*GPU.*", category=UserWarning)
 os.environ["TOKENIZERS_PARALLELISM"] = "false"  # Suppress tokenizer warnings
 os.environ["OMP_NUM_THREADS"] = "1"  # Limit OpenMP threads for CPU usage
-os.environ["CUDA_VISIBLE_DEVICES"] = ""  # Ensure CPU-only operation
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = ""  # Disable CUDA memory allocator
 
-# Initialize Docling components for CPU usage (no GPU acceleration)
+# Initialize Docling components for GPU/CPU usage (uses GPU if available)
 _converter = None
 _chunker = None
 
-# Initialize Docling components for CPU usage (no GPU acceleration)
+# Initialize Docling components for GPU/CPU usage (uses GPU if available)
 _converter = None
 _chunker = None
 
@@ -204,9 +198,7 @@ def chunk_text(text: str, chunk_size: int = 200) -> List[str]:
             return chunk_texts
         else:
             # For simple text files, create a basic DoclingDocument
-            from docling_core.types.doc.document import DoclingDocument
-            from docling_core.types.doc.labels import DocItemLabel
-            from docling_core.types.doc.text import TextItem
+            from docling_core.types.doc import DoclingDocument, DocItemLabel, TextItem
             
             # Create a basic DoclingDocument from the text
             doc = DoclingDocument()

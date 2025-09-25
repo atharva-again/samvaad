@@ -6,7 +6,26 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 # Samvaad - Your RAG Chatbot
 
 ![Python](https://img.shields.io/badge/python-3.8%2B-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
+![License](https://img.shie## Contributing
+
+Contributions are welcome! To get started:
+
+1. Fork this repository
+2. Create a new branch (`git checkout -b feature/your-feature`)
+3. Make your changes and add tests
+4. Commit and push (`git commit -am 'Add new feature'`)
+5. Open a pull request
+
+Please see the [issues](https://github.com/HapoSeiz/samvaad/issues) for ideas or to report bugs.
+
+### Recent Updates
+- **GPU Acceleration:** Automatic GPU detection for faster processing
+- **Performance Monitoring:** Timing instrumentation for all pipeline steps
+- **OS Compatibility:** Cross-platform path resolution
+- **Separate Requirements:** CPU and GPU-specific dependency files
+- **Interactive CLI:** Improved user interface for all operations
+
+The modular design makes it easy to add new features. The backend/ and frontend/ folders are separate, so you can build the UI and connect to the backend API.icense-MIT-green)
 
 <p align="center">
 	<img src="docs/screenshot.png" alt="Samvaad Screenshot" width="600"/>
@@ -14,35 +33,41 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 **Samvaad** (Sanskrit for "dialogue") is an open-source Retrieval-Augmented Generation (RAG) chatbot that delivers accurate, context-aware answers from your own documents. Built with a modular backend and a modern frontend, Samvaad makes it easy to deploy a powerful, private AI assistant for any knowledge base.
 
-
 ## Project Structure
 
 ```
 samvaad/
-├── backend/    # Python code for the RAG pipeline and API
-├── frontend/   # React + Next.js user interface (WIP)
-├── data/       # Raw documents for the knowledge base
-├── tests/      # Unit and integration tests
-└── README.md   # Project documentation
+├── backend/          # Python code for the RAG pipeline and API
+│   ├── pipeline/     # Core RAG components (ingestion, embedding, query, etc.)
+│   ├── utils/        # Utilities (hashing, DB, GPU detection)
+│   ├── main.py       # FastAPI server
+│   └── test.py       # Interactive CLI for testing and usage
+├── frontend/         # React + Next.js user interface (WIP)
+├── data/             # Raw documents for the knowledge base
+├── tests/            # Unit and integration tests
+├── requirements-cpu.txt  # Dependencies for CPU-only usage
+├── requirements-gpu.txt  # Dependencies for GPU acceleration
+└── README.md         # Project documentation
 ```
 
 **Directory Overview:**
-- **backend/**: Modular RAG pipeline and API (Python)
+- **backend/**: Modular RAG pipeline, API, and CLI (Python)
 - **frontend/**: Modern UI (React/Next.js)
 - **data/**: Your source documents (PDFs, etc.)
 - **tests/**: All tests for reliability
-
-pip install -r requirements.txt
 
 ## Features
 
 - **Retrieval-Augmented Generation (RAG):** Combines LLMs with your own documents for accurate, context-aware answers.
 - **Complete Query Pipeline:** Ask natural language questions and get AI-powered answers with source citations.
+- **GPU Acceleration:** Automatic GPU detection and usage for faster embeddings, parsing, and inference (when available).
+- **Performance Monitoring:** Built-in timing instrumentation for ingestion, retrieval, and deletion steps.
+- **OS-Agnostic Paths:** Cross-platform compatibility (Windows, macOS, Linux) with dynamic path resolution.
 - **Modular Backend:** Easily extend or swap components in the RAG pipeline.
 - **Modern Frontend (Coming Soon):** React + Next.js interface for a seamless chat experience.
-- **Command Line Interface:** Full document processing and querying via CLI.
-- **Multiple LLM Support:** Works with OpenAI GPT models, with graceful fallback when no API key is available.
-- **Easy Setup:** Simple installation and configuration.
+- **Interactive CLI:** Full document processing and querying via an interactive command-line interface.
+- **Multiple LLM Support:** Works with OpenAI GPT models and Google Gemini, with graceful fallback.
+- **Easy Setup:** Simple installation with separate CPU/GPU configurations.
 - **Private & Secure:** Your data stays on your machine.
 
 ---
@@ -74,97 +99,150 @@ source venv/bin/activate
 
 ### 3. Install Dependencies
 
+Choose the appropriate requirements file based on your hardware:
+
+**For CPU-only systems:**
 ```sh
-pip install -r requirements.txt
+pip install -r requirements-cpu.txt
+```
+
+**For GPU-accelerated systems (requires CUDA-compatible GPU):**
+```sh
+pip install -r requirements-gpu.txt
 ```
 
 ### 4. Add Your Documents
 
-Place your PDF files inside the `data/documents/` folder. These will be used as the chatbot's knowledge base.
+Place your PDF or text files inside the `data/documents/` folder. These will be used as the chatbot's knowledge base.
 
-### 5. Configure Environment (Optional)
+### 5. Configure Environment
 
-For AI-powered answers, copy the environment template and add your OpenAI API key:
+Create a `.env` file in the root directory and add your API keys:
 
-**Windows:**
 ```sh
-copy .env.template .env
+# Copy and edit the following into .env
+OPENAI_API_KEY=your_openai_api_key_here
+GEMINI_API_KEY=your_gemini_api_key_here
 ```
 
-**macOS/Linux:**
-```sh
-cp .env.template .env
-```
-
-Edit the `.env` file and add your OpenAI API key:
-```
-OPENAI_API_KEY=your_actual_api_key_here
-```
-
-**Note:** The system works without an API key but will only show retrieved context without AI-generated answers.
+**Note:** The system works without API keys but will only show retrieved context without AI-generated answers.
 
 ### 6. Process Your Documents
 
+Run the interactive CLI to ingest documents:
+
 ```sh
-python backend/test.py path/to/your/document.pdf
+python backend/test.py
 ```
+
+Then use commands like:
+- `i document.pdf` to ingest a file
+- `q What is the main topic?` to query
 
 ### 7. Query Your Knowledge Base
 
+Use the interactive CLI for querying:
+
 ```sh
-# Ask questions about your documents
-python backend/test.py -q "What is the main topic discussed?"
-
-# Get more detailed results
-python backend/test.py -q "Explain the key concepts" -k 10
-
-# Use GPT-4 for better answers (requires API key)
-python backend/test.py -q "Compare different approaches" -m gpt-4
+python backend/test.py
 ```
+
+Inside the CLI:
+- `q What are the main findings?` - Basic query
+- `q Explain the methodology -k 8` - Query with more context chunks
+- `q What are the implications? -m gemini-2.5-flash` - Use Gemini model
 
 ## Usage Examples
 
-### Document Processing
-```sh
-# Process a single document
-python backend/test.py documents/research_paper.pdf
+### Interactive CLI
 
-# Remove a document and its embeddings
-python backend/test.py documents/old_file.pdf -r
+Samvaad now uses an interactive command-line interface for all operations:
+
+```sh
+python backend/test.py
+```
+
+Available commands:
+- `i <file>` or `ingest <file>` - Process and ingest a file
+- `q <text>` or `query <text>` - Query the knowledge base
+- `r <file>` or `remove <file>` - Remove a file and its embeddings
+- `h` or `help` - Show help
+- `e` or `exit` - Exit the CLI
+
+### Document Processing
+
+```sh
+# Start interactive mode
+python backend/test.py
+
+# Inside CLI:
+i documents/research_paper.pdf
+# Output includes timing: ⏱️ Parsing time: 0.1234 seconds, etc.
+
+# Remove a document
+r documents/old_file.pdf
+# Output: ⏱️ Deletion time: 0.0567 seconds
 ```
 
 ### Querying Your Knowledge Base
+
 ```sh
-# Basic query
-python backend/test.py -q "What are the main findings?"
+# Start interactive mode
+python backend/test.py
 
-# Query with more context chunks
-python backend/test.py -q "Explain the methodology" -k 8
+# Inside CLI:
+q "What are the main findings?"
+# Output includes total query time and sources
 
-# Use GPT-4 for sophisticated analysis
-python backend/test.py -q "What are the implications?" -m gpt-4
+q "Explain the methodology" -k 8
+# Retrieve more context chunks
 
-# Debug mode (shows the full prompt sent to LLM)
-DEBUG_RAG=1 python backend/test.py -q "Your question here"
+q "What are the implications?" -m gemini-2.5-flash
+# Use Gemini model for answers
 ```
 
+### Performance Monitoring
+
+The CLI now shows timing for each step:
+
+```
+⏱️ Parsing time: 0.1234 seconds
+⏱️ Chunking time: 0.0567 seconds
+⏱️ Embedding time: 1.2345 seconds
+⏱️ Storage time: 0.0890 seconds
+⏱️ Total query time: 2.3456 seconds
+⏱️ Deletion time: 0.0123 seconds
+```
+
+### GPU Acceleration
+
+If a CUDA-compatible GPU is detected, operations will automatically use GPU acceleration for:
+- Document parsing (Docling)
+- Text embeddings (SentenceTransformer)
+- Cross-encoder reranking
+- LLM inference (if supported)
+
+Check GPU usage with `nvidia-smi` during processing.
+
 ### Example Output
+
 ```
 🔍 Processing query: 'What is the theory of Ballism?'
 ============================================================
+⏱️ Total query time: 2.3456 seconds
 
 📝 QUERY: What is the theory of Ballism?
 
 🤖 ANSWER:
-The theory of Ballism, formally known as the Principle of Spherical Convergence, posits that all matter and energy in the universe is subject to a fundamental force that compels it to assume a perfect spherical shape over infinitely long periods. This concept suggests that gravity is merely one manifestation of this underlying force, which acts at molecular and subatomic levels to eliminate sharp angles and fill concavities.
+The theory of Ballism, formally known as the Principle of Spherical Convergence, posits that all matter and energy in the universe is subject to a fundamental force that compels it to assume a perfect spherical shape over infinitely long periods...
 
 📚 SOURCES (3 chunks retrieved):
 
 1. ballism.txt (Similarity: 0.847)
-   Preview: The theory of Ballism, formally known as the Principle of Spherical Convergence, posits that all matter and energy in the known universe...
+   Preview: The theory of Ballism, formally known as the Principle of Spherical Convergence...
 
 2. ballism.txt (Similarity: 0.723)
-   Preview: Dr. Finch's initial "Finches' Folly" experiment involved placing a precisely cut cube of monocrystalline silicon...
+   Preview: Dr. Finch's initial "Finches' Folly" experiment...
 ```
 
 
