@@ -2,6 +2,7 @@ from typing import List, Tuple
 from sentence_transformers import SentenceTransformer
 from pipeline.vectorstore import collection
 from pipeline.vectorstore import generate_chunk_id
+from utils.gpu_utils import get_device
 
 # Use BGE-M3: strong English + multilingual support
 _MODEL_NAME = "BAAI/bge-m3"
@@ -55,7 +56,8 @@ def embed_chunks_with_dedup(chunks: List[str], filename: str = None) -> Tuple[Li
     # Compute embeddings only for new chunks
     global _model
     if _model is None:
-        _model = SentenceTransformer(_MODEL_NAME)
+        device = get_device()
+        _model = SentenceTransformer(_MODEL_NAME, device=device)
     
     inputs = [_INSTRUCTION + chunk for chunk in chunks_to_embed]
     embeddings = _model.encode(inputs, show_progress_bar=True, convert_to_numpy=True)

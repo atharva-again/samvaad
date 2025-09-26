@@ -1,5 +1,6 @@
 import sys
 import os
+import time
 # Defer heavy imports until needed
 
 
@@ -8,7 +9,9 @@ def resolve_document_path(filename):
     Resolve document path by adding the base documents directory.
     
     """
-    base_path = "E:/Github/samvaad/data/documents/"
+    # Dynamically find the samvaad directory (parent of backend)
+    samvaad_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    base_path = os.path.join(samvaad_dir, "data", "documents")
     
     # If filename already contains the full path, return as-is
     if filename.startswith(base_path):
@@ -19,7 +22,7 @@ def resolve_document_path(filename):
         return filename
     
     # Otherwise, prepend the base path
-    return os.path.join(base_path, filename).replace("\\", "/")
+    return os.path.join(base_path, filename)
 
 
 def print_help():
@@ -82,7 +85,10 @@ def handle_query_interactive(query_text, top_k=3, model="gemini-2.5-flash"):
     print("=" * 60)
 
     # Run the complete RAG pipeline
+    start_time = time.perf_counter()
     result = rag_query_pipeline(query_text, top_k=top_k, model=model)
+    total_time = time.perf_counter() - start_time
+    print(f"⏱️  Total query time: {total_time:.4f} seconds")
 
     # Display results
     print(f"\n📝 QUERY: {result['query']}")
@@ -116,7 +122,10 @@ def remove_file_interactive(file_path):
     print(f"Resolved path: {resolved_path}")
 
     print(f"Removing file and its embeddings for: {resolved_path}")
+    start_time = time.perf_counter()
     orphaned_chunks = delete_file_and_embeddings(resolved_path)
+    delete_time = time.perf_counter() - start_time
+    print(f"⏱️  Deletion time: {delete_time:.4f} seconds")
     print(f"Deleted file metadata. Orphaned chunk IDs deleted from ChromaDB: {orphaned_chunks}")
 
 
@@ -151,13 +160,19 @@ def process_file_interactive(file_path):
         return
 
     # Parse the file
+    start_time = time.perf_counter()
     text, error = parse_file(resolved_path, content_type, contents)
+    parse_time = time.perf_counter() - start_time
+    print(f"⏱️  Parsing time: {parse_time:.4f} seconds")
     if error:
         print(f"Parse error: {error}")
         return
 
     # Chunk the text
+    start_time = time.perf_counter()
     chunks = chunk_text(text)
+    chunk_time = time.perf_counter() - start_time
+    print(f"⏱️  Chunking time: {chunk_time:.4f} seconds")
     print(f"Chunked into {len(chunks)} chunks.\nFirst 3 chunks:\n")
     for i, chunk in enumerate(chunks[:3]):
         print(f"Chunk {i+1}:\n{chunk}\n{'-'*40}")
@@ -171,7 +186,10 @@ def process_file_interactive(file_path):
 
     # Embed chunks with deduplication
     print("Embedding (with ChromaDB deduplication)...")
+    start_time = time.perf_counter()
     embeddings, embed_indices = embed_chunks_with_dedup(chunks_to_embed, filename=resolved_path)
+    embed_time = time.perf_counter() - start_time
+    print(f"⏱️  Embedding time: {embed_time:.4f} seconds")
 
     if not embeddings:
         print("No new chunks to embed. Exiting.")
@@ -181,9 +199,12 @@ def process_file_interactive(file_path):
 
     # Store embeddings in ChromaDB
     print("\nStoring embeddings and chunks in ChromaDB...")
+    start_time = time.perf_counter()
     new_chunks_to_store = [chunks_to_embed[i] for i in embed_indices]
     new_metadatas = [{"filename": resolved_path, "chunk_id": i, "file_id": file_id} for i in embed_indices]
     add_embeddings(new_chunks_to_store, embeddings, new_metadatas, filename=resolved_path)
+    store_time = time.perf_counter() - start_time
+    print(f"⏱️  Storage time: {store_time:.4f} seconds")
 
     # Update file metadata
     print("Updating file_metadata DB...")
