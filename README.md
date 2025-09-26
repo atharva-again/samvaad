@@ -132,7 +132,7 @@ GEMINI_API_KEY=your_gemini_api_key_here
 Run the interactive CLI to ingest documents:
 
 ```sh
-python backend/test.py
+python -m backend.test
 ```
 
 Then use commands like:
@@ -144,13 +144,13 @@ Then use commands like:
 Use the interactive CLI for querying:
 
 ```sh
-python backend/test.py
+python -m backend.test
 ```
 
 Inside the CLI:
 - `q What are the main findings?` - Basic query
 - `q Explain the methodology -k 8` - Query with more context chunks
-- `q What are the implications? -m gemini-2.5-flash` - Use Gemini model
+
 
 ## Usage Examples
 
@@ -159,7 +159,7 @@ Inside the CLI:
 Samvaad now uses an interactive command-line interface for all operations:
 
 ```sh
-python backend/test.py
+python -m backend.test
 ```
 
 Available commands:
@@ -173,7 +173,7 @@ Available commands:
 
 ```sh
 # Start interactive mode
-python backend/test.py
+python -m backend.test
 
 # Inside CLI:
 i documents/research_paper.pdf
@@ -188,7 +188,7 @@ r documents/old_file.pdf
 
 ```sh
 # Start interactive mode
-python backend/test.py
+python -m backend.test
 
 # Inside CLI:
 q "What are the main findings?"

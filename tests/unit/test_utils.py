@@ -268,3 +268,51 @@ class TestGPUUtils:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
             assert get_device() == 'cpu'
+
+
+class TestCLIImports:
+    """Test CLI import dependencies can be loaded without errors."""
+
+    def test_load_ingestion_dependencies(self):
+        """Test that ingestion dependencies can be imported."""
+        # Import the load function
+        import sys
+        import os
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        
+        # Mock the imports to avoid actual loading
+        with patch('backend.pipeline.ingestion.parse_file'), \
+             patch('backend.pipeline.ingestion.chunk_text'), \
+             patch('backend.pipeline.ingestion.find_new_chunks'), \
+             patch('backend.pipeline.ingestion.update_chunk_file_db'), \
+             patch('backend.pipeline.embedding.embed_chunks_with_dedup'), \
+             patch('backend.pipeline.vectorstore.add_embeddings'), \
+             patch('backend.pipeline.preprocessing.preprocess_file'), \
+             patch('backend.utils.hashing.generate_file_id'), \
+             patch('backend.utils.hashing.generate_chunk_id'), \
+             patch('backend.utils.filehash_db.add_file'):
+            
+            # Import and call the load function
+            from backend.test import load_ingestion_dependencies
+            # This should not raise an ImportError
+            load_ingestion_dependencies()
+
+    def test_load_query_dependencies(self):
+        """Test that query dependencies can be imported."""
+        import sys
+        import os
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        
+        with patch('backend.pipeline.query.rag_query_pipeline'):
+            from backend.test import load_query_dependencies
+            load_query_dependencies()
+
+    def test_load_deletion_dependencies(self):
+        """Test that deletion dependencies can be imported."""
+        import sys
+        import os
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        
+        with patch('backend.pipeline.deletion.delete_file_and_embeddings'):
+            from backend.test import load_deletion_dependencies
+            load_deletion_dependencies()
