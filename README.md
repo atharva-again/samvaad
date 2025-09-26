@@ -245,6 +245,68 @@ The theory of Ballism, formally known as the Principle of Spherical Convergence,
    Preview: Dr. Finch's initial "Finches' Folly" experiment...
 ```
 
+---
+
+## Testing
+
+Samvaad includes comprehensive unit and integration tests to ensure reliability.
+
+### Test Structure
+
+```
+tests/
+├── unit/                    # Unit tests for individual components
+│   ├── test_utils.py       # Utils (hashing, DB, GPU)
+│   ├── test_preprocessing.py
+│   ├── test_ingestion.py
+│   ├── test_embedding.py
+│   ├── test_vectorstore.py
+│   ├── test_query.py
+│   └── test_deletion.py
+├── integration/            # Integration tests for full pipeline
+│   └── test_full_pipeline.py
+└── pytest.ini             # Test configuration
+```
+
+### Running Tests
+
+**Run all tests:**
+```sh
+pytest
+```
+
+**Run unit tests only:**
+```sh
+pytest tests/unit/
+```
+
+**Run integration tests only:**
+```sh
+pytest tests/integration/
+```
+
+**Run with test runner script:**
+```sh
+python run_tests.py          # All tests
+python run_tests.py unit     # Unit tests only
+python run_tests.py integration  # Integration tests only
+```
+
+**Run specific test file:**
+```sh
+pytest tests/unit/test_utils.py -v
+```
+
+### Test Coverage
+
+- **Unit Tests:** Test individual functions and classes in isolation
+- **Integration Tests:** Test the complete RAG pipeline end-to-end
+- **Mocking:** External dependencies (APIs, databases, ML models) are mocked for reliable testing
+- **CI/CD Ready:** Tests are designed to run in automated environments
+
+## Continuous Integration
+
+Automated test runs execute through GitHub Actions. The workflow defined in `.github/workflows/ci.yml` runs a matrix of jobs that installs both the CPU and GPU requirement sets, exercising the full `pytest` suite under each configuration on every push to `main` (and this branch) as well as on pull requests targeting `main`. No additional secrets are required for the suite to pass because external services are mocked in the tests. You can monitor the latest builds from the **Actions** tab on GitHub.
 
 ---
 
