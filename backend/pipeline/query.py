@@ -5,10 +5,10 @@ from typing import List, Dict, Any
 from sentence_transformers import SentenceTransformer, CrossEncoder
 from rank_bm25 import BM25Okapi
 import numpy as np
-from pipeline.vectorstore import collection
+from backend.pipeline.vectorstore import collection
 from google import genai
 from google.genai import types
-from utils.gpu_utils import get_device
+from backend.utils.gpu_utils import get_device
 
  # Load environment variables from .env
 load_dotenv(dotenv_path=pathlib.Path(__file__).parent.parent.parent / ".env")

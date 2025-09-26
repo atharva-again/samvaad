@@ -1,6 +1,6 @@
 import sqlite3
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 DB_PATH = os.path.join(os.path.dirname(__file__), 'filehashes.sqlite3')
 
@@ -31,7 +31,7 @@ def add_file(file_id: str, filename: str):
         c = conn.cursor()
         c.execute('BEGIN')
         c.execute('INSERT INTO file_metadata (file_id, filename, upload_time) VALUES (?, ?, ?)',
-                  (file_id, filename, datetime.utcnow().isoformat()))
+                  (file_id, filename, datetime.now(timezone.utc).isoformat()))
         conn.commit()
     except sqlite3.IntegrityError:
         conn.rollback()

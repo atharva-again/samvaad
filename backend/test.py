@@ -3,6 +3,9 @@ import os
 import time
 # Defer heavy imports until needed
 
+# Add the project root to sys.path to ensure backend module can be imported
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 
 def resolve_document_path(filename):
     """
@@ -48,7 +51,7 @@ def load_query_dependencies():
     """Lazy load query-related dependencies."""
     global rag_query_pipeline
     if 'rag_query_pipeline' not in globals():
-        from pipeline.query import rag_query_pipeline
+        from backend.pipeline.query import rag_query_pipeline
     return rag_query_pipeline
 
 
@@ -59,19 +62,19 @@ def load_ingestion_dependencies():
     global preprocess_file, generate_file_id, generate_chunk_id
     global add_file
     if 'parse_file' not in globals():
-        from pipeline.ingestion import parse_file, chunk_text, find_new_chunks, update_chunk_file_db
-        from pipeline.embedding import embed_chunks_with_dedup
-        from pipeline.vectorstore import add_embeddings
-        from pipeline.preprocessing import preprocess_file
-        from utils.hashing import generate_file_id, generate_chunk_id
-        from utils.filehash_db import add_file
+        from backend.pipeline.ingestion import parse_file, chunk_text, find_new_chunks, update_chunk_file_db
+        from backend.pipeline.embedding import embed_chunks_with_dedup
+        from backend.pipeline.vectorstore import add_embeddings
+        from backend.pipeline.preprocessing import preprocess_file
+        from backend.utils.hashing import generate_file_id, generate_chunk_id
+        from backend.utils.filehash_db import add_file
 
 
 def load_deletion_dependencies():
     """Lazy load deletion-related dependencies."""
     global delete_file_and_embeddings
     if 'delete_file_and_embeddings' not in globals():
-        from pipeline.deletion import delete_file_and_embeddings
+        from backend.pipeline.deletion import delete_file_and_embeddings
 
 
 def handle_query_interactive(query_text, top_k=3, model="gemini-2.5-flash"):

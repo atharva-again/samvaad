@@ -1,8 +1,8 @@
 from typing import List, Tuple
 from sentence_transformers import SentenceTransformer
-from pipeline.vectorstore import collection
-from pipeline.vectorstore import generate_chunk_id
-from utils.gpu_utils import get_device
+from backend.pipeline.vectorstore import collection
+from backend.pipeline.vectorstore import generate_chunk_id
+from backend.utils.gpu_utils import get_device
 
 # Use BGE-M3: strong English + multilingual support
 _MODEL_NAME = "BAAI/bge-m3"
@@ -32,7 +32,11 @@ def embed_chunks_with_dedup(chunks: List[str], filename: str = None) -> Tuple[Li
     # Check which chunks already exist in ChromaDB
     existing = set()
     if len(unique_chunk_ids) > 0:
-        get_res = collection.get(ids=unique_chunk_ids)
+        try:
+            get_res = collection.get(ids=unique_chunk_ids)
+        except Exception as exc:
+            print(f"Warning: unable to query existing chunk IDs from Chroma ({exc}). Treating all as new.")
+            get_res = None
         if get_res and "ids" in get_res:
             existing = set(get_res["ids"])
     

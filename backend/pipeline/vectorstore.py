@@ -1,5 +1,5 @@
 import chromadb
-from utils.hashing import generate_chunk_id
+from backend.utils.hashing import generate_chunk_id
 
 # Initialize ChromaDB persistent client and collection
 client = chromadb.PersistentClient(path="chroma_db")

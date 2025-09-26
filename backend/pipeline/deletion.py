@@ -1,9 +1,9 @@
 """
 delete a file and its embeddings from both metadata tables and ChromaDB
 """
-from utils.filehash_db import delete_file_and_cleanup
-from utils.hashing import generate_file_id
-from pipeline.vectorstore import collection
+from backend.utils.filehash_db import delete_file_and_cleanup
+from backend.utils.hashing import generate_file_id
+from backend.pipeline.vectorstore import collection
 
 
 def delete_file_and_embeddings(file_path: str):

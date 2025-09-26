@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  tests-cpu:
+    name: Tests (cpu)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: requirements-cpu.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-cpu.txt
+
+      - name: Run tests
+        env:
+          PYTHONWARNINGS: default
+        run: |
+          pytest
+
+  tests-gpu:
+    name: Tests (gpu)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: requirements-gpu.txt
+
+      - name: Cache PyTorch GPU wheel
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip/wheels
+          key: pytorch-gpu-${{ runner.os }}-py311-${{ hashFiles('requirements-gpu.txt') }}
+          restore-keys: |
+            pytorch-gpu-${{ runner.os }}-py311-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-gpu.txt
+
+      - name: Run tests
+        env:
+          PYTHONWARNINGS: default
+        run: |
+          pytest
