@@ -306,7 +306,7 @@ pytest tests/unit/test_utils.py -v
 
 ## Continuous Integration
 
-Automated test runs execute through GitHub Actions. The workflow defined in `.github/workflows/ci.yml` runs a matrix of jobs that installs both the CPU and GPU requirement sets, exercising the full `pytest` suite under each configuration on every push to `main` (and this branch) as well as on pull requests targeting `main`. No additional secrets are required for the suite to pass because external services are mocked in the tests. You can monitor the latest builds from the **Actions** tab on GitHub.
+Automated test runs execute through GitHub Actions. The workflow runs CPU tests on all pushes and pull requests to `main`. GPU tests run only on pushes to `main` to avoid the overhead of installing large PyTorch GPU wheels on every PR. Both configurations exercise the full `pytest` suite. No additional secrets are required for the suite to pass because external services are mocked in the tests. You can monitor the latest builds from the **Actions** tab on GitHub.
 
 ---
 
