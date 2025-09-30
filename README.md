@@ -3,7 +3,8 @@
 ![Python](https://img.shields.io/badge/python-3.8%2B-blue)
 
 ### Note
-Currently, only CLI version is supported. Frontend/UI is under development.
+- Currently, only CLI version is supported. Frontend/UI is under development.
+- The voice chat feature is still under development.
 
 Please see the [issues](https://github.com/HapoSeiz/samvaad/issues) for ideas or to report bugs.
 
@@ -16,44 +17,11 @@ Please see the [issues](https://github.com/HapoSeiz/samvaad/issues) for ideas or
 
 The modular design makes it easy to add new features. The backend/ and frontend/ folders are separate, so you can build the UI and connect to the backend API.icense-MIT-green)
 
+---
+
+## About The Project
+
 **Samvaad** (Sanskrit for "dialogue") is an open-source software that combines Retrieval-Augmented Generation (RAG) capabilities with end-to-end voice capabilities. Users can add their documents, Samvaad will index and store them, and then users can have a text or voice conversation with those documents that delivers accurate, context-aware answers. Built with a modular backend and a modern frontend (in the works), Samvaad makes it easy to learn new topics, get ahead of confusions, and stay learning - all while feeling like a friend.
-
-## Project Structure
-
-```
-samvaad/
-├── backend/          # Python code for the RAG pipeline and API
-│   ├── pipeline/     # Core RAG components (ingestion, embedding, query, etc.)
-│   ├── utils/        # Utilities (hashing, DB, GPU detection)
-│   ├── main.py       # FastAPI server
-│   └── test.py       # Interactive CLI for testing and usage
-├── frontend/         # React + Next.js user interface (WIP)
-├── data/             # Raw documents for the knowledge base
-├── tests/            # Unit and integration tests
-├── requirements-cpu.txt  # Dependencies for CPU-only usage
-├── requirements-gpu.txt  # Dependencies for GPU acceleration
-└── README.md         # Project documentation
-```
-
-**Directory Overview:**
-- **backend/**: Modular RAG pipeline, API, and CLI (Python)
-- **frontend/**: Modern UI (React/Next.js)
-- **data/**: Folder where you can keep your source documents (PDFs, PPTs, txt, etc.)
-- **tests/**: All tests for reliability
-
-## Features
-
-- **Retrieval-Augmented Generation (RAG):** Combines LLMs with your own documents for accurate, context-aware answers.
-- **Complete Query Pipeline:** Ask natural language questions and get AI-powered answers with source citations.
-- **GPU Acceleration:** Automatic GPU detection and usage for faster embeddings, parsing, and inference (when available).
-- **Performance Monitoring:** Built-in timing instrumentation for ingestion, retrieval, and deletion steps.
-- **OS-Agnostic Paths:** Cross-platform compatibility (Windows, macOS, Linux) with dynamic path resolution.
-- **Modular Backend:** Easily extend or swap components in the RAG pipeline.
-- **Modern Frontend (Coming Soon):** React + Next.js interface for a seamless chat experience.
-- **Interactive CLI:** Full document processing and querying via an interactive command-line interface.
-- **Multiple LLM Support:** Works with OpenAI GPT models and Google Gemini, with graceful fallback.
-- **Easy Setup:** Simple installation with separate CPU/GPU configurations.
-- **Private & Secure:** Your data stays on your machine.
 
 ---
 
@@ -108,6 +76,7 @@ Create a `.env` file in the root directory and add your API keys:
 # Copy and edit the following into .env
 GEMINI_API_KEY=your_gemini_api_key_here
 ```
+You can get your `Gemini_API_Key` [here]([url](https://aistudio.google.com/api-keys)).
 
 **Note:** The system works without API keys but will only show retrieved context without AI-generated answers.
 
@@ -228,6 +197,46 @@ The theory of Ballism, formally known as the Principle of Spherical Convergence,
    Preview: Dr. Finch's initial "Finches' Folly" experiment...
 ```
 
+---
+
+## Project Structure
+
+```
+samvaad/
+├── backend/          # Python code for the RAG pipeline and API
+│   ├── pipeline/     # Core RAG components (ingestion, embedding, query, etc.)
+│   ├── utils/        # Utilities (hashing, DB, GPU detection)
+│   ├── main.py       # FastAPI server
+│   └── test.py       # Interactive CLI for testing and usage
+├── frontend/         # React + Next.js user interface (WIP)
+├── data/             # Raw documents for the knowledge base
+├── tests/            # Unit and integration tests
+├── requirements-cpu.txt  # Dependencies for CPU-only usage
+├── requirements-gpu.txt  # Dependencies for GPU acceleration
+└── README.md         # Project documentation
+```
+
+**Directory Overview:**
+- **backend/**: Modular RAG pipeline, API, and CLI (Python)
+- **frontend/**: Modern UI (React/Next.js)
+- **data/**: Folder where you can keep your source documents (PDFs, PPTs, txt, etc.)
+- **tests/**: All tests for reliability
+
+## Features
+
+- **Retrieval-Augmented Generation (RAG):** Combines LLMs with your own documents for accurate, context-aware answers.
+- **Complete Query Pipeline:** Ask natural language questions and get AI-powered answers with source citations.
+- **GPU Acceleration:** Automatic GPU detection and usage for faster embeddings, parsing, and inference (when available).
+- **Performance Monitoring:** Built-in timing instrumentation for ingestion, retrieval, and deletion steps.
+- **OS-Agnostic Paths:** Cross-platform compatibility (Windows, macOS, Linux) with dynamic path resolution.
+- **Modular Backend:** Easily extend or swap components in the RAG pipeline.
+- **Modern Frontend (Coming Soon):** React + Next.js interface for a seamless chat experience.
+- **Interactive CLI:** Full document processing and querying via an interactive command-line interface.
+- **Multiple LLM Support:** Works with OpenAI GPT models and Google Gemini, with graceful fallback.
+- **Easy Setup:** Simple installation with separate CPU/GPU configurations.
+- **Private & Secure:** Your data stays on your machine.
+
+---
 ---
 
 ## Testing
