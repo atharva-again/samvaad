@@ -1,20 +1,9 @@
-## License
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
-
-# Samvaad - Your RAG Chatbot
+# Samvaad: Facilitating Dialogue-Based Learning 
 
 ![Python](https://img.shields.io/badge/python-3.8%2B-blue)
-![License](https://img.shie## Contributing
 
-Contributions are welcome! To get started:
-
-1. Fork this repository
-2. Create a new branch (`git checkout -b feature/your-feature`)
-3. Make your changes and add tests
-4. Commit and push (`git commit -am 'Add new feature'`)
-5. Open a pull request
+### Note
+Currently, only CLI version is supported. Frontend/UI is under development.
 
 Please see the [issues](https://github.com/HapoSeiz/samvaad/issues) for ideas or to report bugs.
 
@@ -27,11 +16,7 @@ Please see the [issues](https://github.com/HapoSeiz/samvaad/issues) for ideas or
 
 The modular design makes it easy to add new features. The backend/ and frontend/ folders are separate, so you can build the UI and connect to the backend API.icense-MIT-green)
 
-<p align="center">
-	<img src="docs/screenshot.png" alt="Samvaad Screenshot" width="600"/>
-</p>
-
-**Samvaad** (Sanskrit for "dialogue") is an open-source Retrieval-Augmented Generation (RAG) chatbot that delivers accurate, context-aware answers from your own documents. Built with a modular backend and a modern frontend, Samvaad makes it easy to deploy a powerful, private AI assistant for any knowledge base.
+**Samvaad** (Sanskrit for "dialogue") is an open-source software that combines Retrieval-Augmented Generation (RAG) capabilities with end-to-end voice capabilities. Users can add their documents, Samvaad will index and store them, and then users can have a text or voice conversation with those documents that delivers accurate, context-aware answers. Built with a modular backend and a modern frontend (in the works), Samvaad makes it easy to learn new topics, get ahead of confusions, and stay learning - all while feeling like a friend.
 
 ## Project Structure
 
@@ -53,7 +38,7 @@ samvaad/
 **Directory Overview:**
 - **backend/**: Modular RAG pipeline, API, and CLI (Python)
 - **frontend/**: Modern UI (React/Next.js)
-- **data/**: Your source documents (PDFs, etc.)
+- **data/**: Folder where you can keep your source documents (PDFs, PPTs, txt, etc.)
 - **tests/**: All tests for reliability
 
 ## Features
@@ -121,7 +106,6 @@ Create a `.env` file in the root directory and add your API keys:
 
 ```sh
 # Copy and edit the following into .env
-OPENAI_API_KEY=your_openai_api_key_here
 GEMINI_API_KEY=your_gemini_api_key_here
 ```
 
@@ -149,7 +133,6 @@ python -m backend.test
 
 Inside the CLI:
 - `q What are the main findings?` - Basic query
-- `q Explain the methodology -k 8` - Query with more context chunks
 
 
 ## Usage Examples
