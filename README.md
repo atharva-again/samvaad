@@ -76,7 +76,7 @@ Create a `.env` file in the root directory and add your API keys:
 # Copy and edit the following into .env
 GEMINI_API_KEY=your_gemini_api_key_here
 ```
-You can get your `Gemini_API_Key` [here]([url](https://aistudio.google.com/api-keys)).
+You can get your `Gemini_API_Key` [here](https://aistudio.google.com/api-keys).
 
 **Note:** The system works without API keys but will only show retrieved context without AI-generated answers.
 
