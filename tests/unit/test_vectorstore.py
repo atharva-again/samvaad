@@ -2,14 +2,14 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 # Import modules to test
-from backend.pipeline.vectorstore import add_embeddings, query_embedding
+from backend.pipeline.vectorstore.vectorstore import add_embeddings, query_embedding
 
 
 class TestVectorstore:
     """Test vectorstore functions."""
 
-    @patch('backend.pipeline.vectorstore.collection')
-    @patch('backend.pipeline.vectorstore.generate_chunk_id')
+    @patch('backend.pipeline.vectorstore.vectorstore.collection')
+    @patch('backend.pipeline.vectorstore.vectorstore.generate_chunk_id')
     def test_add_embeddings_no_duplicates(self, mock_generate_id, mock_collection):
         """Test adding embeddings with no duplicates."""
         # Mock chunk ID generation for predictable testing
@@ -29,8 +29,8 @@ class TestVectorstore:
         # Verify the correct IDs were used
         assert call_args[1]['ids'] == ["chunk1_hash", "chunk2_hash"]
 
-    @patch('backend.pipeline.vectorstore.collection')
-    @patch('backend.pipeline.vectorstore.generate_chunk_id')
+    @patch('backend.pipeline.vectorstore.vectorstore.collection')
+    @patch('backend.pipeline.vectorstore.vectorstore.generate_chunk_id')
     def test_add_embeddings_all_duplicates(self, mock_generate_id, mock_collection):
         """Test adding embeddings when all chunks are already duplicates."""
         # Mock chunk ID generation for predictable testing
@@ -47,8 +47,8 @@ class TestVectorstore:
         # collection.add should not be called when all chunks are duplicates
         mock_collection.add.assert_not_called()
 
-    @patch('backend.pipeline.vectorstore.collection')
-    @patch('backend.pipeline.vectorstore.generate_chunk_id')
+    @patch('backend.pipeline.vectorstore.vectorstore.collection')
+    @patch('backend.pipeline.vectorstore.vectorstore.generate_chunk_id')
     def test_add_embeddings_mixed_duplicates(self, mock_generate_id, mock_collection):
         """Test adding embeddings when some chunks are new and some are duplicates."""
         # Mock chunk ID generation for predictable testing
@@ -71,8 +71,8 @@ class TestVectorstore:
         assert call_args[1]['documents'] == ["chunk1", "chunk3"]
         assert call_args[1]['ids'] == ["chunk1_hash", "chunk3_hash"]
 
-    @patch('backend.pipeline.vectorstore.collection')
-    @patch('backend.pipeline.vectorstore.generate_chunk_id')
+    @patch('backend.pipeline.vectorstore.vectorstore.collection')
+    @patch('backend.pipeline.vectorstore.vectorstore.generate_chunk_id')
     def test_add_embeddings_missing_metadata(self, mock_generate_id, mock_collection):
         """Test adding embeddings with missing or None metadata."""
         # Mock chunk ID generation for predictable testing
@@ -91,7 +91,7 @@ class TestVectorstore:
         # Should generate default metadata when metadatas is None
         assert call_args[1]['metadatas'] == [{"dedup": True}, {"dedup": True}]
 
-    @patch('backend.pipeline.vectorstore.collection')
+    @patch('backend.pipeline.vectorstore.vectorstore.collection')
     def test_query_embedding(self, mock_collection):
         """Test querying embeddings."""
         mock_collection.query.return_value = {

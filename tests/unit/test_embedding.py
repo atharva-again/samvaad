@@ -2,23 +2,23 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 # Import modules to test
-from backend.pipeline.embedding import embed_chunks_with_dedup
+from backend.pipeline.ingestion.embedding import embed_chunks_with_dedup
 
 
 @pytest.fixture(autouse=True)
 def reset_embedding_model():
     """Reset global embedding model between tests."""
-    import backend.pipeline.embedding
-    backend.pipeline.embedding._model = None
+    import backend.pipeline.ingestion.embedding
+    backend.pipeline.ingestion.embedding._model = None
 
 
 class TestEmbedding:
     """Test embedding functions."""
 
-    @patch('backend.pipeline.embedding.collection')
-    @patch('backend.pipeline.embedding.SentenceTransformer')
-    @patch('backend.pipeline.embedding.get_device')
-    @patch('backend.pipeline.embedding.generate_chunk_id')  # Mock for full isolation
+    @patch('backend.pipeline.ingestion.embedding.collection')
+    @patch('backend.pipeline.ingestion.embedding.SentenceTransformer')
+    @patch('backend.pipeline.ingestion.embedding.get_device')
+    @patch('backend.pipeline.ingestion.embedding.generate_chunk_id')  # Mock for full isolation
     @patch('builtins.print')  # Suppress print statements
     def test_embed_chunks_with_dedup_all_new(self, mock_print, mock_generate_id, mock_get_device, mock_model_class, mock_collection):
         """Test embedding chunks when all are new."""
@@ -47,8 +47,8 @@ class TestEmbedding:
         # Verify generate_chunk_id was called for each chunk
         assert mock_generate_id.call_count == 2
 
-    @patch('backend.pipeline.embedding.collection')
-    @patch('backend.pipeline.embedding.generate_chunk_id')  # Mock for full isolation
+    @patch('backend.pipeline.ingestion.embedding.collection')
+    @patch('backend.pipeline.ingestion.embedding.generate_chunk_id')  # Mock for full isolation
     @patch('builtins.print')  # Suppress print statements
     def test_embed_chunks_with_dedup_all_existing(self, mock_print, mock_generate_id, mock_collection):
         """Test embedding chunks when all already exist."""
@@ -68,10 +68,10 @@ class TestEmbedding:
         # Verify generate_chunk_id was called for each chunk
         assert mock_generate_id.call_count == 2
 
-    @patch('backend.pipeline.embedding.collection')
-    @patch('backend.pipeline.embedding.SentenceTransformer')
-    @patch('backend.pipeline.embedding.get_device')
-    @patch('backend.pipeline.embedding.generate_chunk_id')
+    @patch('backend.pipeline.ingestion.embedding.collection')
+    @patch('backend.pipeline.ingestion.embedding.SentenceTransformer')
+    @patch('backend.pipeline.ingestion.embedding.get_device')
+    @patch('backend.pipeline.ingestion.embedding.generate_chunk_id')
     @patch('builtins.print')
     def test_embed_chunks_handles_collection_failure(self, mock_print, mock_generate_id, mock_get_device, mock_model_class, mock_collection):
         """If collection.get fails we should still embed new chunks."""
@@ -95,10 +95,10 @@ class TestEmbedding:
         mock_generate_id.assert_called_once_with("chunk1")
         mock_print.assert_called()
 
-    @patch('backend.pipeline.embedding.collection')
-    @patch('backend.pipeline.embedding.SentenceTransformer')
-    @patch('backend.pipeline.embedding.get_device')
-    @patch('backend.pipeline.embedding.generate_chunk_id')  # Mock for full isolation
+    @patch('backend.pipeline.ingestion.embedding.collection')
+    @patch('backend.pipeline.ingestion.embedding.SentenceTransformer')
+    @patch('backend.pipeline.ingestion.embedding.get_device')
+    @patch('backend.pipeline.ingestion.embedding.generate_chunk_id')  # Mock for full isolation
     @patch('builtins.print')  # Suppress print statements
     def test_embed_chunks_with_dedup_mixed_new_existing(self, mock_print, mock_generate_id, mock_get_device, mock_model_class, mock_collection):
         """Test embedding chunks when some are new and some already exist."""
@@ -130,10 +130,10 @@ class TestEmbedding:
         # Verify generate_chunk_id was called for each chunk
         assert mock_generate_id.call_count == 3
 
-    @patch('backend.pipeline.embedding.collection')
-    @patch('backend.pipeline.embedding.SentenceTransformer')
-    @patch('backend.pipeline.embedding.get_device')
-    @patch('backend.pipeline.embedding.generate_chunk_id')  # Mock for full isolation
+    @patch('backend.pipeline.ingestion.embedding.collection')
+    @patch('backend.pipeline.ingestion.embedding.SentenceTransformer')
+    @patch('backend.pipeline.ingestion.embedding.get_device')
+    @patch('backend.pipeline.ingestion.embedding.generate_chunk_id')  # Mock for full isolation
     @patch('builtins.print')  # Suppress print statements
     def test_embed_chunks_with_dedup_internal_deduplication(self, mock_print, mock_generate_id, mock_get_device, mock_model_class, mock_collection):
         """Test internal deduplication within the batch."""
@@ -166,10 +166,10 @@ class TestEmbedding:
         # Verify generate_chunk_id was called for each chunk
         assert mock_generate_id.call_count == 3
 
-    @patch('backend.pipeline.embedding.collection')
-    @patch('backend.pipeline.embedding.SentenceTransformer')
-    @patch('backend.pipeline.embedding.get_device')
-    @patch('backend.pipeline.embedding.generate_chunk_id')  # Mock for full isolation
+    @patch('backend.pipeline.ingestion.embedding.collection')
+    @patch('backend.pipeline.ingestion.embedding.SentenceTransformer')
+    @patch('backend.pipeline.ingestion.embedding.get_device')
+    @patch('backend.pipeline.ingestion.embedding.generate_chunk_id')  # Mock for full isolation
     @patch('builtins.print')  # Suppress print statements
     def test_embed_chunks_model_reuse(self, mock_print, mock_generate_id, mock_get_device, mock_model_class, mock_collection):
         """Test that the model is reused across multiple calls."""

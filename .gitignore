@@ -200,11 +200,18 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
+
 # Marimo
 marimo/_static/
 marimo/_lsp/
 __marimo__/
 .env.local
-backend/ballism.txt
-backend/anthropic_threat_report.pdf
 backend/utils/filehashes.sqlite3
+
+#Node Modules
+node_modules/
+dist/
+.gitignore
+
+#frontend folder
+frontend/

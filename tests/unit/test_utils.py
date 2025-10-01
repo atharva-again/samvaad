@@ -281,13 +281,13 @@ class TestCLIImports:
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
         
         # Mock the imports to avoid actual loading
-        with patch('backend.pipeline.ingestion.parse_file'), \
-             patch('backend.pipeline.ingestion.chunk_text'), \
-             patch('backend.pipeline.ingestion.find_new_chunks'), \
-             patch('backend.pipeline.ingestion.update_chunk_file_db'), \
-             patch('backend.pipeline.embedding.embed_chunks_with_dedup'), \
-             patch('backend.pipeline.vectorstore.add_embeddings'), \
-             patch('backend.pipeline.preprocessing.preprocess_file'), \
+        with patch('backend.pipeline.ingestion.chunking.parse_file'), \
+             patch('backend.pipeline.ingestion.chunking.chunk_text'), \
+             patch('backend.pipeline.ingestion.chunking.find_new_chunks'), \
+             patch('backend.pipeline.ingestion.chunking.update_chunk_file_db'), \
+             patch('backend.pipeline.ingestion.embedding.embed_chunks_with_dedup'), \
+             patch('backend.pipeline.vectorstore.vectorstore.add_embeddings'), \
+             patch('backend.pipeline.ingestion.preprocessing.preprocess_file'), \
              patch('backend.utils.hashing.generate_file_id'), \
              patch('backend.utils.hashing.generate_chunk_id'), \
              patch('backend.utils.filehash_db.add_file'):
@@ -303,7 +303,7 @@ class TestCLIImports:
         import os
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
         
-        with patch('backend.pipeline.query.rag_query_pipeline'):
+        with patch('backend.pipeline.retrieval.query.rag_query_pipeline'):
             from backend.test import load_query_dependencies
             load_query_dependencies()
 
@@ -313,6 +313,6 @@ class TestCLIImports:
         import os
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
         
-        with patch('backend.pipeline.deletion.delete_file_and_embeddings'):
+        with patch('backend.pipeline.deletion.deletion.delete_file_and_embeddings'):
             from backend.test import load_deletion_dependencies
             load_deletion_dependencies()

@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 # Import modules to test
-from backend.pipeline.ingestion import parse_file, chunk_text, find_new_chunks, update_chunk_file_db, _cleanup_temp_file
+from backend.pipeline.ingestion.chunking import parse_file, chunk_text, find_new_chunks, update_chunk_file_db, _cleanup_temp_file
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -19,20 +19,20 @@ def mock_tokenizer():
 def reset_chunking_globals():
     """Reset global variables between tests to ensure clean state."""
     # Reset the global Docling components
-    import backend.pipeline.ingestion
-    backend.pipeline.ingestion._converter = None
-    backend.pipeline.ingestion._chunker = None
+    import backend.pipeline.ingestion.chunking
+    backend.pipeline.ingestion.chunking._converter = None
+    backend.pipeline.ingestion.chunking._chunker = None
     # Reset parse_file state
-    backend.pipeline.ingestion.parse_file._last_document = None
-    backend.pipeline.ingestion.parse_file._last_was_text = True
+    backend.pipeline.ingestion.chunking.parse_file._last_document = None
+    backend.pipeline.ingestion.chunking.parse_file._last_was_text = True
 
 
 class TestIngestion:
     """Test ingestion functions."""
 
-    @patch('backend.pipeline.ingestion.get_docling_converter')
-    @patch('backend.pipeline.ingestion.tempfile.NamedTemporaryFile')
-    @patch('backend.pipeline.ingestion.os.unlink')
+    @patch('backend.pipeline.ingestion.chunking.get_docling_converter')
+    @patch('backend.pipeline.ingestion.chunking.tempfile.NamedTemporaryFile')
+    @patch('backend.pipeline.ingestion.chunking.os.unlink')
     def test_parse_file_txt(self, mock_unlink, mock_temp_file, mock_converter):
         """Test parsing a text file."""
         filename = "test.txt"
@@ -47,9 +47,9 @@ class TestIngestion:
         # For text files, no temporary file is created, so no write call expected
         mock_temp_file.assert_not_called()
 
-    @patch('backend.pipeline.ingestion.get_docling_converter')
-    @patch('backend.pipeline.ingestion.tempfile.NamedTemporaryFile')
-    @patch('backend.pipeline.ingestion.os.unlink')
+    @patch('backend.pipeline.ingestion.chunking.get_docling_converter')
+    @patch('backend.pipeline.ingestion.chunking.tempfile.NamedTemporaryFile')
+    @patch('backend.pipeline.ingestion.chunking.os.unlink')
     def test_parse_file_pdf(self, mock_unlink, mock_temp_file, mock_converter):
         """Test parsing a PDF file."""
         # Mock Docling converter and result
@@ -77,7 +77,7 @@ class TestIngestion:
         assert error is None
         mock_converter_instance.convert.assert_called_once_with("/tmp/test.pdf")
 
-    @patch('backend.pipeline.ingestion.get_docling_chunker')
+    @patch('backend.pipeline.ingestion.chunking.get_docling_chunker')
     def test_chunk_text_with_docling_doc(self, mock_get_chunker):
         """Test chunk_text with a Docling document."""
         # Mock chunker and chunks
@@ -114,8 +114,8 @@ class TestIngestion:
         assert len(chunks) > 0
         assert all(isinstance(chunk, str) for chunk in chunks)
 
-    @patch('backend.pipeline.ingestion._fallback_chunk_text')
-    @patch('backend.pipeline.ingestion.get_docling_chunker')
+    @patch('backend.pipeline.ingestion.chunking._fallback_chunk_text')
+    @patch('backend.pipeline.ingestion.chunking.get_docling_chunker')
     def test_chunk_text_uses_fallback_on_chunker_error(self, mock_get_chunker, mock_fallback):
         """If the Docling chunker blows up, we should fall back gracefully."""
         parse_file._last_document = MagicMock()
@@ -130,7 +130,7 @@ class TestIngestion:
 
     def test_find_new_chunks(self):
         """Test find_new_chunks deduplication."""
-        with patch('backend.pipeline.ingestion.chunk_exists') as mock_exists:
+        with patch('backend.pipeline.ingestion.chunking.chunk_exists') as mock_exists:
             mock_exists.return_value = False  # No chunks exist
 
             chunks = ["chunk1", "chunk2", "chunk1"]  # Duplicate in batch
@@ -145,8 +145,8 @@ class TestIngestion:
 
     def test_update_chunk_file_db(self):
         """Test update_chunk_file_db adds chunks to database."""
-        with patch('backend.pipeline.ingestion.chunk_exists') as mock_exists, \
-            patch('backend.pipeline.ingestion.add_chunk') as mock_add:
+        with patch('backend.pipeline.ingestion.chunking.chunk_exists') as mock_exists, \
+            patch('backend.pipeline.ingestion.chunking.add_chunk') as mock_add:
 
             mock_exists.return_value = False  # No chunks exist yet
 
@@ -175,9 +175,9 @@ class TestIngestion:
         assert error is not None
         assert "Text parsing error" in error
 
-    @patch('backend.pipeline.ingestion.get_docling_converter')
-    @patch('backend.pipeline.ingestion.tempfile.NamedTemporaryFile')
-    @patch('backend.pipeline.ingestion.os.unlink')
+    @patch('backend.pipeline.ingestion.chunking.get_docling_converter')
+    @patch('backend.pipeline.ingestion.chunking.tempfile.NamedTemporaryFile')
+    @patch('backend.pipeline.ingestion.chunking.os.unlink')
     def test_parse_file_docling_failure(self, mock_unlink, mock_temp_file, mock_converter):
         """Test parse_file error handling when Docling fails."""
         # Mock Docling converter to raise an exception
@@ -203,8 +203,8 @@ class TestIngestion:
         assert error is not None
         assert "Document parsing error" in error
 
-    @patch('backend.pipeline.ingestion.os.unlink')
-    @patch('backend.pipeline.ingestion.os.path.exists')
+    @patch('backend.pipeline.ingestion.chunking.os.unlink')
+    @patch('backend.pipeline.ingestion.chunking.os.path.exists')
     def test_cleanup_temp_file_success(self, mock_exists, mock_unlink):
         """Test successful temp file cleanup."""
         mock_exists.return_value = True
@@ -213,9 +213,9 @@ class TestIngestion:
 
         mock_unlink.assert_called_once_with("/tmp/test.pdf")
 
-    @patch('backend.pipeline.ingestion.os.unlink')
-    @patch('backend.pipeline.ingestion.os.path.exists')
-    @patch('backend.pipeline.ingestion.time.sleep')
+    @patch('backend.pipeline.ingestion.chunking.os.unlink')
+    @patch('backend.pipeline.ingestion.chunking.os.path.exists')
+    @patch('backend.pipeline.ingestion.chunking.time.sleep')
     def test_cleanup_temp_file_retry_on_failure(self, mock_sleep, mock_exists, mock_unlink):
         """Test temp file cleanup with retry on failure."""
         mock_exists.return_value = True
@@ -229,8 +229,8 @@ class TestIngestion:
         # Should have slept 4 times with increasing delays
         assert mock_sleep.call_count == 4
 
-    @patch('backend.pipeline.ingestion.os.unlink')
-    @patch('backend.pipeline.ingestion.os.path.exists')
+    @patch('backend.pipeline.ingestion.chunking.os.unlink')
+    @patch('backend.pipeline.ingestion.chunking.os.path.exists')
     def test_cleanup_temp_file_nonexistent(self, mock_exists, mock_unlink):
         """Test temp file cleanup when file doesn't exist."""
         mock_exists.return_value = False
@@ -270,8 +270,8 @@ class TestIngestion:
 
     def test_find_new_chunks_existing_chunks(self):
         """Test find_new_chunks when some chunks already exist."""
-        with patch('backend.pipeline.ingestion.chunk_exists') as mock_exists, \
-             patch('backend.pipeline.ingestion.generate_chunk_id') as mock_hash:
+        with patch('backend.pipeline.ingestion.chunking.chunk_exists') as mock_exists, \
+             patch('backend.pipeline.ingestion.chunking.generate_chunk_id') as mock_hash:
 
             # Mock hash function to return predictable values
             mock_hash.side_effect = lambda chunk: f"{chunk}_hash"
@@ -291,8 +291,8 @@ class TestIngestion:
 
     def test_update_chunk_file_db_existing_chunks(self):
         """Test update_chunk_file_db when chunks already exist for file."""
-        with patch('backend.pipeline.ingestion.chunk_exists') as mock_exists, \
-            patch('backend.pipeline.ingestion.add_chunk') as mock_add:
+        with patch('backend.pipeline.ingestion.chunking.chunk_exists') as mock_exists, \
+            patch('backend.pipeline.ingestion.chunking.add_chunk') as mock_add:
 
             # All chunks already exist for this file
             mock_exists.return_value = True

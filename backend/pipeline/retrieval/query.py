@@ -5,13 +5,14 @@ from typing import List, Dict, Any
 from sentence_transformers import SentenceTransformer, CrossEncoder
 from rank_bm25 import BM25Okapi
 import numpy as np
-from backend.pipeline.vectorstore import collection
+from backend.pipeline.vectorstore.vectorstore import collection
 from google import genai
 from google.genai import types
 from backend.utils.gpu_utils import get_device
+from backend.pipeline.generation.generation import generate_answer_with_gemini
 
  # Load environment variables from .env
-load_dotenv(dotenv_path=pathlib.Path(__file__).parent.parent.parent / ".env")
+load_dotenv(dotenv_path=pathlib.Path(__file__).resolve().parent.parent.parent.parent / ".env")
 
 # Use same embedding model as for documents
 _MODEL_NAME = "BAAI/bge-m3"
@@ -94,7 +95,7 @@ def reciprocal_rank_fusion(ranks1: List[Dict], ranks2: List[Dict], k: int = 60) 
             item = next((item for item in ranks2 if item.get('chunk_id', item.get('content', str(item))) == key), None)
         if item:
             item_copy = item.copy()
-            item_copy['rrf_score'] = score
+            item_copy['rrf_score'] = float(score)  # Convert numpy to float
             result.append(item_copy)
     
     return result
@@ -128,7 +129,7 @@ def search_similar_chunks(query_embedding: List[float], query_text: str, top_k: 
     bm25_chunks = []
     for idx in bm25_top_indices:
         chunk = all_chunks[idx].copy()
-        chunk['bm25_score'] = bm25_scores[idx]
+        chunk['bm25_score'] = float(bm25_scores[idx])  # Convert numpy to float
         chunk['distance'] = 1.0  # High distance for BM25 chunks (low similarity)
         bm25_chunks.append(chunk)
     
@@ -148,7 +149,7 @@ def search_similar_chunks(query_embedding: List[float], query_text: str, top_k: 
         chunk = {
             "content": doc,
             "metadata": meta,
-            "distance": dist,
+            "distance": float(dist),  # Convert numpy to float
             "filename": meta.get("filename", "unknown") if meta else "unknown",
             "chunk_id": meta.get("chunk_id") if meta else None
         }
@@ -170,69 +171,14 @@ def search_similar_chunks(query_embedding: List[float], query_text: str, top_k: 
     
     # Add scores and sort
     for i, chunk in enumerate(candidates):
-        chunk['rerank_score'] = rerank_scores[i]
+        chunk['rerank_score'] = float(rerank_scores[i])  # Convert numpy to float
     
     reranked = sorted(candidates, key=lambda x: x['rerank_score'], reverse=True)
     
     # Return top 3
     return reranked[:top_k]
 
-def generate_answer_with_gemini(query: str, chunks: List[Dict], model: str = "gemini-2.5-flash-lite") -> str:
-    """Generate answer using Google Gemini with retrieved chunks as context."""
-    # DEBUG: Print GEMINI_API_KEY (masked)
-    gemini_key = os.getenv("GEMINI_API_KEY")
-    if gemini_key:
-        print(f"[DEBUG] GEMINI_API_KEY loaded")
-    else:
-        print("[DEBUG] GEMINI_API_KEY is NOT loaded (None or empty)")
-
-    # Build context from chunks (use full content)
-    context_parts = []
-    for i, chunk in enumerate(chunks, 1):
-        content = chunk.get('content', '')
-        context_parts.append(f"Document {i} ({chunk['filename']}):\n{content}\n")
-
-    context = "\n".join(context_parts)
-
-    # Create the prompt
-    prompt = f"""You are a helpful assistant that answers questions based on the provided context.
-
-Context:
-{context}
-
-Question: {query}
-
-Instructions:
-- Answer the question based only on the information provided in the context above.
-- If the context doesn't contain enough information to answer the question, say so.
-- Be concise but comprehensive.
-- Cite the specific documents you used in your answer.
-- If multiple documents are relevant, mention them all.
-
-Answer:"""
-
-    # Get API key from environment
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY environment variable not set")
-
-    # Initialize Gemini client
-    client = genai.Client(api_key=api_key)
-
-    # Generate response
-    response = client.models.generate_content(
-        model=model,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            temperature=0.3,  # Slightly higher to encourage concise responses
-            max_output_tokens=1024,  # Limit response length to reduce token usage
-            thinking_config=types.ThinkingConfig(thinking_budget=0)  # Disable thinking for speed
-        )
-    )
-
-    return response.text
-
-def rag_query_pipeline(query_text: str, top_k: int = 3, model: str = "gemini-2.5-flash") -> Dict[str, Any]:
+def rag_query_pipeline(query_text: str, top_k: int = 3, model: str = "gemini-2.5-flash", language: str = "English") -> Dict[str, Any]:
     """
     Complete RAG pipeline: embed query, search, generate answer.
 
@@ -267,7 +213,7 @@ def rag_query_pipeline(query_text: str, top_k: int = 3, model: str = "gemini-2.5
 
         # Step 3: Generate answer with Gemini
         print("🤖 Generating answer with Gemini...")
-        answer = generate_answer_with_gemini(query_text, chunks, model)
+        answer = generate_answer_with_gemini(query_text, chunks, model, language)
 
         # Step 4: Format sources for display
         sources = []
@@ -275,8 +221,8 @@ def rag_query_pipeline(query_text: str, top_k: int = 3, model: str = "gemini-2.5
             sources.append({
                 'filename': chunk['filename'],
                 'content_preview': chunk.get('content', ''),
-                'distance': chunk.get('distance'),  # Can be None for BM25 chunks
-                'rerank_score': chunk.get('rerank_score')  # Include rerank score
+                'distance': float(chunk.get('distance')) if chunk.get('distance') is not None else None,  # Ensure float
+                'rerank_score': float(chunk.get('rerank_score')) if chunk.get('rerank_score') is not None else None  # Ensure float
             })
 
         # Build the RAG prompt for debugging (use full content)
@@ -310,3 +256,4 @@ Answer:"""
             'retrieval_count': 0,
             'rag_prompt': ""
         }
+

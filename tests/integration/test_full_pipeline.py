@@ -5,12 +5,12 @@ from unittest.mock import patch, MagicMock
 import shutil
 
 # Import pipeline functions
-from backend.pipeline.preprocessing import preprocess_file
-from backend.pipeline.ingestion import parse_file, chunk_text, find_new_chunks, update_chunk_file_db
-from backend.pipeline.embedding import embed_chunks_with_dedup
-from backend.pipeline.vectorstore import add_embeddings
-from backend.pipeline.deletion import delete_file_and_embeddings
-from backend.pipeline.query import rag_query_pipeline
+from backend.pipeline.ingestion.preprocessing import preprocess_file
+from backend.pipeline.ingestion.chunking import parse_file, chunk_text, find_new_chunks, update_chunk_file_db
+from backend.pipeline.ingestion.embedding import embed_chunks_with_dedup
+from backend.pipeline.vectorstore.vectorstore import add_embeddings
+from backend.pipeline.deletion.deletion import delete_file_and_embeddings
+from backend.pipeline.retrieval.query import rag_query_pipeline
 
 
 class TestFullPipeline:
@@ -27,12 +27,12 @@ class TestFullPipeline:
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     @patch('backend.utils.filehash_db.DB_PATH')
-    @patch('backend.pipeline.ingestion.chunk_exists')
-    @patch('backend.pipeline.embedding.collection')
-    @patch('backend.pipeline.vectorstore.collection')
-    @patch('backend.pipeline.deletion.open', new_callable=lambda: MagicMock())
-    @patch('backend.pipeline.deletion.generate_file_id')
-    @patch('backend.pipeline.deletion.delete_file_and_cleanup')
+    @patch('backend.pipeline.ingestion.chunking.chunk_exists')
+    @patch('backend.pipeline.ingestion.embedding.collection')
+    @patch('backend.pipeline.vectorstore.vectorstore.collection')
+    @patch('backend.pipeline.deletion.deletion.open', new_callable=lambda: MagicMock())
+    @patch('backend.pipeline.deletion.deletion.generate_file_id')
+    @patch('backend.pipeline.deletion.deletion.delete_file_and_cleanup')
     def test_full_pipeline_ingest_query_delete(self, mock_cleanup, mock_gen_id, mock_file_open,
                                                mock_vs_collection, mock_emb_collection,
                                                mock_chunk_exists, mock_db_path):
@@ -63,16 +63,16 @@ class TestFullPipeline:
         test_query = "What is this document about?"
 
         # Step 1: Preprocessing
-        with patch('backend.pipeline.preprocessing.init_db'), \
-             patch('backend.pipeline.preprocessing.file_exists', return_value=False):
+        with patch('backend.pipeline.ingestion.preprocessing.init_db'), \
+             patch('backend.pipeline.ingestion.preprocessing.file_exists', return_value=False):
 
             is_duplicate = preprocess_file(test_content, test_filename)
             assert not is_duplicate
 
         # Step 2: Parsing
-        with patch('backend.pipeline.ingestion.get_docling_converter'), \
-             patch('backend.pipeline.ingestion.tempfile.NamedTemporaryFile') as mock_temp, \
-             patch('backend.pipeline.ingestion.os.unlink'):
+        with patch('backend.pipeline.ingestion.chunking.get_docling_converter'), \
+             patch('backend.pipeline.ingestion.chunking.tempfile.NamedTemporaryFile') as mock_temp, \
+             patch('backend.pipeline.ingestion.chunking.os.unlink'):
 
             # Mock temp file
             mock_temp_file = MagicMock()
@@ -95,12 +95,12 @@ class TestFullPipeline:
         assert len(new_chunks) > 0
 
         # Step 5: Update chunk database
-        with patch('backend.pipeline.ingestion.add_chunk'):
+        with patch('backend.pipeline.ingestion.chunking.add_chunk'):
             update_chunk_file_db(chunks, "test_file_id")
 
         # Step 6: Embedding (mock the model)
-        with patch('backend.pipeline.embedding._model', MagicMock()) as mock_model, \
-             patch('backend.pipeline.embedding.get_device', return_value='cpu'):
+        with patch('backend.pipeline.ingestion.embedding._model', MagicMock()) as mock_model, \
+             patch('backend.pipeline.ingestion.embedding.get_device', return_value='cpu'):
 
             # Mock numpy array with tolist() method
             mock_embeddings = MagicMock()
@@ -116,9 +116,9 @@ class TestFullPipeline:
         add_embeddings(chunks, embeddings, metadatas, test_filename)
 
         # Step 8: Query pipeline (mock external dependencies)
-        with patch('backend.pipeline.query.get_embedding_model') as mock_emb_model, \
-             patch('backend.pipeline.query.search_similar_chunks') as mock_search, \
-             patch('backend.pipeline.query.generate_answer_with_gemini') as mock_generate:
+        with patch('backend.pipeline.retrieval.query.get_embedding_model') as mock_emb_model, \
+             patch('backend.pipeline.retrieval.query.search_similar_chunks') as mock_search, \
+             patch('backend.pipeline.retrieval.query.generate_answer_with_gemini') as mock_generate:
 
             mock_emb_model_instance = MagicMock()
             mock_embedding = MagicMock()

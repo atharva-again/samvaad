@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock
 import shutil
 
 # Import modules to test
-from backend.pipeline.preprocessing import preprocess_file, update_file_metadata_db
+from backend.pipeline.ingestion.preprocessing import preprocess_file, update_file_metadata_db
 
 
 class TestPreprocessing:
@@ -27,8 +27,8 @@ class TestPreprocessing:
         mock_db_path.__str__ = lambda: self.db_path
         mock_db_path.__fspath__ = lambda: self.db_path
         
-        with patch('backend.pipeline.preprocessing.init_db'):
-            with patch('backend.pipeline.preprocessing.file_exists', return_value=False):
+        with patch('backend.pipeline.ingestion.preprocessing.init_db'):
+            with patch('backend.pipeline.ingestion.preprocessing.file_exists', return_value=False):
                 content = b"test content"
                 filename = "test.txt"
 
@@ -42,8 +42,8 @@ class TestPreprocessing:
         mock_db_path.__str__ = lambda: self.db_path
         mock_db_path.__fspath__ = lambda: self.db_path
         
-        with patch('backend.pipeline.preprocessing.init_db'):
-            with patch('backend.pipeline.preprocessing.file_exists', return_value=True):
+        with patch('backend.pipeline.ingestion.preprocessing.init_db'):
+            with patch('backend.pipeline.ingestion.preprocessing.file_exists', return_value=True):
                 content = b"test content"
                 filename = "test.txt"
 
@@ -51,8 +51,8 @@ class TestPreprocessing:
                 result = preprocess_file(content, filename)
                 assert result == True
 
-    @patch('backend.pipeline.preprocessing.add_file')
-    @patch('backend.pipeline.preprocessing.generate_file_id')
+    @patch('backend.pipeline.ingestion.preprocessing.add_file')
+    @patch('backend.pipeline.ingestion.preprocessing.generate_file_id')
     def test_update_file_metadata_db(self, mock_generate_id, mock_add_file):
         """Test update_file_metadata_db calls add_file with correct parameters."""
         mock_generate_id.return_value = "test_file_id"
