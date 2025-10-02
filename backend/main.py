@@ -26,11 +26,16 @@ class TTSRequest(BaseModel):
 class TextQuery(BaseModel):
     query: str
 
-# Ingest endpoint for uploading PDF or text files
+# Ingest endpoint for uploading various document files
 @app.post("/ingest")
 async def ingest_file(file: UploadFile = File(...)):
 	"""
-	Accept a PDF or text file upload, parse, chunk, embed, and store in the database.
+	Accept various document file uploads and process them into the RAG system.
+	
+	Supported formats: PDF, DOCX, XLSX, PPTX, HTML, XHTML, CSV, TXT, MD, 
+	PNG, JPEG, TIFF, BMP, WEBP, WebVTT, WAV, MP3, and more.
+	
+	The system uses Docling for advanced document parsing and understanding.
 	"""
 	filename = file.filename
 	content_type = file.content_type

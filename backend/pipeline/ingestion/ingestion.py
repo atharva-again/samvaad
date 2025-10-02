@@ -59,6 +59,7 @@ def ingest_file_pipeline(filename, content_type, contents):
     new_chunks = find_new_chunks(chunks, file_id)
     
     if not new_chunks:
+        # File has already been processed - this is not an error
         return {
             "filename": filename,
             "content_type": content_type,
@@ -66,7 +67,7 @@ def ingest_file_pipeline(filename, content_type, contents):
             "num_chunks": len(chunks),
             "new_chunks_embedded": 0,
             "chunk_preview": chunks[:3],
-            "error": "No new chunks to process",
+            "error": None,  # Not an error - file already processed
         }
     
     # Extract chunk texts for embedding
@@ -86,13 +87,13 @@ def ingest_file_pipeline(filename, content_type, contents):
             "error": "No new embeddings",
         }
     
-    # Store embeddings in ChromaDB
+    # Store embeddings in ChromaDB (store only basename in metadata)
     new_chunks_to_store = [chunks_to_embed[i] for i in embed_indices]
-    new_metadatas = [{"filename": filename, "chunk_id": chunk_id, "file_id": file_id} for chunk, chunk_id in new_chunks]
-    add_embeddings(new_chunks_to_store, embeddings, new_metadatas, filename=filename)
+    new_metadatas = [{"filename": os.path.basename(filename), "chunk_id": chunk_id, "file_id": file_id} for chunk, chunk_id in new_chunks]
+    add_embeddings(new_chunks_to_store, embeddings, new_metadatas, filename=os.path.basename(filename))
     
-    # Update file metadata
-    add_file(file_id, filename)
+    # Update file metadata (store only basename, not full path)
+    add_file(file_id, os.path.basename(filename))
     
     # Update chunk-file mapping
     update_chunk_file_db(chunks, file_id)

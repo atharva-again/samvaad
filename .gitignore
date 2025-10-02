@@ -211,7 +211,11 @@ backend/utils/filehashes.sqlite3
 #Node Modules
 node_modules/
 dist/
-.gitignore
 
 #frontend folder
 frontend/
+
+#vosk models
+vosk-*
+
+.gitignore

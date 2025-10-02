@@ -26,8 +26,9 @@ rank-bm25==0.2.2
 --extra-index-url https://download.pytorch.org/whl/cu121
 torch
 
-# Real-time ASR
-RealtimeSTT==0.3.104
+# Lightweight ASR (updated to latest available version)
+vosk==0.3.45
+pyaudio==0.2.13
 
 # Text-to-Speech
 kokoro-onnx==0.3.1

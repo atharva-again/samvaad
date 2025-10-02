@@ -39,11 +39,18 @@ def print_help():
     print("  /remove <file> or r <file>  - Remove a file and its embeddings from the database")
     print("  /help or h                  - Show this help message")
     print("  /exit or e                  - Exit the CLI")
+    print("\nSupported file formats:")
+    print("  Documents: PDF, DOCX, XLSX, PPTX, HTML, XHTML, CSV, TXT, MD")
+    print("  Images: PNG, JPEG, TIFF, BMP, WEBP")
+    print("  Audio: WAV, MP3")
+    print("  Other: WebVTT (subtitles)")
     print("\nExamples:")
     print("  q what is the theory of ballism")
     print("  v")
     print("  i sample.pdf")
-    print("  i folder/sample.pdf")
+    print("  i documents/report.docx")
+    print("  i data/spreadsheet.xlsx")
+    print("  i images/diagram.png")
     print("  r sample.pdf")
     print("\nNote: File paths are automatically resolved to the data/documents/ directory.")
     print("You can provide just the filename or relative path within the documents folder.")
@@ -170,7 +177,10 @@ def process_file_interactive(file_path):
     for i, chunk in enumerate(result['chunk_preview']):
         print(f"Chunk {i+1}:\n{chunk}\n{'-'*40}")
 
-    print(f"Embedded {result['new_chunks_embedded']} new chunks.")
+    if result['new_chunks_embedded'] == 0:
+        print("File already processed - all chunks exist in database.")
+    else:
+        print(f"Embedded {result['new_chunks_embedded']} new chunks.")
     print("File processed successfully.")
 
 

@@ -86,13 +86,13 @@ def ingest_file_pipeline(filename, content_type, contents):
             "error": "No new embeddings",
         }
     
-    # Store embeddings in ChromaDB
+    # Store embeddings in ChromaDB (store only basename in metadata)
     new_chunks_to_store = [chunks_to_embed[i] for i in embed_indices]
-    new_metadatas = [{"filename": filename, "chunk_id": chunk_id, "file_id": file_id} for chunk, chunk_id in new_chunks]
-    add_embeddings(new_chunks_to_store, embeddings, new_metadatas, filename=filename)
+    new_metadatas = [{"filename": os.path.basename(filename), "chunk_id": chunk_id, "file_id": file_id} for chunk, chunk_id in new_chunks]
+    add_embeddings(new_chunks_to_store, embeddings, new_metadatas, filename=os.path.basename(filename))
     
-    # Update file metadata
-    add_file(file_id, filename)
+    # Update file metadata (store only basename, not full path)
+    add_file(file_id, os.path.basename(filename))
     
     # Update chunk-file mapping
     update_chunk_file_db(chunks, file_id)
