@@ -24,6 +24,13 @@ jobs:
           cache: 'pip'
           cache-dependency-path: requirements-cpu.txt
 
+      # Install PortAudio for PyAudio
+      - name: Install PortAudio dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y portaudio19-dev
+      
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -57,6 +64,13 @@ jobs:
           key: pytorch-gpu-${{ runner.os }}-py311-${{ hashFiles('requirements-gpu.txt') }}
           restore-keys: |
             pytorch-gpu-${{ runner.os }}-py311-
+
+      # Install PortAudio for PyAudio
+      - name: Install PortAudio dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y portaudio19-dev
+   
 
       - name: Install dependencies
         run: |
