@@ -178,7 +178,7 @@ def search_similar_chunks(query_embedding: List[float], query_text: str, top_k: 
     # Return top 3
     return reranked[:top_k]
 
-def rag_query_pipeline(query_text: str, top_k: int = 3, model: str = "gemini-2.5-flash", language: str = "English") -> Dict[str, Any]:
+def rag_query_pipeline(query_text: str, top_k: int = 3, model: str = "gemini-2.5-flash") -> Dict[str, Any]:
     """
     Complete RAG pipeline: embed query, search, generate answer.
 
@@ -213,7 +213,7 @@ def rag_query_pipeline(query_text: str, top_k: int = 3, model: str = "gemini-2.5
 
         # Step 3: Generate answer with Gemini
         print("🤖 Generating answer with Gemini...")
-        answer = generate_answer_with_gemini(query_text, chunks, model, language)
+        answer = generate_answer_with_gemini(query_text, chunks, model)
 
         # Step 4: Format sources for display
         sources = []

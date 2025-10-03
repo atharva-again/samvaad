@@ -68,7 +68,7 @@ async def voice_query(request: VoiceQuery):
     """
     Accept a voice-transcribed query with detected language, process through RAG pipeline.
     """
-    result = rag_query_pipeline(request.query, model="gemini-2.5-flash", language=request.language)
+    result = rag_query_pipeline(request.query, model="gemini-2.5-flash")
     return result
 
 # TTS endpoint for voice responses

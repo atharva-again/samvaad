@@ -59,7 +59,6 @@ def ingest_file_pipeline(filename, content_type, contents):
     new_chunks = find_new_chunks(chunks, file_id)
     
     if not new_chunks:
-        # File has already been processed - this is not an error
         return {
             "filename": filename,
             "content_type": content_type,
@@ -67,7 +66,7 @@ def ingest_file_pipeline(filename, content_type, contents):
             "num_chunks": len(chunks),
             "new_chunks_embedded": 0,
             "chunk_preview": chunks[:3],
-            "error": None,  # Not an error - file already processed
+            "error": "No new chunks to process",
         }
     
     # Extract chunk texts for embedding

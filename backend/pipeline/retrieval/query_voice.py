@@ -6,8 +6,11 @@ import torch
 import threading
 import time
 import json
+import numpy as np
+import collections
 # Defer heavy imports until needed
-# from vosk import Model, KaldiRecognizer
+# from faster_whisper import WhisperModel
+# import webrtcvad
 # import pyaudio
 from backend.pipeline.retrieval.query import rag_query_pipeline
 
@@ -17,14 +20,15 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", message='.*pkg_resources.*')
 warnings.filterwarnings("ignore", message='.*deprecated.*')
 
-# Also suppress vosk logging warnings
+# Also suppress Whisper logging warnings
 import logging
-logging.getLogger('vosk').setLevel(logging.ERROR)
+logging.getLogger('faster_whisper').setLevel(logging.ERROR)
+logging.getLogger('whisper').setLevel(logging.ERROR)
 
 
 def clean_transcription(text):
     """
-    Clean up speech recognition transcription using a lightweight language model.
+    Clean up speech recognition transcription using Gemini-2.5-flash-lite.
     Removes repetitions, filler words, noise, and improves readability.
     
     Args:
@@ -36,138 +40,122 @@ def clean_transcription(text):
     if not text or not text.strip():
         return text
     
-    # Use a global cache for the model to avoid reloading
-    if not hasattr(clean_transcription, '_model'):
+    # Use a global cache for the client to avoid reinitializing
+    if not hasattr(clean_transcription, '_client'):
         try:
-            from transformers import pipeline
-            # Detect GPU availability
-            device = 0 if torch.cuda.is_available() else -1
-            print(f"🔄 Loading lightweight text cleaning model on {'GPU' if device == 0 else 'CPU'}...")
-            clean_transcription._model = pipeline(
-                "text2text-generation",
-                model="google/flan-t5-small",
-                device=device,
-                max_length=512
-            )
-            print("✅ Text cleaning model loaded.")
+            from google import genai
+            from google.genai import types
+            
+            # Get API key from environment
+            api_key = os.getenv("GEMINI_API_KEY")
+            if not api_key:
+                print("⚠️ GEMINI_API_KEY environment variable not set")
+                print("🔄 Returning original text...")
+                return text
+            
+            print("🔄 Initializing Gemini client for text cleaning...")
+            clean_transcription._client = genai.Client(api_key=api_key)
+            clean_transcription._types = types  # Store types module globally
+            print("✅ Gemini client ready for text cleaning.")
         except Exception as e:
-            print(f"⚠️ Failed to load text cleaning model: {e}")
+            print(f"⚠️ Failed to initialize Gemini client: {e}")
             print("🔄 Returning original text...")
             return text
     
     try:
-        # Prepare prompt for the model
-        prompt = f"Clean this speech transcription by removing repetitions, filler words, noise, and fixing errors. Keep the meaning intact: {text}"
+        # Prepare prompt for Gemini
+        prompt = f"This text is a user query transcribed from speech recognition. I need to use it to retrieve relevant documents from my RAG system. Please clean and summarize it, while preserving original intent and keywords. Only add additional context and words if necessary. Return in the same language and only a single sentence: \n\n{text}"
         
-        # Generate cleaned text
-        result = clean_transcription._model(prompt, max_length=256, num_beams=2, early_stopping=True)
-        cleaned = result[0]['generated_text'].strip()
+        # Generate cleaned text using Gemini
+        response = clean_transcription._client.models.generate_content(
+            model="gemini-2.5-flash-lite",
+            contents=prompt,
+            config=clean_transcription._types.GenerateContentConfig(
+                temperature=0.1,  # Low temperature for consistent cleaning
+                max_output_tokens=256,  # Limit response length
+                thinking_config=clean_transcription._types.ThinkingConfig(thinking_budget=0)  # Disable thinking for speed
+            )
+        )
         
-        # Post-process: remove any model artifacts
-        cleaned = cleaned.replace("Cleaned transcription: ", "").replace("Clean transcription: ", "")
+        cleaned = response.text.strip()
+        
+        # Post-process: remove any model artifacts or extra formatting
+        cleaned = cleaned.strip('"').strip("'")
         
         return cleaned if cleaned else text
     
     except Exception as e:
-        print(f"⚠️ Error during model-based cleaning: {e}")
+        print(f"⚠️ Error during Gemini-based cleaning: {e}")
         print("🔄 Returning original text...")
         return text
 
 
-
-
-
-def download_vosk_model(model_name="vosk-model-small-en-in-0.4"):
-    """Download Vosk model if not already present."""
-    import urllib.request
-    import zipfile
-    
-    model_path = os.path.join(os.path.dirname(__file__), model_name)
-    if os.path.exists(model_path):
-        print("✅ Vosk model already downloaded.")
-        return model_path
-    
-    print("🔄 Downloading Vosk model (this may take a moment on first run)...")
-    
-    # Create models directory if it doesn't exist
-    models_dir = os.path.dirname(__file__)
-    os.makedirs(models_dir, exist_ok=True)
-    
-    # Download the model
-    url = f"https://alphacephei.com/vosk/models/{model_name}.zip"
-    zip_path = os.path.join(models_dir, f"{model_name}.zip")
-    
+def initialize_whisper_model(model_size="base", device="auto", compute_type="default"):
+    """Initialize Faster Whisper model for speech recognition."""
     try:
-        urllib.request.urlretrieve(url, zip_path)
+        from faster_whisper import WhisperModel
         
-        # Extract the model
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(models_dir)
+        # Auto-detect device
+        if device == "auto":
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            compute_type = "float16" if device == "cuda" else "int8"
         
-        # Clean up zip file
-        os.remove(zip_path)
-        
-        print("✅ Vosk model downloaded successfully.")
-        return model_path
+        print(f"🔄 Loading Whisper model ({model_size}) on {device}...")
+        model = WhisperModel(model_size, device=device, compute_type=compute_type)
+        print("✅ Whisper model loaded successfully.")
+        return model
     except Exception as e:
-        print(f"❌ Failed to download Vosk model: {e}")
-        # Fallback to older model if latest fails
-        print("🔄 Falling back to vosk-model-en-us-0.22...")
-        return download_vosk_model("vosk-model-en-us-0.22")
+        print(f"❌ Failed to load Whisper model: {e}")
+        return None
 
 
 def voice_query_cli(language: str = "en", model: str = "gemini-2.5-flash"):
     """
-    CLI function for voice queries using Vosk.
-    Records audio, transcribes speech, then processes the query through RAG.
+    CLI function for voice queries using Whisper ASR.
+    Records audio until silence is detected, then transcribes the complete audio.
     """
-    print("🎤 Starting voice query mode with Indian English support...")
-    print("You have 10 seconds to start speaking after recording begins.")
-    print("Recording will stop automatically after 3 seconds of silence.")
+    print("🎤 Starting voice query mode with Whisper ASR (Indian English optimized)...")
     print("=" * 60)
 
     final_transcription = ""
     try:
         use_gpu = torch.cuda.is_available()
         if use_gpu:
-            print("🔧 GPU detected (not used for Vosk).")
+            print("🔧 GPU detected and will be used for Whisper.")
         else:
-            print("🔧 Using CPU.")
+            print("🔧 Using CPU for Whisper.")
     except Exception as e:
         print("⚠️  GPU detection failed: {}".format(e))
     
-    # Preload the text cleaning model to avoid delay later
-    print("🔄 Preloading text cleaning model...")
-    _ = clean_transcription("test")  # This loads the model
-    print("✅ Text cleaning model ready.")
     
     # Initialize audio variables
     audio = None
     stream = None
+    vad = None
     
     try:
         print("\n🎙️  Setting up voice recognition...")
         
-        # Import Vosk dependencies
+        # Import Whisper and VAD dependencies
         try:
-            from vosk import Model, KaldiRecognizer
+            from faster_whisper import WhisperModel
+            import webrtcvad
             import pyaudio
         except Exception as import_error:
-            print("❌ Failed to import Vosk/PyAudio: {}".format(import_error))
-            print("Please install vosk and pyaudio: pip install vosk pyaudio")
+            print("❌ Failed to import required packages: {}".format(import_error))
+            print("Please install: pip install faster-whisper webrtcvad pyaudio")
             return
         
-        # Download and load Vosk model
-        model_path = download_vosk_model()
-        if not model_path:
+        # Initialize Whisper model
+        whisper_model = initialize_whisper_model(
+            model_size="base",  # Good balance of speed and accuracy
+            device="auto"
+        )
+        if not whisper_model:
             return
-            
-        try:
-            vosk_model = Model(model_path)
-            recognizer = KaldiRecognizer(vosk_model, 16000)
-        except Exception as model_error:
-            print("❌ Failed to load Vosk model: {}".format(model_error))
-            return
+        
+        # Initialize VAD for speech detection
+        vad = webrtcvad.Vad(2)  # Aggressiveness level 2 (0-3, higher = more aggressive)
         
         # Setup PyAudio
         try:
@@ -176,7 +164,7 @@ def voice_query_cli(language: str = "en", model: str = "gemini-2.5-flash"):
                               channels=1,
                               rate=16000,
                               input=True,
-                              frames_per_buffer=8192)
+                              frames_per_buffer=320)  # 20ms frames for VAD
         except Exception as audio_error:
             print("❌ Failed to initialize audio stream: {}".format(audio_error))
             print("Make sure you have a microphone connected and permissions are granted.")
@@ -185,18 +173,21 @@ def voice_query_cli(language: str = "en", model: str = "gemini-2.5-flash"):
         print("✅ Voice recognition ready.")
         print("🎙️  Start speaking now... (you have 10 seconds to begin speaking)")
         print("Recording will stop automatically after 3 seconds of silence.")
+        print("*" * 60)
 
-        # Track recording state
+        # Audio processing variables
+        audio_frames = []  # Store all audio frames
         speech_detected = False
-        transcription_parts = []
+        silence_frames = 0
         headway_expired = False
-        silence_start_time = None
-
-        # Start the timer only after the user is prompted to speak
+        
+        # Timing variables
         recording_start_time = time.time()
-
+        
         while True:
-            data = stream.read(4096, exception_on_overflow=False)
+            # Read 20ms of audio (320 bytes at 16kHz, 16-bit)
+            data = stream.read(320, exception_on_overflow=False)
+            audio_frames.append(data)
             
             # Check if headway period has expired (10 seconds)
             if not headway_expired and time.time() - recording_start_time > 10.0:
@@ -205,38 +196,56 @@ def voice_query_cli(language: str = "en", model: str = "gemini-2.5-flash"):
                     print("\n🛑 No speech detected within 10 seconds. Recording stopped.")
                     break
             
-            if recognizer.AcceptWaveform(data):
-                result = json.loads(recognizer.Result())
-                text = result.get("text", "").strip()
-                
-                if text:
-                    speech_detected = True
-                    silence_start_time = None  # Reset silence timer when speech is detected
-                    transcription_parts.append(text)
-                    final_transcription = " ".join(transcription_parts).strip()
-                    print("\r🔊 {}".format(final_transcription), end="", flush=True)
-                else:
-                    # No speech in this chunk
-                    if silence_start_time is None:
-                        silence_start_time = time.time()
-                    elif speech_detected and time.time() - silence_start_time > 3.0:
-                        # 3 seconds of silence after speech was detected
-                        print("\n🛑 Recording stopped (3 seconds of silence detected).")
-                        break
+            # Convert to bytes for VAD (expects 16-bit PCM)
+            is_speech = vad.is_speech(data, 16000)
+            
+            if is_speech:
+                speech_detected = True
+                silence_frames = 0
             else:
-                # Partial results for real-time feedback
-                partial = json.loads(recognizer.PartialResult())
-                partial_text = partial.get("partial", "").strip()
-                if partial_text:
-                    # Combine previous transcription with current partial
-                    current_display = final_transcription + (" " + partial_text if final_transcription else partial_text)
-                    print("\r🔊 {}...".format(current_display), end="", flush=True)
-                    silence_start_time = None  # Reset silence timer during partial speech
+                if speech_detected:
+                    silence_frames += 1
+                    # If we've had 3 seconds of silence (150 frames * 20ms = 3 seconds)
+                    if silence_frames > 150:
+                        print("\n� Recording stopped (3 seconds of silence detected).")
+                        break
             
             # Safety timeout: stop after 60 seconds total
             if time.time() - recording_start_time > 60.0:
                 print("\n🛑 Recording stopped (60 second safety timeout).")
                 break
+        
+        # Transcribe the complete recorded audio
+        if speech_detected and audio_frames:
+            print("🔄 Transcribing audio...")
+            
+            # Convert audio frames to numpy array
+            audio_data = b''.join(audio_frames)
+            audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
+            
+            try:
+                segments, info = whisper_model.transcribe(
+                    audio_np,
+                    language="none",
+                    vad_filter=True,
+                    vad_parameters=dict(threshold=0.5, min_speech_duration_ms=250),
+                    initial_prompt="This is a user asking questions about documents in various languages and accents."
+                )
+                
+                # Collect all transcribed text
+                for segment in segments:
+                    final_transcription += segment.text
+                
+                final_transcription = final_transcription.strip()
+                
+                if final_transcription:
+                    print("✅ Transcription complete.")
+                else:
+                    print("⚠️ No speech detected in transcription.")
+                    
+            except Exception as transcribe_error:
+                print(f"❌ Transcription error: {transcribe_error}")
+                return
         
         # Cleanup audio resources
         try:
@@ -292,7 +301,7 @@ def voice_query_cli(language: str = "en", model: str = "gemini-2.5-flash"):
         try:
             # Process through RAG pipeline
             print("🔄 Processing query through RAG pipeline...")
-            result = rag_query_pipeline(cleaned_transcription, model=model, language=language)
+            result = rag_query_pipeline(cleaned_transcription, model=model)
 
             # Display results
             print("\n🤖 ANSWER: {}".format(result['answer']))
@@ -320,3 +329,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     voice_query_cli(language=args.language, model=args.model)
+    
+    #print(clean_transcription("Um, can you tell me, like, the summary of the anthropic threat report and what it says about AI risks?"))

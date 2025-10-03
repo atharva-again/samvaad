@@ -2,7 +2,14 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 # Import modules to test
-from backend.pipeline.retrieval.query import embed_query, search_similar_chunks, generate_answer_with_gemini, rag_query_pipeline
+from backend.pipeline.retrieval.query import (
+    embed_query,
+    search_similar_chunks,
+    generate_answer_with_gemini,
+    rag_query_pipeline,
+    summarize_chunk,
+    reciprocal_rank_fusion,
+)
 
 
 class TestQuery:
@@ -121,7 +128,7 @@ class TestQuery:
         # Verify sub-functions were called
         mock_embed_query.assert_called_once_with(query_text)
         mock_search_chunks.assert_called_once()  # Details of call checked implicitly by mock_generate_answer
-        mock_generate_answer.assert_called_once_with(query_text, mock_chunks, "gemini-2.5-flash", "English")
+        mock_generate_answer.assert_called_once_with(query_text, mock_chunks, "gemini-2.5-flash")
 
         # Verify RAG prompt structure
         assert 'Context:' in result['rag_prompt']
@@ -138,3 +145,32 @@ class TestQuery:
         assert "Error processing query" in result['answer']
         assert result['sources'] == []
         assert result['retrieval_count'] == 0
+
+    def test_summarize_chunk_preserves_short_text(self):
+        """summarize_chunk should return short text unchanged."""
+        text = "Short chunk."
+        assert summarize_chunk(text, max_chars=50) == text
+
+    def test_summarize_chunk_truncates_on_sentence_boundary(self):
+        """When truncating, prefer the last sentence-ending punctuation."""
+        text = "First sentence. Second sentence with more details. Third sentence continues."
+        summary = summarize_chunk(text, max_chars=35)
+        assert summary == "First sentence...."
+
+    def test_reciprocal_rank_fusion_combines_lists(self):
+        """RRF should reward items appearing in both rankings."""
+        list_a = [
+            {"chunk_id": "A", "content": "A"},
+            {"chunk_id": "B", "content": "B"},
+        ]
+        list_b = [
+            {"chunk_id": "B", "content": "B"},
+            {"chunk_id": "C", "content": "C"},
+        ]
+
+        fused = reciprocal_rank_fusion(list_a, list_b, k=0)
+
+        # Item B appears in both lists and should rank first
+        assert len(fused) == 3
+        assert fused[0]['chunk_id'] == 'B'
+        assert fused[0]['rrf_score'] > fused[1]['rrf_score'] >= fused[2]['rrf_score']

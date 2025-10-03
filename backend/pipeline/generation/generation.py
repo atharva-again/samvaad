@@ -3,7 +3,7 @@ from google.genai import types
 from typing import List, Dict, Any
 import os
 
-def generate_answer_with_gemini(query: str, chunks: List[Dict], model: str = "gemini-2.5-flash", language: str = "English") -> str:
+def generate_answer_with_gemini(query: str, chunks: List[Dict], model: str = "gemini-2.5-flash") -> str:
     """Generate answer using Google Gemini with retrieved chunks as context."""
     # DEBUG: Print GEMINI_API_KEY (masked)
     gemini_key = os.getenv("GEMINI_API_KEY")
@@ -23,20 +23,20 @@ def generate_answer_with_gemini(query: str, chunks: List[Dict], model: str = "ge
     # Create the prompt
     prompt = f"""You are a helpful assistant that answers questions based on the provided context.
 
-Context:
-{context}
+                Context:
+                {context}
 
-Question: {query}
+                Question: {query}
 
-Instructions:
-- Answer the question based only on the information provided in the context above.
-- If the context doesn't contain enough information to answer the question, say so.
-- Be concise but comprehensive.
-- Cite the specific documents you used in your answer.
-- If multiple documents are relevant, mention them all.
-- Please respond in {language}.
+                Instructions:
+                - Answer the question based only on the information provided in the context above.
+                - If the context doesn't contain enough information to answer the question, say so.
+                - Be concise but comprehensive.
+                - Cite the specific documents you used in your answer.
+                - If multiple documents are relevant, mention them all.
+                - Respond in the same language and style as the question.
 
-Answer:"""
+                Answer:"""
 
     # Get API key from environment
     api_key = os.getenv("GEMINI_API_KEY")

@@ -2,7 +2,16 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 # Import modules to test
-from backend.pipeline.ingestion.chunking import parse_file, chunk_text, find_new_chunks, update_chunk_file_db, _cleanup_temp_file
+from backend.pipeline.ingestion.chunking import (
+    parse_file,
+    chunk_text,
+    find_new_chunks,
+    update_chunk_file_db,
+    _cleanup_temp_file,
+    _fallback_chunk_text,
+    get_docling_converter,
+    get_docling_chunker,
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -304,3 +313,56 @@ class TestIngestion:
 
             # Should not call add_chunk for any chunk
             mock_add.assert_not_called()
+
+    @patch('backend.pipeline.ingestion.chunking.DocumentConverter')
+    def test_get_docling_converter_singleton(self, mock_converter_cls):
+        """Document converter should be instantiated once and cached."""
+        instance = MagicMock()
+        mock_converter_cls.return_value = instance
+
+        first = get_docling_converter()
+        second = get_docling_converter()
+
+        assert first is instance
+        assert second is instance
+        mock_converter_cls.assert_called_once()
+
+    @patch('backend.pipeline.ingestion.chunking.AutoTokenizer.from_pretrained')
+    @patch('backend.pipeline.ingestion.chunking.HierarchicalChunker')
+    @patch('backend.pipeline.ingestion.chunking.HuggingFaceTokenizer')
+    def test_get_docling_chunker_singleton(self, mock_hf_tokenizer, mock_chunker_cls, mock_auto_from_pretrained):
+        """Docling chunker should be created once with shared tokenizer."""
+        tokenizer_instance = MagicMock()
+        chunker_instance = MagicMock()
+        mock_auto_from_pretrained.return_value = MagicMock()
+        mock_hf_tokenizer.return_value = tokenizer_instance
+        mock_chunker_cls.return_value = chunker_instance
+
+        first = get_docling_chunker()
+        second = get_docling_chunker()
+
+        assert first is chunker_instance
+        assert second is chunker_instance
+        mock_hf_tokenizer.assert_called_once()
+        mock_chunker_cls.assert_called_once()
+        _, kwargs = mock_chunker_cls.call_args
+        assert kwargs['tokenizer'] is tokenizer_instance
+        assert kwargs['merge_list_items'] is False
+
+    @patch('backend.pipeline.ingestion.chunking.AutoTokenizer.from_pretrained')
+    def test_fallback_chunk_text_caches_tokenizer(self, mock_auto_from_pretrained):
+        """The fallback tokenizer should be cached across calls."""
+        mock_tokenizer = MagicMock()
+        mock_tokenizer.encode.return_value = [1, 2, 3, 4]
+        mock_tokenizer.decode.side_effect = lambda tokens: " ".join(f"tok{i}" for i in tokens)
+        mock_auto_from_pretrained.return_value = mock_tokenizer
+
+        # Reset cached attributes if present
+        for attr in ("_tokenizer", "_tokenizer_lock"):
+            if hasattr(_fallback_chunk_text, attr):
+                delattr(_fallback_chunk_text, attr)
+
+        _fallback_chunk_text("one two three four", chunk_size=2)
+        _fallback_chunk_text("five six seven eight", chunk_size=2)
+
+        assert mock_auto_from_pretrained.call_count == 1

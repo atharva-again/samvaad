@@ -25,3 +25,12 @@ class TestGeneration:
         answer = generate_answer_with_gemini("test query", chunks)
 
         assert answer == "Generated answer"
+
+    @patch('backend.pipeline.generation.generation.genai')
+    @patch('os.getenv', return_value=None)
+    def test_generate_answer_missing_api_key(self, mock_getenv, mock_genai):
+        """Expect a ValueError when GEMINI_API_KEY is absent."""
+        chunks = [{"content": "test content", "filename": "test.txt"}]
+
+        with pytest.raises(ValueError):
+            generate_answer_with_gemini("test query", chunks)

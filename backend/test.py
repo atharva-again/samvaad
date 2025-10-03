@@ -65,7 +65,7 @@ def load_query_dependencies():
 def load_ingestion_dependencies():
     """Lazy load ingestion-related dependencies."""
     
-    from backend.pipeline.ingest_pipeline import ingest_file_pipeline
+    from backend.pipeline.ingestion.ingestion import ingest_file_pipeline
     return ingest_file_pipeline
 
 
@@ -97,11 +97,13 @@ def handle_query_interactive(query_text, top_k=3, model="gemini-2.5-flash"):
     start_time = time.perf_counter()
     result = rag_query_pipeline(query_text, top_k=top_k, model=model)
     total_time = time.perf_counter() - start_time
-    print(f"⏱️  Total query time: {total_time:.4f} seconds")
+    print(f"⏱️  Total query time: {total_time:.4f} seconds\n")
 
     # Display results
+    print("=" * 60)
     print(f"\n📝 QUERY: {result['query']}")
     print(f"\n🤖 ANSWER: {result['answer']}")
+    print("=" * 60)
 
     if result['success'] and result['sources']:
         print(f"\n📚 SOURCES ({result['retrieval_count']} chunks retrieved):")

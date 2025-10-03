@@ -27,8 +27,9 @@ rank-bm25==0.2.2
 torch
 
 # Lightweight ASR (updated to latest available version)
-vosk==0.3.45
+faster-whisper==1.2.0
 pyaudio==0.2.13
+webrtcvad==2.0.10
 
 # Text-to-Speech
 kokoro-onnx==0.3.1
