@@ -45,9 +45,6 @@ def get_docling_chunker():
     """Get a singleton Docling HierarchicalChunker instance configured for 200 tokens, no overlap."""
     global _chunker
     if _chunker is None:
-        # Use HierarchicalChunker for document-based chunking without overlap
-        from docling_core.transforms.chunker.hierarchical_chunker import HierarchicalChunker
-        
         # Use the same tokenizer as before for consistency
         tokenizer = HuggingFaceTokenizer(
             tokenizer=AutoTokenizer.from_pretrained("BAAI/bge-m3"),
@@ -176,7 +173,7 @@ def chunk_text(text: str, chunk_size: int = 200) -> List[str]:
     """
     Use Docling's hierarchical chunker with 200 tokens, no overlap.
     If we have a DoclingDocument from parsing, use it directly.
-    For simple text, create a basic DoclingDocument and chunk it.
+    For simple text, use fallback chunking directly.
     """
     try:
         # Check if we have a DoclingDocument from the previous parse_file call
@@ -197,31 +194,9 @@ def chunk_text(text: str, chunk_size: int = 200) -> List[str]:
             
             return chunk_texts
         else:
-            # For simple text files, create a basic DoclingDocument
-            from docling_core.types.doc import DoclingDocument, DocItemLabel, TextItem
-            
-            # Create a basic DoclingDocument from the text
-            doc = DoclingDocument()
-            
-            # Add the text as a single text item
-            text_item = TextItem(
-                label=DocItemLabel.TEXT,
-                text=text
-            )
-            doc.texts.append(text_item)
-            
-            # Get the chunker and process the document
-            chunker = get_docling_chunker()
-            chunks = list(chunker.chunk(dl_doc=doc))
-            
-            # Extract the contextualized text from chunks
-            chunk_texts = []
-            for chunk in chunks:
-                chunk_text = chunker.contextualize(chunk=chunk)
-                if chunk_text.strip():
-                    chunk_texts.append(chunk_text.strip())
-            
-            return chunk_texts
+            # For simple text files, use fallback chunking directly
+            print("Using fallback chunking for text file")
+            return _fallback_chunk_text(text, chunk_size)
         
     except Exception as e:
         # Fallback to simple splitting if Docling chunking fails
@@ -260,7 +235,9 @@ def _fallback_chunk_text(text: str, chunk_size: int = 200) -> List[str]:
         if num_tokens(text) <= chunk_size:
             return [text.strip()] if text.strip() else []
 
-        for separator in separators:
+        for idx, separator in enumerate(separators):
+            if separator == "":
+                break
             if separator in text:
                 splits = text.split(separator)
                 result = []
@@ -273,7 +250,7 @@ def _fallback_chunk_text(text: str, chunk_size: int = 200) -> List[str]:
                             result.append(current_chunk.strip())
                         if num_tokens(split_with_sep) > chunk_size:
                             split_for_recursion = split if separator != "" else split_with_sep
-                            recursive_splits = split_text_recursive(split_for_recursion, separators[separators.index(separator)+1:])
+                            recursive_splits = split_text_recursive(split_for_recursion, separators[idx+1:])
                             result.extend(recursive_splits)
                             current_chunk = ""
                         else:

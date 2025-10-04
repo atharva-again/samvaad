@@ -34,14 +34,23 @@ def print_help():
     """
     print("\nAvailable commands:")
     print("  /query <text> or q <text>    - Query the knowledge base with natural language")
+    print("  /voice or v                 - Query the knowledge base with voice (ASR)")
     print("  /ingest <file> or i <file>  - Process and ingest a file into the knowledge base")
     print("  /remove <file> or r <file>  - Remove a file and its embeddings from the database")
     print("  /help or h                  - Show this help message")
     print("  /exit or e                  - Exit the CLI")
+    print("\nSupported file formats:")
+    print("  Documents: PDF, DOCX, XLSX, PPTX, HTML, XHTML, CSV, TXT, MD")
+    print("  Images: PNG, JPEG, TIFF, BMP, WEBP")
+    print("  Audio: WAV, MP3")
+    print("  Other: WebVTT (subtitles)")
     print("\nExamples:")
     print("  q what is the theory of ballism")
+    print("  v")
     print("  i sample.pdf")
-    print("  i folder/sample.pdf")
+    print("  i documents/report.docx")
+    print("  i data/spreadsheet.xlsx")
+    print("  i images/diagram.png")
     print("  r sample.pdf")
     print("\nNote: File paths are automatically resolved to the data/documents/ directory.")
     print("You can provide just the filename or relative path within the documents folder.")
@@ -49,32 +58,29 @@ def print_help():
 
 def load_query_dependencies():
     """Lazy load query-related dependencies."""
-    global rag_query_pipeline
-    if 'rag_query_pipeline' not in globals():
-        from backend.pipeline.query import rag_query_pipeline
+    from backend.pipeline.retrieval.query import rag_query_pipeline
     return rag_query_pipeline
 
 
 def load_ingestion_dependencies():
     """Lazy load ingestion-related dependencies."""
-    global parse_file, chunk_text, find_new_chunks, update_chunk_file_db
-    global embed_chunks_with_dedup, add_embeddings
-    global preprocess_file, generate_file_id, generate_chunk_id
-    global add_file
-    if 'parse_file' not in globals():
-        from backend.pipeline.ingestion import parse_file, chunk_text, find_new_chunks, update_chunk_file_db
-        from backend.pipeline.embedding import embed_chunks_with_dedup
-        from backend.pipeline.vectorstore import add_embeddings
-        from backend.pipeline.preprocessing import preprocess_file
-        from backend.utils.hashing import generate_file_id, generate_chunk_id
-        from backend.utils.filehash_db import add_file
+    
+    from backend.pipeline.ingestion.ingestion import ingest_file_pipeline
+    return ingest_file_pipeline
 
 
 def load_deletion_dependencies():
     """Lazy load deletion-related dependencies."""
-    global delete_file_and_embeddings
-    if 'delete_file_and_embeddings' not in globals():
-        from backend.pipeline.deletion import delete_file_and_embeddings
+
+    from backend.pipeline.deletion.deletion import delete_file_and_embeddings
+    return delete_file_and_embeddings
+    
+
+
+def load_voice_dependencies():
+    """Lazy load voice query dependencies."""
+    from backend.pipeline.retrieval.query_voice import voice_query_cli
+    return voice_query_cli
 
 
 def handle_query_interactive(query_text, top_k=3, model="gemini-2.5-flash"):
@@ -91,11 +97,13 @@ def handle_query_interactive(query_text, top_k=3, model="gemini-2.5-flash"):
     start_time = time.perf_counter()
     result = rag_query_pipeline(query_text, top_k=top_k, model=model)
     total_time = time.perf_counter() - start_time
-    print(f"⏱️  Total query time: {total_time:.4f} seconds")
+    print(f"⏱️  Total query time: {total_time:.4f} seconds\n")
 
     # Display results
+    print("=" * 60)
     print(f"\n📝 QUERY: {result['query']}")
     print(f"\n🤖 ANSWER: {result['answer']}")
+    print("=" * 60)
 
     if result['success'] and result['sources']:
         print(f"\n📚 SOURCES ({result['retrieval_count']} chunks retrieved):")
@@ -118,7 +126,7 @@ def remove_file_interactive(file_path):
     Remove a file and its embeddings from the database and ChromaDB in interactive mode.
     """
     print("🔄 Loading deletion dependencies...")
-    load_deletion_dependencies()
+    delete_file_and_embeddings = load_deletion_dependencies()
 
     # Resolve the document path
     resolved_path = resolve_document_path(file_path)
@@ -137,7 +145,7 @@ def process_file_interactive(file_path):
     Process a file: parse, chunk, embed, and store in the database in interactive mode.
     """
     print("🔄 Loading ingestion dependencies...")
-    load_ingestion_dependencies()
+    ingest_file_pipeline = load_ingestion_dependencies()
 
     # Resolve the document path
     resolved_path = resolve_document_path(file_path)
@@ -151,73 +159,31 @@ def process_file_interactive(file_path):
     # Read file contents
     with open(resolved_path, "rb") as f:
         contents = f.read()
-    file_id = generate_file_id(contents)
 
     # Determine content type
     ext = os.path.splitext(resolved_path)[1].lower()
     content_type = "application/pdf" if ext == ".pdf" else "text/plain"
 
-    # Preprocessing: check for duplicates
-    if preprocess_file(contents, resolved_path):
-        print("This file has already been processed (file_id found in DB). Skipping.")
+    print("Processing file...")
+    start_time = time.perf_counter()
+    result = ingest_file_pipeline(resolved_path, content_type, contents)
+    total_time = time.perf_counter() - start_time
+    print(f"⏱️  Total processing time: {total_time:.4f} seconds")
+
+    if result['error']:
+        print(f"Error: {result['error']}")
         return
 
-    # Parse the file
-    start_time = time.perf_counter()
-    text, error = parse_file(resolved_path, content_type, contents)
-    parse_time = time.perf_counter() - start_time
-    print(f"⏱️  Parsing time: {parse_time:.4f} seconds")
-    if error:
-        print(f"Parse error: {error}")
-        return
-
-    # Chunk the text
-    start_time = time.perf_counter()
-    chunks = chunk_text(text)
-    chunk_time = time.perf_counter() - start_time
-    print(f"⏱️  Chunking time: {chunk_time:.4f} seconds")
-    print(f"Chunked into {len(chunks)} chunks.\nFirst 3 chunks:\n")
-    for i, chunk in enumerate(chunks[:3]):
+    print(f"Chunked into {result['num_chunks']} chunks.")
+    print("First 3 chunks:")
+    for i, chunk in enumerate(result['chunk_preview']):
         print(f"Chunk {i+1}:\n{chunk}\n{'-'*40}")
 
-    # Find new chunks after deduplication
-    new_chunks = find_new_chunks(chunks, file_id)
-    print(f"Found {len(new_chunks)} new chunks after deduplication.")
-
-    # Extract chunk texts for embedding
-    chunks_to_embed = [chunk for chunk, chunk_id in new_chunks]
-
-    # Embed chunks with deduplication
-    print("Embedding (with ChromaDB deduplication)...")
-    start_time = time.perf_counter()
-    embeddings, embed_indices = embed_chunks_with_dedup(chunks_to_embed, filename=resolved_path)
-    embed_time = time.perf_counter() - start_time
-    print(f"⏱️  Embedding time: {embed_time:.4f} seconds")
-
-    if not embeddings:
-        print("No new chunks to embed. Exiting.")
-        return
-
-    print(f"Got {len(embeddings)} new embeddings.\nSample embedding (first 5 dims):\n{embeddings[0][:5]}")
-
-    # Store embeddings in ChromaDB
-    print("\nStoring embeddings and chunks in ChromaDB...")
-    start_time = time.perf_counter()
-    new_chunks_to_store = [chunks_to_embed[i] for i in embed_indices]
-    new_metadatas = [{"filename": resolved_path, "chunk_id": i, "file_id": file_id} for i in embed_indices]
-    add_embeddings(new_chunks_to_store, embeddings, new_metadatas, filename=resolved_path)
-    store_time = time.perf_counter() - start_time
-    print(f"⏱️  Storage time: {store_time:.4f} seconds")
-
-    # Update file metadata
-    print("Updating file_metadata DB...")
-    add_file(file_id, resolved_path)
-    print("File metadata updated.")
-
-    # Update chunk-file mapping for all chunks
-    print("\nUpdating chunk-file mapping DB...")
-    update_chunk_file_db(chunks, file_id)  # Note: update_chunk_file_db expects chunks, not IDs
-    print("Chunk-file mapping DB updated.")
+    if result['new_chunks_embedded'] == 0:
+        print("File already processed - all chunks exist in database.")
+    else:
+        print(f"Embedded {result['new_chunks_embedded']} new chunks.")
+    print("File processed successfully.")
 
 
 def interactive_cli():
@@ -243,6 +209,11 @@ def interactive_cli():
                     continue
                 query_text = ' '.join(parts[1:])
                 handle_query_interactive(query_text)
+
+            elif command in ['/voice', 'v']:
+                print("🎤 Starting voice query...")
+                voice_query_cli = load_voice_dependencies()
+                voice_query_cli()
 
             elif command in ['/ingest', 'i']:
                 if len(parts) != 2:

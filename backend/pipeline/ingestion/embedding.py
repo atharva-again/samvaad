@@ -1,7 +1,7 @@
 from typing import List, Tuple
 from sentence_transformers import SentenceTransformer
-from backend.pipeline.vectorstore import collection
-from backend.pipeline.vectorstore import generate_chunk_id
+from backend.pipeline.vectorstore.vectorstore import collection
+from backend.pipeline.vectorstore.vectorstore import generate_chunk_id
 from backend.utils.gpu_utils import get_device
 
 # Use BGE-M3: strong English + multilingual support

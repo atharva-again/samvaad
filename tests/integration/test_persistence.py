@@ -1,8 +1,8 @@
 import chromadb
 import pytest
 
-from backend.pipeline.ingestion import find_new_chunks, update_chunk_file_db
-from backend.pipeline import vectorstore
+from backend.pipeline.ingestion.chunking import find_new_chunks, update_chunk_file_db
+from backend.pipeline.vectorstore import vectorstore
 from backend.utils import filehash_db, hashing
 
 

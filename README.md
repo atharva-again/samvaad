@@ -1,14 +1,15 @@
 # Samvaad: Facilitating Dialogue-Based Learning 
 
-![Python](https://img.shields.io/badge/python-3.8%2B-blue)
+![Python](https://img.shields.io/badge/python-3.11-blue)
 
 ### Note
 - Currently, only CLI version is supported. Frontend/UI is under development.
-- The voice chat feature is still under development.
+- Voice queries are now supported in multiple languages (Hindi, English, Hinglish, etc.). Voice chat feature is still under development.
 
 Please see the [issues](https://github.com/HapoSeiz/samvaad/issues) for ideas or to report bugs.
 
 ### Recent Updates
+- **Voice Queries:** Ask questions or query documents in your preferred language (Hindi, English, etc.)
 - **GPU Acceleration:** Automatic GPU detection for faster processing
 - **Performance Monitoring:** Timing instrumentation for all pipeline steps
 - **OS Compatibility:** Cross-platform path resolution
@@ -27,6 +28,12 @@ The modular design makes it easy to add new features. The backend/ and frontend/
 
 ## Getting Started
 
+### Prerequisites
+- **Python 3.11**: This project is optimized for Python 3.11. Some dependencies (like PyAudio for voice features) have pre-built wheels only for this version. Ensure you're using 3.11:
+  ```sh
+  python --version  # Should show Python 3.11.x
+  ```
+
 Follow these steps to set up and run Samvaad locally:
 
 ### 1. Clone the Repository
@@ -43,14 +50,39 @@ cd samvaad
 python -m venv venv
 venv\Scripts\activate
 ```
+*If you have multiple Python versions:* Use `py -3.11 -m venv venv` (Python Launcher) or specify the path (e.g., `C:\Python311\python.exe -m venv venv`).
 
 **macOS/Linux:**
 ```sh
-python3 -m venv venv
+python3.11 -m venv venv  # Use python3.11 if available, otherwise python3
 source venv/bin/activate
 ```
+*If you have multiple Python versions:*
+- System-wide: `python3.11 -m venv venv`
+- pyenv: `pyenv local 3.11` then `python -m venv venv`
+- conda: `conda create -n samvaad python=3.11` then `conda activate samvaad`
 
 ### 3. Install Dependencies
+
+**System Dependencies (for voice features):**
+PyAudio requires PortAudio. If you encounter issues with voice queries:
+
+**Windows:** No additional installation needed (included in PyAudio wheels).
+
+**macOS:**
+```sh
+brew install portaudio
+```
+
+**Linux (Ubuntu/Debian):**
+```sh
+sudo apt-get install portaudio19-dev
+```
+
+**Linux (Fedora/CentOS):**
+```sh
+sudo dnf install portaudio-devel  # or yum install portaudio-devel
+```
 
 Choose the appropriate requirements file based on your hardware:
 
@@ -66,7 +98,15 @@ pip install -r requirements-gpu.txt
 
 ### 4. Add Your Documents
 
-Place your PDF or text files inside the `data/documents/` folder. These will be used as the chatbot's knowledge base.
+Place your documents inside the `data/documents/` folder. Supported file types include:
+- **PDF files** (.pdf)
+- **Microsoft Office documents** (.docx, .pptx, .xlsx)
+- **Text files** (.txt, .md)
+- **Web pages** (.html, .htm)
+- **Images** (.png, .jpg, .jpeg, .tiff, .bmp) - with OCR support
+- **Other formats** supported by Docling (e.g., .rtf, .epub)
+
+These will be used as the chatbot's knowledge base.
 
 ### 5. Configure Environment
 
@@ -104,6 +144,23 @@ Inside the CLI:
 - `q What are the main findings?` - Basic query
 
 
+### Voice Queries
+
+Samvaad supports multilingual voice queries, allowing you to ask questions in Hindi, English, Hinglish, or other languages. The system transcribes your speech and responds in the same language/style.
+
+```sh
+# Start interactive mode
+python -m backend.test
+
+# Inside CLI:
+v
+# This starts voice recording mode. Speak your question in any supported language.
+# The system will transcribe, process, and respond accordingly.
+```
+
+**Supported Languages:** Hindi, Hinglish (code-mixed), English, and auto-detection for other languages.
+
+
 ## Usage Examples
 
 ### Interactive CLI
@@ -117,6 +174,7 @@ python -m backend.test
 Available commands:
 - `i <file>` or `ingest <file>` - Process and ingest a file
 - `q <text>` or `query <text>` - Query the knowledge base
+- `v` or `voice` - Start voice query mode (supports multiple languages like Hindi, English, Hinglish)
 - `r <file>` or `remove <file>` - Remove a file and its embeddings
 - `h` or `help` - Show help
 - `e` or `exit` - Exit the CLI
@@ -275,13 +333,6 @@ pytest tests/unit/
 **Run integration tests only:**
 ```sh
 pytest tests/integration/
-```
-
-**Run with test runner script:**
-```sh
-python run_tests.py          # All tests
-python run_tests.py unit     # Unit tests only
-python run_tests.py integration  # Integration tests only
 ```
 
 **Run specific test file:**
