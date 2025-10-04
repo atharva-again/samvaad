@@ -195,7 +195,7 @@ class TestVoiceQueryCLI:
         cli_thread.join(timeout=5)  # Timeout after 5 seconds
 
         # Verify that RAG pipeline was called
-        mock_rag_pipeline.assert_called_once_with("Hello world", model="gemini-2.5-flash", language="en")
+        mock_rag_pipeline.assert_called_once_with("Hello world", model="gemini-2.5-flash")
 
     @patch('backend.pipeline.retrieval.query_voice.initialize_whisper_model', return_value=None)
     @patch('builtins.print')

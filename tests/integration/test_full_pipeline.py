@@ -223,13 +223,13 @@ class TestFullPipeline:
         # Wait for the voice query to complete (should happen quickly with mocked audio)
         voice_thread.join(timeout=10)  # 10 second timeout
 
-        # Verify that text cleaning was called (should be called twice: once for preload, once for actual text)
-        assert mock_clean_transcription.call_count == 2
-        # Check that the second call was with the transcribed text
+        # Verify that text cleaning was called (should be called once for actual text)
+        assert mock_clean_transcription.call_count == 1
+        # Check that the call was with the transcribed text
         mock_clean_transcription.assert_any_call('What is this document about?')
 
         # Verify that RAG pipeline was called with cleaned transcription
-        mock_rag_pipeline.assert_called_once_with("What is this document about?", model="gemini-2.5-flash", language="en")
+        mock_rag_pipeline.assert_called_once_with("What is this document about?", model="gemini-2.5-flash")
 
         # Verify audio resources were properly cleaned up
         mock_stream.stop_stream.assert_called_once()
