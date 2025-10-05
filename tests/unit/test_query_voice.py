@@ -165,7 +165,10 @@ class TestVoiceQueryCLI:
         # Mock transcription
         mock_segment = Mock()
         mock_segment.text = "Hello world"
-        mock_whisper_model.transcribe.return_value = ([mock_segment], Mock())
+        mock_info = Mock()
+        mock_info.language = "en"
+        mock_info.language_probability = 0.95
+        mock_whisper_model.transcribe.return_value = ([mock_segment], mock_info)
 
         # Mock cleaning
         mock_clean_transcription.return_value = "Hello world"
@@ -183,7 +186,7 @@ class TestVoiceQueryCLI:
         import threading
 
         # Run in thread to avoid blocking the test
-        cli_thread = threading.Thread(target=voice_query_cli, args=("en", "gemini-2.5-flash"))
+        cli_thread = threading.Thread(target=voice_query_cli, args=("gemini-2.5-flash",))
         cli_thread.daemon = True
         cli_thread.start()
 
@@ -203,7 +206,7 @@ class TestVoiceQueryCLI:
         """Test CLI behavior when Whisper model initialization fails."""
         from backend.pipeline.retrieval.query_voice import voice_query_cli
 
-        voice_query_cli("en", "gemini-2.5-flash")
+        voice_query_cli("gemini-2.5-flash")
 
         # Should not crash, should exit gracefully
         mock_print.assert_called()  # Some prints should have been called
@@ -223,7 +226,7 @@ class TestVoiceQueryCLI:
             return original_import(name, *args, **kwargs)
 
         with patch('builtins.__import__', side_effect=fake_import):
-            voice_query_cli("en", "gemini-2.5-flash")
+            voice_query_cli("gemini-2.5-flash")
 
         mock_print.assert_any_call("❌ Failed to import required packages: not installed")
         mock_print.assert_any_call("Please install: pip install faster-whisper webrtcvad pyaudio")
@@ -242,7 +245,10 @@ class TestVoiceQueryCLI:
         from backend.pipeline.retrieval.query_voice import voice_query_cli
 
         mock_whisper_model = Mock()
-        mock_whisper_model.transcribe.return_value = ([], Mock())
+        mock_info = Mock()
+        mock_info.language = "en"
+        mock_info.language_probability = 0.95
+        mock_whisper_model.transcribe.return_value = ([], mock_info)
         mock_init_whisper.return_value = mock_whisper_model
 
         mock_vad_instance = Mock()
@@ -255,7 +261,7 @@ class TestVoiceQueryCLI:
         mock_audio.open.return_value = mock_stream
         mock_pyaudio.return_value = mock_audio
 
-        voice_query_cli("en", "gemini-2.5-flash")
+        voice_query_cli("gemini-2.5-flash")
 
         mock_clean_transcription.assert_called()
         mock_rag_pipeline.assert_not_called()

@@ -191,7 +191,10 @@ class TestFullPipeline:
         # Mock transcription
         mock_segment = MagicMock()
         mock_segment.text = "What is this document about?"
-        mock_whisper_model.transcribe.return_value = ([mock_segment], MagicMock())
+        mock_info = MagicMock()
+        mock_info.language = "en"
+        mock_info.language_probability = 0.95
+        mock_whisper_model.transcribe.return_value = ([mock_segment], mock_info)
 
         # Mock text cleaning
         mock_clean_transcription.return_value = "What is this document about?"
@@ -215,7 +218,7 @@ class TestFullPipeline:
         # Run voice query in a thread to avoid blocking (simulates real usage)
         voice_thread = threading.Thread(
             target=voice_query_cli,
-            args=("en", "gemini-2.5-flash")
+            args=("gemini-2.5-flash",)
         )
         voice_thread.daemon = True
         voice_thread.start()
