@@ -293,9 +293,8 @@ class TestCLIImports:
              patch('backend.utils.filehash_db.add_file'):
             
             # Import and call the load function
-            from backend.test import load_ingestion_dependencies
-            # This should not raise an ImportError
-            load_ingestion_dependencies()
+            from backend.pipeline.ingestion.ingestion import ingest_file_pipeline
+
 
     def test_load_query_dependencies(self):
         """Test that query dependencies can be imported."""
@@ -304,8 +303,7 @@ class TestCLIImports:
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
         
         with patch('backend.pipeline.retrieval.query.rag_query_pipeline'):
-            from backend.test import load_query_dependencies
-            load_query_dependencies()
+            from backend.pipeline.retrieval.query import rag_query_pipeline
 
     def test_load_deletion_dependencies(self):
         """Test that deletion dependencies can be imported."""
@@ -314,5 +312,4 @@ class TestCLIImports:
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
         
         with patch('backend.pipeline.deletion.deletion.delete_file_and_embeddings'):
-            from backend.test import load_deletion_dependencies
-            load_deletion_dependencies()
+            from backend.pipeline.deletion.deletion import delete_file_and_embeddings

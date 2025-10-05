@@ -56,39 +56,13 @@ def print_help():
     print("You can provide just the filename or relative path within the documents folder.")
 
 
-def load_query_dependencies():
-    """Lazy load query-related dependencies."""
-    from backend.pipeline.retrieval.query import rag_query_pipeline
-    return rag_query_pipeline
-
-
-def load_ingestion_dependencies():
-    """Lazy load ingestion-related dependencies."""
-    
-    from backend.pipeline.ingestion.ingestion import ingest_file_pipeline
-    return ingest_file_pipeline
-
-
-def load_deletion_dependencies():
-    """Lazy load deletion-related dependencies."""
-
-    from backend.pipeline.deletion.deletion import delete_file_and_embeddings
-    return delete_file_and_embeddings
-    
-
-
-def load_voice_dependencies():
-    """Lazy load voice query dependencies."""
-    from backend.pipeline.retrieval.query_voice import voice_query_cli
-    return voice_query_cli
-
-
 def handle_query_interactive(query_text, top_k=3, model="gemini-2.5-flash"):
     """
     Handle an interactive query: process a natural language query using the RAG pipeline.
     """
     print("🔄 Loading query dependencies...")
-    rag_query_pipeline = load_query_dependencies()
+    from backend.pipeline.retrieval.query import rag_query_pipeline
+
 
     print(f"🔍 Processing query: '{query_text}'")
     print("=" * 60)
@@ -126,7 +100,8 @@ def remove_file_interactive(file_path):
     Remove a file and its embeddings from the database and ChromaDB in interactive mode.
     """
     print("🔄 Loading deletion dependencies...")
-    delete_file_and_embeddings = load_deletion_dependencies()
+    from backend.pipeline.deletion.deletion import delete_file_and_embeddings
+
 
     # Resolve the document path
     resolved_path = resolve_document_path(file_path)
@@ -145,7 +120,7 @@ def process_file_interactive(file_path):
     Process a file: parse, chunk, embed, and store in the database in interactive mode.
     """
     print("🔄 Loading ingestion dependencies...")
-    ingest_file_pipeline = load_ingestion_dependencies()
+    from backend.pipeline.ingestion.ingestion import ingest_file_pipeline
 
     # Resolve the document path
     resolved_path = resolve_document_path(file_path)
@@ -212,7 +187,7 @@ def interactive_cli():
 
             elif command in ['/voice', 'v']:
                 print("🎤 Starting voice query...")
-                voice_query_cli = load_voice_dependencies()
+                from backend.pipeline.retrieval.query_voice import voice_query_cli
                 voice_query_cli()
 
             elif command in ['/ingest', 'i']:

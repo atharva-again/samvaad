@@ -1,18 +1,11 @@
-import os
-from dotenv import load_dotenv
 import pathlib
 from typing import List, Dict, Any
 from sentence_transformers import SentenceTransformer, CrossEncoder
 from rank_bm25 import BM25Okapi
 import numpy as np
 from backend.pipeline.vectorstore.vectorstore import collection
-from google import genai
-from google.genai import types
 from backend.utils.gpu_utils import get_device
 from backend.pipeline.generation.generation import generate_answer_with_gemini
-
- # Load environment variables from .env
-load_dotenv(dotenv_path=pathlib.Path(__file__).resolve().parent.parent.parent.parent / ".env")
 
 # Use same embedding model as for documents
 _MODEL_NAME = "BAAI/bge-m3"
