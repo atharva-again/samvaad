@@ -2,6 +2,9 @@ from google import genai
 from google.genai import types
 from typing import List, Dict, Any
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 def generate_answer_with_gemini(query: str, chunks: List[Dict], model: str = "gemini-2.5-flash") -> str:
     """Generate answer using Google Gemini with retrieved chunks as context."""
@@ -51,7 +54,12 @@ def generate_answer_with_gemini(query: str, chunks: List[Dict], model: str = "ge
         config=types.GenerateContentConfig(
             temperature=0.3,  # Slightly higher to encourage concise responses
             max_output_tokens=1024,  # Limit response length to reduce token usage
-            thinking_config=types.ThinkingConfig(thinking_budget=0)  # Disable thinking for speed
+            thinking_config=types.ThinkingConfig(thinking_budget=0),  # Disable thinking for speed
+            tool_config=types.ToolConfig(
+                function_calling_config=types.FunctionCallingConfig(
+                    mode=types.FunctionCallingConfig.Mode.NONE
+                )
+            )
         )
     )
 

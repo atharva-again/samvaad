@@ -4,9 +4,8 @@ from backend.pipeline.vectorstore.vectorstore import collection
 from backend.pipeline.vectorstore.vectorstore import generate_chunk_id
 from backend.utils.gpu_utils import get_device
 
-# Use BGE-M3: strong English + multilingual support
-_MODEL_NAME = "BAAI/bge-m3"
-_INSTRUCTION = "Represent this sentence for retrieval: "
+# Use EmbeddingGemma: state-of-the-art lightweight embedding model
+_MODEL_NAME = "google/embeddinggemma-300m"
 
 # Global model instance to avoid reloading
 _model = None
@@ -63,7 +62,7 @@ def embed_chunks_with_dedup(chunks: List[str], filename: str = None) -> Tuple[Li
         device = get_device()
         _model = SentenceTransformer(_MODEL_NAME, device=device)
     
-    inputs = [_INSTRUCTION + chunk for chunk in chunks_to_embed]
-    embeddings = _model.encode(inputs, show_progress_bar=True, convert_to_numpy=True)
+    document_prompts = [f"title: none | text: {chunk}" for chunk in chunks_to_embed]
+    embeddings = _model.encode_document(document_prompts, show_progress_bar=True, convert_to_numpy=True)
     
     return embeddings.tolist(), embed_indices

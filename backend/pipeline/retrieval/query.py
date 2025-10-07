@@ -8,8 +8,7 @@ from backend.utils.gpu_utils import get_device
 from backend.pipeline.generation.generation import generate_answer_with_gemini
 
 # Use same embedding model as for documents
-_MODEL_NAME = "BAAI/bge-m3"
-_INSTRUCTION = "Represent this sentence for retrieval: "
+_MODEL_NAME = "google/embeddinggemma-300m"
 
 # Global model instance to avoid reloading
 _embedding_model = None
@@ -34,9 +33,9 @@ def get_cross_encoder():
 def embed_query(query: str) -> List[float]:
     """Embed a query using the same model as documents."""
     model = get_embedding_model()
-    inputs = [_INSTRUCTION + query]
-    embeddings = model.encode(inputs, show_progress_bar=False, convert_to_numpy=True)
-    return embeddings[0].tolist()
+    query_prompt = f"task: search result | query: {query}"
+    embeddings = model.encode_query(query_prompt, show_progress_bar=False, convert_to_numpy=True)
+    return embeddings.tolist()
 
 
 def summarize_chunk(text: str, max_chars: int = 200) -> str:
