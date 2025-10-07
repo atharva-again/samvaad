@@ -68,6 +68,10 @@ def strip_markdown(text: str) -> str:
     return text
 
 
+# Prevent pytest from treating this helper as a test when the module is imported dynamically.
+strip_markdown.__test__ = False
+
+
 def resolve_document_path(filename):
     """
     Resolve document path by adding the base documents directory.

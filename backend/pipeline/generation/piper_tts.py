@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import threading
+import wave
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Tuple
@@ -78,7 +79,7 @@ class PiperTTS:
 
     @staticmethod
     def _default_models_dir() -> Path:
-        root = Path(__file__).resolve().parents[2]
+        root = Path(__file__).resolve().parents[3]
         return root / "models" / "piper"
 
     def _build_default_config(self) -> TTSConfig:
@@ -213,8 +214,6 @@ class PiperTTS:
 
     @staticmethod
     def _wave_writer(buffer: io.BytesIO, sample_rate: int, sample_width: int, channels: int):
-        import wave
-
         wav_file = wave.open(buffer, "wb")
         wav_file.setnchannels(channels)
         wav_file.setsampwidth(sample_width)

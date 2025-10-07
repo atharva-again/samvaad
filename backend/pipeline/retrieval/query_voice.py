@@ -62,6 +62,11 @@ def play_audio_response(text: str, language: str | None, engine: str = "piper") 
     if not text or not text.strip():
         return
 
+    # Skip audio playback in CI environments (GitHub Actions, etc.)
+    if os.getenv('CI') == 'true' or os.getenv('GITHUB_ACTIONS') == 'true' or os.getenv('CONTINUOUS_INTEGRATION') == 'true':
+        print("🔇 Skipping audio playback in CI environment")
+        return
+
     try:
         import pygame
     except ImportError:

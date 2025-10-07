@@ -154,8 +154,9 @@ class TestFullPipeline:
     @patch('webrtcvad.Vad')
     @patch('pyaudio.PyAudio')
     @patch('backend.pipeline.retrieval.query_voice.rag_query_pipeline')
+    @patch('backend.pipeline.retrieval.query_voice.play_audio_response')  # Mock TTS to avoid audio playback
     @patch('builtins.print')  # Mock print to avoid cluttering test output
-    def test_voice_query_pipeline_integration(self, mock_print, mock_rag_pipeline,
+    def test_voice_query_pipeline_integration(self, mock_print, mock_play_audio, mock_rag_pipeline,
                                              mock_pyaudio, mock_vad, mock_init_whisper,
                                              mock_clean_transcription, mock_db_path):
         """Test the complete voice query pipeline: record -> transcribe -> clean -> query."""

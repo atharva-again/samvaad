@@ -2,11 +2,17 @@ from __future__ import annotations
 
 import io
 import threading
+import wave
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Tuple
 
 from kokoro import KPipeline
+
+try:
+    import numpy as np
+except ImportError:  # pragma: no cover - numpy is part of project deps
+    np = None  # type: ignore
 
 try:
     import torch
@@ -142,10 +148,12 @@ class KokoroTTS:
             speed=speed,
         )
 
-        import numpy as np
         pcm_buffer = bytearray()
         for _, _, audio in generator:
             # Convert to 16-bit PCM bytes
+            if np is None:
+                raise RuntimeError("numpy is required for KokoroTTS synthesis but is not available")
+
             audio_int16 = (audio * 32767).numpy().astype(np.int16)
             pcm_buffer.extend(audio_int16.tobytes())
 
@@ -177,8 +185,6 @@ class KokoroTTS:
 
     @staticmethod
     def _wave_writer(buffer: io.BytesIO, sample_rate: int, sample_width: int, channels: int):
-        import wave
-
         wav_file = wave.open(buffer, "wb")
         wav_file.setnchannels(channels)
         wav_file.setsampwidth(sample_width)
