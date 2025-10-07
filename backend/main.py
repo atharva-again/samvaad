@@ -1,8 +1,7 @@
-from fastapi import FastAPI, UploadFile, File, WebSocket
+from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import JSONResponse
 from typing import List
 import asyncio
-from RealtimeSTT import AudioToTextRecorder
 from backend.pipeline.ingestion.ingestion import ingest_file_pipeline
 from backend.pipeline.retrieval.query import rag_query_pipeline
 from backend.pipeline.generation.piper_tts import PiperTTS
@@ -199,48 +198,3 @@ async def text_to_speech(request: TTSRequest):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-# WebSocket endpoint for streaming ASR
-@app.websocket("/ws/asr")
-async def asr_websocket(websocket: WebSocket):
-    await websocket.accept()
-    
-    # Queue for sending messages from callbacks (since callbacks are sync)
-    message_queue = asyncio.Queue()
-    
-    def realtime_callback(text):
-        asyncio.create_task(message_queue.put({"type": "realtime", "text": text, "language": recorder.language}))
-    
-    def final_callback(text):
-        asyncio.create_task(message_queue.put({"type": "final", "text": text, "language": recorder.language}))
-    
-    # Initialize recorder with CPU-friendly settings
-    recorder = AudioToTextRecorder(
-        use_microphone=False,
-        model="tiny",  # Small model for CPU
-        language="",  # Auto-detect language
-        enable_realtime_transcription=True,
-        on_realtime_transcription_update=realtime_callback,
-        on_transcription_finished=final_callback,
-        realtime_model_type="tiny",
-        realtime_processing_pause=0.1,  # Faster updates
-        early_transcription_on_silence=0.5,  # Transcribe faster on silence
-        allowed_latency_limit=50  # Prevent buffer overflow
-    )
-    
-    try:
-        while True:
-            # Receive audio chunk from client
-            data = await websocket.receive_bytes()
-            recorder.feed_audio(data)
-            
-            # Send any pending messages
-            while not message_queue.empty():
-                msg = await message_queue.get()
-                await websocket.send_json(msg)
-                
-    except Exception as e:
-        print(f"ASR WebSocket error: {e}")
-    finally:
-        recorder.shutdown()
-        await websocket.close()
