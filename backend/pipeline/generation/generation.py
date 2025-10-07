@@ -32,10 +32,8 @@ def generate_answer_with_gemini(query: str, chunks: List[Dict], model: str = "ge
                 - Answer the question based only on the information provided in the context above.
                 - If the context doesn't contain enough information to answer the question, say so.
                 - Be concise but comprehensive.
-                - Cite the specific documents you used in your answer.
-                - If multiple documents are relevant, mention them all.
                 - Respond in the same language and style as the question.
-
+                
                 Answer:"""
 
     # Get API key from environment
