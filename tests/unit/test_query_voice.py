@@ -135,8 +135,9 @@ class TestVoiceQueryCLI:
     @patch('webrtcvad.Vad')
     @patch('pyaudio.PyAudio')
     @patch('backend.pipeline.retrieval.query_voice.rag_query_pipeline')
+    @patch('backend.pipeline.retrieval.query_voice.play_audio_response')  # Mock TTS to avoid audio playback
     @patch('builtins.print')  # Mock print to avoid cluttering test output
-    def test_voice_query_cli_full_flow(self, mock_print, mock_rag_pipeline, mock_pyaudio,
+    def test_voice_query_cli_full_flow(self, mock_print, mock_play_audio, mock_rag_pipeline, mock_pyaudio,
                                       mock_vad, mock_init_whisper, mock_clean_transcription,
                                       mock_cuda_available):
         """Test the complete voice query CLI flow with mocked dependencies."""

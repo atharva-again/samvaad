@@ -1,14 +1,102 @@
-from fastapi import FastAPI, UploadFile, File, WebSocket
+from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import JSONResponse
 from typing import List
 import asyncio
-from RealtimeSTT import AudioToTextRecorder
 from backend.pipeline.ingestion.ingestion import ingest_file_pipeline
 from backend.pipeline.retrieval.query import rag_query_pipeline
+from backend.pipeline.generation.piper_tts import PiperTTS
+from backend.pipeline.generation.kokoro_tts import KokoroTTS
 from pydantic import BaseModel
 import base64
+import re
 
 app = FastAPI(title="Samvaad RAG Backend")
+
+
+def strip_markdown(text: str) -> str:
+    """
+    Strip markdown formatting from text for TTS compatibility.
+    Removes headers, bold, italic, code blocks, links, lists, etc.
+    while preserving the readable content.
+
+    Args:
+        text (str): Text with markdown formatting
+
+    Returns:
+        str: Plain text without markdown formatting
+    """
+    if not text:
+        return text
+
+    # Remove code blocks (```code```)
+    text = re.sub(r'```[\s\S]*?```', '', text)
+
+    # Remove inline code (`code`)
+    text = re.sub(r'`([^`]*)`', r'\1', text)
+
+    # Remove headers (# ## ###)
+    text = re.sub(r'^#+\s+', '', text, flags=re.MULTILINE)
+
+    # Remove bold (**text** or __text__)
+    text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
+    text = re.sub(r'__([^_]+)__', r'\1', text)
+
+    # Remove italic (*text* or _text_)
+    text = re.sub(r'\*([^*]+)\*', r'\1', text)
+    text = re.sub(r'_([^_]+)_', r'\1', text)
+
+    # Remove strikethrough (~~text~~)
+    text = re.sub(r'~~([^~]+)~~', r'\1', text)
+
+    # Remove links [text](url) -> text
+    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
+
+    # Remove images ![alt](url) -> alt
+    text = re.sub(r'!\[([^\]]*)\]\([^)]+\)', r'\1', text)
+
+    # Remove blockquotes (> text)
+    text = re.sub(r'^>\s+', '', text, flags=re.MULTILINE)
+
+    # Convert unordered lists (- item, * item, + item) to plain text
+    text = re.sub(r'^[-*+]\s+', '', text, flags=re.MULTILINE)
+
+    # Convert ordered lists (1. item, 2. item) to plain text
+    text = re.sub(r'^\d+\.\s+', '', text, flags=re.MULTILINE)
+
+    # Remove horizontal rules (--- or ***)
+    text = re.sub(r'^[-*_]{3,}$', '', text, flags=re.MULTILINE)
+
+    # Clean up extra whitespace
+    text = re.sub(r'\n\s*\n', '\n\n', text)  # Multiple newlines
+    text = text.strip()
+
+    return text
+
+
+_piper_tts: PiperTTS | None = None
+_kokoro_tts: KokoroTTS | None = None
+
+
+def get_piper_tts() -> PiperTTS:
+    global _piper_tts
+    if _piper_tts is None:
+        try:
+            _piper_tts = PiperTTS()
+            print("🔊 Piper TTS engine initialised (API).")
+        except Exception as exc:
+            raise RuntimeError(f"Failed to initialise Piper TTS: {exc}") from exc
+    return _piper_tts
+
+
+def get_kokoro_tts() -> KokoroTTS:
+    global _kokoro_tts
+    if _kokoro_tts is None:
+        try:
+            _kokoro_tts = KokoroTTS()
+            print("🔊 Kokoro TTS engine initialised (API).")
+        except Exception as exc:
+            raise RuntimeError(f"Failed to initialise Kokoro TTS: {exc}") from exc
+    return _kokoro_tts
 
 @app.get("/health")
 def health_check():
@@ -21,7 +109,8 @@ class VoiceQuery(BaseModel):
 
 class TTSRequest(BaseModel):
     text: str
-    language: str = "en-us"
+    language: str = "en"
+    engine: str = "piper"
 
 class TextQuery(BaseModel):
     query: str
@@ -75,79 +164,37 @@ async def voice_query(request: VoiceQuery):
 @app.post("/tts")
 async def text_to_speech(request: TTSRequest):
     """
-    Generate audio from text using Kokoro TTS.
+    Generate audio from text using specified TTS engine.
     """
-    from kokoro_onnx import Kokoro
-    import io
-    import base64
-    
-    # Initialize Kokoro (cache it in future)
-    kokoro = Kokoro("kokoro-v0_19.onnx", "voices.json")
-    
-    # Map language to voice
-    voice = "en-us" if request.language.lower() == "english" else "hi-in"  # Basic mapping
-    
-    # Generate audio
-    samples, sample_rate = kokoro.create(request.text, voice=voice, speed=1.0)
-    
-    # Convert to bytes (WAV)
-    import wave
-    buffer = io.BytesIO()
-    with wave.open(buffer, 'wb') as wav_file:
-        wav_file.setnchannels(1)
-        wav_file.setsampwidth(2)
-        wav_file.setframerate(sample_rate)
-        wav_file.writeframes((samples * 32767).astype('int16').tobytes())
-    
-    buffer.seek(0)
-    audio_base64 = base64.b64encode(buffer.getvalue()).decode()
-    return {"audio_base64": audio_base64, "sample_rate": sample_rate}
+    try:
+        if request.engine.lower() == "kokoro":
+            tts_engine = get_kokoro_tts()
+        else:
+            tts_engine = get_piper_tts()
+    except Exception as exc:
+        return {"error": str(exc)}
+
+    try:
+        # Strip markdown formatting for better TTS pronunciation
+        clean_text = strip_markdown(request.text)
+        
+        if request.engine.lower() == "kokoro":
+            wav_bytes, sample_rate = tts_engine.synthesize_wav(
+                clean_text,
+                language=request.language,
+                speed=1.0,
+            )
+        else:
+            wav_bytes, sample_rate = tts_engine.synthesize_wav(
+                clean_text,
+                language=request.language,
+            )
+    except Exception as exc:
+        return {"error": f"Failed to generate speech: {exc}"}
+
+    audio_base64 = base64.b64encode(wav_bytes).decode()
+    return {"audio_base64": audio_base64, "sample_rate": sample_rate, "format": "wav"}
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-# WebSocket endpoint for streaming ASR
-@app.websocket("/ws/asr")
-async def asr_websocket(websocket: WebSocket):
-    await websocket.accept()
-    
-    # Queue for sending messages from callbacks (since callbacks are sync)
-    message_queue = asyncio.Queue()
-    
-    def realtime_callback(text):
-        asyncio.create_task(message_queue.put({"type": "realtime", "text": text, "language": recorder.language}))
-    
-    def final_callback(text):
-        asyncio.create_task(message_queue.put({"type": "final", "text": text, "language": recorder.language}))
-    
-    # Initialize recorder with CPU-friendly settings
-    recorder = AudioToTextRecorder(
-        use_microphone=False,
-        model="tiny",  # Small model for CPU
-        language="",  # Auto-detect language
-        enable_realtime_transcription=True,
-        on_realtime_transcription_update=realtime_callback,
-        on_transcription_finished=final_callback,
-        realtime_model_type="tiny",
-        realtime_processing_pause=0.1,  # Faster updates
-        early_transcription_on_silence=0.5,  # Transcribe faster on silence
-        allowed_latency_limit=50  # Prevent buffer overflow
-    )
-    
-    try:
-        while True:
-            # Receive audio chunk from client
-            data = await websocket.receive_bytes()
-            recorder.feed_audio(data)
-            
-            # Send any pending messages
-            while not message_queue.empty():
-                msg = await message_queue.get()
-                await websocket.send_json(msg)
-                
-    except Exception as e:
-        print(f"ASR WebSocket error: {e}")
-    finally:
-        recorder.shutdown()
-        await websocket.close()

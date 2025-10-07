@@ -1,10 +1,75 @@
 import sys
 import os
 import time
+import re
 # Defer heavy imports until needed
 
 # Add the project root to sys.path to ensure backend module can be imported
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def strip_markdown(text: str) -> str:
+    """
+    Strip markdown formatting from text for clean terminal display.
+    Removes headers, bold, italic, code blocks, links, lists, etc.
+    while preserving the readable content.
+
+    Args:
+        text (str): Text with markdown formatting
+
+    Returns:
+        str: Plain text without markdown formatting
+    """
+    if not text:
+        return text
+
+    # Remove code blocks (```code```)
+    text = re.sub(r'```[\s\S]*?```', '', text)
+
+    # Remove inline code (`code`)
+    text = re.sub(r'`([^`]*)`', r'\1', text)
+
+    # Remove headers (# ## ###)
+    text = re.sub(r'^#+\s+', '', text, flags=re.MULTILINE)
+
+    # Remove bold (**text** or __text__)
+    text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
+    text = re.sub(r'__([^_]+)__', r'\1', text)
+
+    # Remove italic (*text* or _text_)
+    text = re.sub(r'\*([^*]+)\*', r'\1', text)
+    text = re.sub(r'_([^_]+)_', r'\1', text)
+
+    # Remove strikethrough (~~text~~)
+    text = re.sub(r'~~([^~]+)~~', r'\1', text)
+
+    # Remove links [text](url) -> text
+    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
+
+    # Remove images ![alt](url) -> alt
+    text = re.sub(r'!\[([^\]]*)\]\([^)]+\)', r'\1', text)
+
+    # Remove blockquotes (> text)
+    text = re.sub(r'^>\s+', '', text, flags=re.MULTILINE)
+
+    # Convert unordered lists (- item, * item, + item) to plain text
+    text = re.sub(r'^[-*+]\s+', '', text, flags=re.MULTILINE)
+
+    # Convert ordered lists (1. item, 2. item) to plain text
+    text = re.sub(r'^\d+\.\s+', '', text, flags=re.MULTILINE)
+
+    # Remove horizontal rules (--- or ***)
+    text = re.sub(r'^[-*_]{3,}$', '', text, flags=re.MULTILINE)
+
+    # Clean up extra whitespace
+    text = re.sub(r'\n\s*\n', '\n\n', text)  # Multiple newlines
+    text = text.strip()
+
+    return text
+
+
+# Prevent pytest from treating this helper as a test when the module is imported dynamically.
+strip_markdown.__test__ = False
 
 
 def resolve_document_path(filename):
@@ -35,6 +100,8 @@ def print_help():
     print("\nAvailable commands:")
     print("  /query <text> or q <text>    - Query the knowledge base with natural language")
     print("  /voice or v                 - Query the knowledge base with voice (ASR)")
+    print("  /voice -k or v -k           - Query with voice using Kokoro TTS")
+    print("  /voice -p or v -p           - Query with voice using Piper TTS")
     print("  /ingest <file> or i <file>  - Process and ingest a file into the knowledge base")
     print("  /remove <file> or r <file>  - Remove a file and its embeddings from the database")
     print("  /help or h                  - Show this help message")
@@ -47,6 +114,8 @@ def print_help():
     print("\nExamples:")
     print("  q what is the theory of ballism")
     print("  v")
+    print("  v -k")
+    print("  v -p")
     print("  i sample.pdf")
     print("  i documents/report.docx")
     print("  i data/spreadsheet.xlsx")
@@ -76,7 +145,7 @@ def handle_query_interactive(query_text, top_k=3, model="gemini-2.5-flash"):
     # Display results
     print("=" * 60)
     print(f"\n📝 QUERY: {result['query']}")
-    print(f"\n🤖 ANSWER: {result['answer']}")
+    print(f"\n🤖 ANSWER: {strip_markdown(result['answer'])}")
     print("=" * 60)
 
     if result['success'] and result['sources']:
@@ -186,9 +255,19 @@ def interactive_cli():
                 handle_query_interactive(query_text)
 
             elif command in ['/voice', 'v']:
-                print("🎤 Starting voice query...")
+                # Parse TTS engine flags from the command
+                tts_engine = "piper"  # default
+                
+                # Check for TTS engine flags in the remaining parts
+                remaining_args = parts[1:]
+                if '-k' in remaining_args or '--kokoro' in remaining_args:
+                    tts_engine = "kokoro"
+                elif '-p' in remaining_args or '--piper' in remaining_args:
+                    tts_engine = "piper"
+                
+                print(f"🎤 Starting voice query with {tts_engine} TTS engine...")
                 from backend.pipeline.retrieval.query_voice import voice_query_cli
-                voice_query_cli()
+                voice_query_cli(tts_engine=tts_engine)
 
             elif command in ['/ingest', 'i']:
                 if len(parts) != 2:

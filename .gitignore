@@ -207,6 +207,8 @@ marimo/_lsp/
 __marimo__/
 .env.local
 backend/utils/filehashes.sqlite3
+backend/models/piper/
+data/audio_responses/
 
 #Node Modules
 node_modules/

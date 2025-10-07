@@ -5,6 +5,7 @@ import torch
 import time
 import numpy as np
 from dotenv import load_dotenv
+import re 
 
 load_dotenv()
 
@@ -13,6 +14,8 @@ load_dotenv()
 # import webrtcvad
 # import pyaudio
 from backend.pipeline.retrieval.query import rag_query_pipeline
+from backend.pipeline.generation.piper_tts import PiperTTS
+from backend.pipeline.generation.kokoro_tts import KokoroTTS
 
 # Suppress warnings before any imports
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -25,6 +28,108 @@ import logging
 
 logging.getLogger("faster_whisper").setLevel(logging.ERROR)
 logging.getLogger("whisper").setLevel(logging.ERROR)
+
+
+_piper_tts: PiperTTS | None = None
+_kokoro_tts: KokoroTTS | None = None
+
+
+def get_piper_tts() -> PiperTTS:
+    global _piper_tts
+    if _piper_tts is None:
+        try:
+            _piper_tts = PiperTTS()
+            print("🔊 Piper TTS engine initialised.")
+        except Exception as exc:
+            raise RuntimeError(f"Failed to initialise Piper TTS: {exc}") from exc
+    return _piper_tts
+
+
+def get_kokoro_tts() -> KokoroTTS:
+    global _kokoro_tts
+    if _kokoro_tts is None:
+        try:
+            _kokoro_tts = KokoroTTS()
+            print("🔊 Kokoro TTS engine initialised.")
+        except Exception as exc:
+            raise RuntimeError(f"Failed to initialise Kokoro TTS: {exc}") from exc
+    return _kokoro_tts
+
+
+def play_audio_response(text: str, language: str | None, engine: str = "piper") -> None:
+    """Generate and play an audio response for the provided text."""
+
+    if not text or not text.strip():
+        return
+
+    # Skip audio playback in CI environments (GitHub Actions, etc.)
+    if os.getenv('CI') == 'true' or os.getenv('GITHUB_ACTIONS') == 'true' or os.getenv('CONTINUOUS_INTEGRATION') == 'true':
+        print("🔇 Skipping audio playback in CI environment")
+        return
+
+    try:
+        import pygame
+    except ImportError:
+        print("⚠️ pygame is not installed; skipping audio playback.")
+        return
+
+    try:
+        if engine.lower() == "kokoro":
+            tts_engine = get_kokoro_tts()
+        else:
+            tts_engine = get_piper_tts()
+    except Exception as exc:
+        print(f"⚠️ TTS engine '{engine}' unavailable: {exc}")
+        return
+
+    mixer_initialised = False
+
+    try:
+        print("🔈 Generating spoken response...")
+        if engine.lower() == "kokoro":
+            pcm, sample_rate, sample_width, channels = tts_engine.synthesize(
+                text,
+                language=language,
+                speed=1.0,
+            )
+        else:
+            pcm, sample_rate, sample_width, channels = tts_engine.synthesize(
+                text,
+                language=language,
+            )
+
+        # Save audio to file
+        import wave
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        filename = f"data/audio_responses/response_{engine}_{timestamp}.wav"
+        with wave.open(filename, 'wb') as wav_file:
+            wav_file.setnchannels(channels)
+            wav_file.setsampwidth(sample_width)
+            wav_file.setframerate(sample_rate)
+            wav_file.writeframes(pcm)
+        print(f"💾 Audio response saved to: {filename}")
+
+        pygame.mixer.init(
+            frequency=sample_rate,
+            size=-(sample_width * 8),
+            channels=channels,
+        )
+        mixer_initialised = True
+
+        sound = pygame.mixer.Sound(buffer=pcm)
+        channel = sound.play()
+        while channel.get_busy():
+            pygame.time.wait(100)
+
+    except Exception as exc:
+        print(f"⚠️ Failed to play audio response: {exc}")
+    finally:
+        if mixer_initialised:
+            try:
+                pygame.mixer.quit()
+            except Exception:
+                pass
 
 
 def clean_transcription(text):
@@ -98,6 +203,66 @@ def clean_transcription(text):
         return text
 
 
+def strip_markdown(text: str) -> str:
+    """
+    Strip markdown formatting from text for TTS compatibility.
+    Removes headers, bold, italic, code blocks, links, lists, etc.
+    while preserving the readable content.
+
+    Args:
+        text (str): Text with markdown formatting
+
+    Returns:
+        str: Plain text without markdown formatting
+    """
+    if not text:
+        return text
+
+    # Remove code blocks (```code```)
+    text = re.sub(r'```[\s\S]*?```', '', text)
+
+    # Remove inline code (`code`)
+    text = re.sub(r'`([^`]*)`', r'\1', text)
+
+    # Remove headers (# ## ###)
+    text = re.sub(r'^#+\s+', '', text, flags=re.MULTILINE)
+
+    # Remove bold (**text** or __text__)
+    text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
+    text = re.sub(r'__([^_]+)__', r'\1', text)
+
+    # Remove italic (*text* or _text_)
+    text = re.sub(r'\*([^*]+)\*', r'\1', text)
+    text = re.sub(r'_([^_]+)_', r'\1', text)
+
+    # Remove strikethrough (~~text~~)
+    text = re.sub(r'~~([^~]+)~~', r'\1', text)
+
+    # Remove links [text](url) -> text
+    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
+
+    # Remove images ![alt](url) -> alt
+    text = re.sub(r'!\[([^\]]*)\]\([^)]+\)', r'\1', text)
+
+    # Remove blockquotes (> text)
+    text = re.sub(r'^>\s+', '', text, flags=re.MULTILINE)
+
+    # Convert unordered lists (- item, * item, + item) to plain text
+    text = re.sub(r'^[-*+]\s+', '', text, flags=re.MULTILINE)
+
+    # Convert ordered lists (1. item, 2. item) to plain text
+    text = re.sub(r'^\d+\.\s+', '', text, flags=re.MULTILINE)
+
+    # Remove horizontal rules (--- or ***)
+    text = re.sub(r'^[-*_]{3,}$', '', text, flags=re.MULTILINE)
+
+    # Clean up extra whitespace
+    text = re.sub(r'\n\s*\n', '\n\n', text)  # Multiple newlines
+    text = text.strip()
+
+    return text
+
+
 def initialize_whisper_model(model_size="base", device="auto", compute_type="default"):
     """Initialize Faster Whisper model for speech recognition."""
     try:
@@ -117,13 +282,14 @@ def initialize_whisper_model(model_size="base", device="auto", compute_type="def
         return None
 
 
-def voice_query_cli(model: str = "gemini-2.5-flash"):
+def voice_query_cli(model: str = "gemini-2.5-flash", tts_engine: str = "piper"):
     """
     CLI function for voice queries using Whisper ASR.
     Records audio until silence is detected, then transcribes the complete audio.
     """
 
     final_transcription = ""
+    detected_language = None
 
     # Initialize audio variables
     audio = None
@@ -173,7 +339,7 @@ def voice_query_cli(model: str = "gemini-2.5-flash"):
 
         print("✅ Voice recognition ready.")
         print("🎙️  Start speaking now... (you have 10 seconds to begin speaking)")
-        print("Recording will stop automatically after 3 seconds of silence.")
+        print("Recording will stop automatically after 2 seconds of silence.")
         print("*" * 60)
 
         # Audio processing variables
@@ -208,9 +374,9 @@ def voice_query_cli(model: str = "gemini-2.5-flash"):
             else:
                 if speech_detected:
                     silence_frames += 1
-                    # If we've had 3 seconds of silence (150 frames * 20ms = 3 seconds)
-                    if silence_frames > 150:
-                        print("\n� Recording stopped (3 seconds of silence detected).")
+                    # If we've had 2 seconds of silence (100 frames * 20ms = 2 seconds)
+                    if silence_frames > 100:
+                        print("\n� Recording stopped (2 seconds of silence detected).")
                         break
 
             # Safety timeout: stop after 60 seconds total
@@ -241,6 +407,7 @@ def voice_query_cli(model: str = "gemini-2.5-flash"):
                 print(
                     f"🔍 Detected language: {info.language} (confidence: {info.language_probability:.2f})"
                 )
+                detected_language = info.language
 
                 # Collect all transcribed text
                 for segment in segments:
@@ -314,8 +481,15 @@ def voice_query_cli(model: str = "gemini-2.5-flash"):
             print("🔄 Processing query through RAG pipeline...")
             result = rag_query_pipeline(cleaned_transcription, model=model)
 
-            # Display results
-            print("\n🤖 ANSWER: {}".format(result["answer"]))
+            # Display results (strip markdown for clean terminal display)
+            clean_answer = strip_markdown(result["answer"])
+            print("\n🤖 ANSWER: {}".format(clean_answer))
+
+            # Play audio response using detected language or fallback to English
+            # Strip markdown formatting for better TTS pronunciation
+            tts_text = strip_markdown(result.get("answer", ""))
+            response_language = result.get("language") or detected_language or "en"
+            play_audio_response(tts_text, response_language, engine=tts_engine)
 
             if result["success"] and result["sources"]:
                 print(
@@ -348,8 +522,30 @@ if __name__ == "__main__":
         default="gemini-2.5-flash",
         help="Gemini model (default: gemini-2.5-flash)",
     )
+    parser.add_argument(
+        "--tts-engine",
+        choices=["piper", "kokoro"],
+        help="TTS engine to use",
+    )
+    parser.add_argument(
+        "-k", "--kokoro",
+        action="store_true",
+        help="Use Kokoro TTS engine",
+    )
+    parser.add_argument(
+        "-p", "--piper",
+        action="store_true",
+        help="Use Piper TTS engine",
+    )
     args = parser.parse_args()
 
-    voice_query_cli(model=args.model)
+    if args.kokoro:
+        tts_engine = "kokoro"
+    elif args.piper:
+        tts_engine = "piper"
+    else:
+        tts_engine = args.tts_engine or "piper"
+
+    voice_query_cli(model=args.model, tts_engine=tts_engine)
 
     # print(clean_transcription("Um, can you tell me, like, the summary of the anthropic threat report and what it says about AI risks?"))

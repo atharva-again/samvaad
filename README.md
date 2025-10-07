@@ -3,12 +3,14 @@
 ![Python](https://img.shields.io/badge/python-3.11-blue)
 
 ### Note
-- Currently, only CLI version is supported. Frontend/UI is under development.
-- Voice queries are now supported in multiple languages (Hindi, English, Hinglish, etc.). Voice chat feature is still under development.
+- Voice queries are now fully supported with dual TTS engines (Kokoro & Piper) for high-quality speech synthesis in English and Hindi
+- Frontend/UI is under development - currently CLI-only
+- Voice chat feature includes automatic markdown processing for clean display and natural pronunciation
 
 Please see the [issues](https://github.com/HapoSeiz/samvaad/issues) for ideas or to report bugs.
 
 ### Recent Updates
+- **Dual TTS Engines:** Support for both Kokoro (neural) and Piper (traditional) TTS engines with CLI flags
 - **Voice Queries:** Ask questions or query documents in your preferred language (Hindi, English, etc.)
 - **GPU Acceleration:** Automatic GPU detection for faster processing
 - **Performance Monitoring:** Timing instrumentation for all pipeline steps
@@ -160,6 +162,68 @@ v
 
 **Supported Languages:** Hindi, Hinglish (code-mixed), English, and auto-detection for other languages.
 
+**TTS Engine Options:**
+- **Kokoro TTS (-k):** Neural TTS engine with high-quality voices (English & Hindi)
+- **Piper TTS (-p):** Traditional TTS engine with fast response times
+
+```sh
+# Voice query with Kokoro TTS (neural, higher quality)
+v -k
+
+# Voice query with Piper TTS (traditional, faster)
+v -p
+```
+
+**Features:**
+- Automatic silence detection (2 seconds of silence stops recording)
+- Markdown-aware responses (clean text for both display and speech)
+- Audio responses saved to `data/audio_responses/` with engine-specific filenames
+- Real-time language detection and appropriate voice selection
+
+### API Endpoints
+
+Samvaad provides a REST API for programmatic access:
+
+**TTS Endpoint:**
+```http
+POST /tts
+Content-Type: application/json
+
+{
+  "text": "Your text here",
+  "language": "en",
+  "engine": "kokoro"
+}
+```
+
+**Supported TTS Engines:**
+- `kokoro` - Neural TTS (higher quality, English & Hindi)
+- `piper` - Traditional TTS (faster, multiple languages)
+
+**Response:**
+```json
+{
+  "audio_base64": "base64_encoded_wav_data",
+  "sample_rate": 24000,
+  "format": "wav"
+}
+```
+
+### Direct Voice Query Usage
+
+For direct voice queries without the interactive CLI:
+
+```sh
+# Voice query with Kokoro TTS (neural, higher quality)
+python -m backend.pipeline.retrieval.query_voice -k
+
+# Voice query with Piper TTS (traditional, faster)
+python -m backend.pipeline.retrieval.query_voice -p
+
+# Voice query with specific Gemini model
+python -m backend.pipeline.retrieval.query_voice --tts-engine kokoro --model gemini-2.5-flash
+```
+
 
 ## Usage Examples
 
@@ -175,6 +239,8 @@ Available commands:
 - `i <file>` or `ingest <file>` - Process and ingest a file
 - `q <text>` or `query <text>` - Query the knowledge base
 - `v` or `voice` - Start voice query mode (supports multiple languages like Hindi, English, Hinglish)
+- `v -k` or `voice -k` - Voice query with Kokoro TTS engine (neural, higher quality)
+- `v -p` or `voice -p` - Voice query with Piper TTS engine (traditional, faster)
 - `r <file>` or `remove <file>` - Remove a file and its embeddings
 - `h` or `help` - Show help
 - `e` or `exit` - Exit the CLI
@@ -262,12 +328,19 @@ The theory of Ballism, formally known as the Principle of Spherical Convergence,
 ```
 samvaad/
 ├── backend/          # Python code for the RAG pipeline and API
-│   ├── pipeline/     # Core RAG components (ingestion, embedding, query, etc.)
+│   ├── pipeline/     # Core RAG components
+│   │   ├── generation/    # LLM integration and TTS engines (Kokoro, Piper)
+│   │   ├── ingestion/     # Document processing and chunking
+│   │   ├── retrieval/     # Query processing and voice recognition
+│   │   ├── vectorstore/   # Vector database operations
+│   │   └── deletion/      # Document removal utilities
 │   ├── utils/        # Utilities (hashing, DB, GPU detection)
-│   ├── main.py       # FastAPI server
+│   ├── main.py       # FastAPI server with TTS API
 │   └── test.py       # Interactive CLI for testing and usage
 ├── frontend/         # React + Next.js user interface (WIP)
-├── data/             # Raw documents for the knowledge base
+├── data/             # Raw documents and audio responses
+│   ├── documents/    # Source documents for knowledge base
+│   └── audio_responses/  # Saved TTS audio files
 ├── tests/            # Unit and integration tests
 ├── requirements-cpu.txt  # Dependencies for CPU-only usage
 ├── requirements-gpu.txt  # Dependencies for GPU acceleration
@@ -275,13 +348,19 @@ samvaad/
 ```
 
 **Directory Overview:**
-- **backend/**: Modular RAG pipeline, API, and CLI (Python)
-- **frontend/**: Modern UI (React/Next.js)
-- **data/**: Folder where you can keep your source documents (PDFs, PPTs, txt, etc.)
-- **tests/**: All tests for reliability
+- **backend/**: Modular RAG pipeline, dual TTS engines, API, and CLI (Python)
+- **backend/pipeline/generation/**: LLM integration (Gemini) and TTS engines (Kokoro & Piper)
+- **backend/pipeline/retrieval/**: Query processing, voice recognition, and markdown handling
+- **frontend/**: Modern UI (React/Next.js) - coming soon
+- **data/documents/**: Your source documents (PDFs, Office docs, text, images, etc.)
+- **data/audio_responses/**: Automatically saved TTS audio files with engine-specific names
+- **tests/**: Comprehensive test suite for reliability
 
 ## Features
 
+- **Dual TTS Engines:** Choose between Kokoro (neural, high-quality) and Piper (traditional, fast) text-to-speech engines
+- **Smart Markdown Processing:** Automatic stripping of markdown formatting for clean terminal display and natural speech synthesis
+- **Multilingual Voice Support:** Voice queries and responses in Hindi, English, Hinglish, and auto-detection for other languages
 - **Retrieval-Augmented Generation (RAG):** Combines LLMs with your own documents for accurate, context-aware answers.
 - **Complete Query Pipeline:** Ask natural language questions and get AI-powered answers with source citations.
 - **GPU Acceleration:** Automatic GPU detection and usage for faster embeddings, parsing, and inference (when available).
