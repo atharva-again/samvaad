@@ -14,25 +14,37 @@ from backend.pipeline.ingestion.embedding import (
 def reset_embedding_model():
     """Reset global embedding model between tests."""
     import backend.pipeline.ingestion.embedding
+
     backend.pipeline.ingestion.embedding._model = None
 
 
 class TestEmbedding:
     """Test embedding functions."""
 
-    @patch('backend.pipeline.ingestion.embedding.collection')
-    @patch('backend.pipeline.ingestion.embedding.GGUFEmbeddingModel')
-    @patch('backend.pipeline.ingestion.embedding.get_device')
-    @patch('backend.pipeline.ingestion.embedding.generate_chunk_id')  # Mock for full isolation
-    @patch('builtins.print')  # Suppress print statements
-    def test_embed_chunks_with_dedup_all_new(self, mock_print, mock_generate_id, mock_get_device, mock_model_class, mock_collection):
+    @patch("backend.pipeline.ingestion.embedding.collection")
+    @patch("backend.pipeline.ingestion.embedding.GGUFEmbeddingModel")
+    @patch("backend.pipeline.ingestion.embedding.get_device")
+    @patch(
+        "backend.pipeline.ingestion.embedding.generate_chunk_id"
+    )  # Mock for full isolation
+    @patch("builtins.print")  # Suppress print statements
+    def test_embed_chunks_with_dedup_all_new(
+        self,
+        mock_print,
+        mock_generate_id,
+        mock_get_device,
+        mock_model_class,
+        mock_collection,
+    ):
         """Test embedding chunks when all are new."""
         # Mock chunk ID generation for predictable testing
         mock_generate_id.side_effect = lambda chunk: f"{chunk}_hash"
-        
-        mock_get_device.return_value = 'cpu'
+
+        mock_get_device.return_value = "cpu"
         mock_model = MagicMock()
-        mock_model.encode_document.return_value = np.array([[0.1, 0.2], [0.3, 0.4]], dtype=np.float32)
+        mock_model.encode_document.return_value = np.array(
+            [[0.1, 0.2], [0.3, 0.4]], dtype=np.float32
+        )
         mock_model_class.return_value = mock_model
 
         mock_collection.get.return_value = {"ids": []}  # No existing chunks
@@ -49,14 +61,18 @@ class TestEmbedding:
         # Verify generate_chunk_id was called for each chunk
         assert mock_generate_id.call_count == 2
 
-    @patch('backend.pipeline.ingestion.embedding.collection')
-    @patch('backend.pipeline.ingestion.embedding.generate_chunk_id')  # Mock for full isolation
-    @patch('builtins.print')  # Suppress print statements
-    def test_embed_chunks_with_dedup_all_existing(self, mock_print, mock_generate_id, mock_collection):
+    @patch("backend.pipeline.ingestion.embedding.collection")
+    @patch(
+        "backend.pipeline.ingestion.embedding.generate_chunk_id"
+    )  # Mock for full isolation
+    @patch("builtins.print")  # Suppress print statements
+    def test_embed_chunks_with_dedup_all_existing(
+        self, mock_print, mock_generate_id, mock_collection
+    ):
         """Test embedding chunks when all already exist."""
         # Mock chunk ID generation
         mock_generate_id.side_effect = lambda chunk: f"{chunk}_hash"
-        
+
         # Mock collection to return the hashes that will be generated
         mock_collection.get.return_value = {"ids": ["chunk1_hash", "chunk2_hash"]}
 
@@ -70,19 +86,28 @@ class TestEmbedding:
         # Verify generate_chunk_id was called for each chunk
         assert mock_generate_id.call_count == 2
 
-    @patch('backend.pipeline.ingestion.embedding.collection')
-    @patch('backend.pipeline.ingestion.embedding.GGUFEmbeddingModel')
-    @patch('backend.pipeline.ingestion.embedding.get_device')
-    @patch('backend.pipeline.ingestion.embedding.generate_chunk_id')
-    @patch('builtins.print')
-    def test_embed_chunks_handles_collection_failure(self, mock_print, mock_generate_id, mock_get_device, mock_model_class, mock_collection):
+    @patch("backend.pipeline.ingestion.embedding.collection")
+    @patch("backend.pipeline.ingestion.embedding.GGUFEmbeddingModel")
+    @patch("backend.pipeline.ingestion.embedding.get_device")
+    @patch("backend.pipeline.ingestion.embedding.generate_chunk_id")
+    @patch("builtins.print")
+    def test_embed_chunks_handles_collection_failure(
+        self,
+        mock_print,
+        mock_generate_id,
+        mock_get_device,
+        mock_model_class,
+        mock_collection,
+    ):
         """If collection.get fails we should still embed new chunks."""
         mock_generate_id.side_effect = lambda chunk: f"{chunk}_hash"
         mock_collection.get.side_effect = RuntimeError("store unavailable")
 
-        mock_get_device.return_value = 'cpu'
+        mock_get_device.return_value = "cpu"
         mock_model = MagicMock()
-        mock_model.encode_document.return_value = np.array([[0.1, 0.2]], dtype=np.float32)
+        mock_model.encode_document.return_value = np.array(
+            [[0.1, 0.2]], dtype=np.float32
+        )
         mock_model_class.return_value = mock_model
 
         chunks = ["chunk1"]
@@ -95,19 +120,30 @@ class TestEmbedding:
         mock_generate_id.assert_called_once_with("chunk1")
         mock_print.assert_called()
 
-    @patch('backend.pipeline.ingestion.embedding.collection')
-    @patch('backend.pipeline.ingestion.embedding.GGUFEmbeddingModel')
-    @patch('backend.pipeline.ingestion.embedding.get_device')
-    @patch('backend.pipeline.ingestion.embedding.generate_chunk_id')  # Mock for full isolation
-    @patch('builtins.print')  # Suppress print statements
-    def test_embed_chunks_with_dedup_mixed_new_existing(self, mock_print, mock_generate_id, mock_get_device, mock_model_class, mock_collection):
+    @patch("backend.pipeline.ingestion.embedding.collection")
+    @patch("backend.pipeline.ingestion.embedding.GGUFEmbeddingModel")
+    @patch("backend.pipeline.ingestion.embedding.get_device")
+    @patch(
+        "backend.pipeline.ingestion.embedding.generate_chunk_id"
+    )  # Mock for full isolation
+    @patch("builtins.print")  # Suppress print statements
+    def test_embed_chunks_with_dedup_mixed_new_existing(
+        self,
+        mock_print,
+        mock_generate_id,
+        mock_get_device,
+        mock_model_class,
+        mock_collection,
+    ):
         """Test embedding chunks when some are new and some already exist."""
         # Mock chunk ID generation
         mock_generate_id.side_effect = lambda chunk: f"{chunk}_hash"
-        
-        mock_get_device.return_value = 'cpu'
+
+        mock_get_device.return_value = "cpu"
         mock_model = MagicMock()
-        mock_model.encode_document.return_value = np.array([[0.1, 0.2], [0.3, 0.4]], dtype=np.float32)
+        mock_model.encode_document.return_value = np.array(
+            [[0.1, 0.2], [0.3, 0.4]], dtype=np.float32
+        )
         mock_model_class.return_value = mock_model
 
         # Mock collection to show chunk2 already exists
@@ -127,19 +163,30 @@ class TestEmbedding:
         # Verify generate_chunk_id was called for each chunk
         assert mock_generate_id.call_count == 3
 
-    @patch('backend.pipeline.ingestion.embedding.collection')
-    @patch('backend.pipeline.ingestion.embedding.GGUFEmbeddingModel')
-    @patch('backend.pipeline.ingestion.embedding.get_device')
-    @patch('backend.pipeline.ingestion.embedding.generate_chunk_id')  # Mock for full isolation
-    @patch('builtins.print')  # Suppress print statements
-    def test_embed_chunks_with_dedup_internal_deduplication(self, mock_print, mock_generate_id, mock_get_device, mock_model_class, mock_collection):
+    @patch("backend.pipeline.ingestion.embedding.collection")
+    @patch("backend.pipeline.ingestion.embedding.GGUFEmbeddingModel")
+    @patch("backend.pipeline.ingestion.embedding.get_device")
+    @patch(
+        "backend.pipeline.ingestion.embedding.generate_chunk_id"
+    )  # Mock for full isolation
+    @patch("builtins.print")  # Suppress print statements
+    def test_embed_chunks_with_dedup_internal_deduplication(
+        self,
+        mock_print,
+        mock_generate_id,
+        mock_get_device,
+        mock_model_class,
+        mock_collection,
+    ):
         """Test internal deduplication within the batch."""
         # Mock chunk ID generation
         mock_generate_id.side_effect = lambda chunk: f"{chunk}_hash"
-        
-        mock_get_device.return_value = 'cpu'
+
+        mock_get_device.return_value = "cpu"
         mock_model = MagicMock()
-        mock_model.encode_document.return_value = np.array([[0.1, 0.2], [0.3, 0.4]], dtype=np.float32)
+        mock_model.encode_document.return_value = np.array(
+            [[0.1, 0.2], [0.3, 0.4]], dtype=np.float32
+        )
         mock_model_class.return_value = mock_model
 
         # Mock collection to return no existing chunks
@@ -155,24 +202,38 @@ class TestEmbedding:
         assert len(embeddings) == 2
         assert_allclose(embeddings, [[0.1, 0.2], [0.3, 0.4]], rtol=1e-5)
         # Should return indices for first occurrence of each unique chunk
-        assert indices == [0, 1]  # "same_chunk" at index 0, "different_chunk" at index 1
+        assert indices == [
+            0,
+            1,
+        ]  # "same_chunk" at index 0, "different_chunk" at index 1
         mock_model.encode_document.assert_called_once()
         # Verify generate_chunk_id was called for each chunk
         assert mock_generate_id.call_count == 3
 
-    @patch('backend.pipeline.ingestion.embedding.collection')
-    @patch('backend.pipeline.ingestion.embedding.GGUFEmbeddingModel')
-    @patch('backend.pipeline.ingestion.embedding.get_device')
-    @patch('backend.pipeline.ingestion.embedding.generate_chunk_id')  # Mock for full isolation
-    @patch('builtins.print')  # Suppress print statements
-    def test_embed_chunks_model_reuse(self, mock_print, mock_generate_id, mock_get_device, mock_model_class, mock_collection):
+    @patch("backend.pipeline.ingestion.embedding.collection")
+    @patch("backend.pipeline.ingestion.embedding.GGUFEmbeddingModel")
+    @patch("backend.pipeline.ingestion.embedding.get_device")
+    @patch(
+        "backend.pipeline.ingestion.embedding.generate_chunk_id"
+    )  # Mock for full isolation
+    @patch("builtins.print")  # Suppress print statements
+    def test_embed_chunks_model_reuse(
+        self,
+        mock_print,
+        mock_generate_id,
+        mock_get_device,
+        mock_model_class,
+        mock_collection,
+    ):
         """Test that the model is reused across multiple calls."""
         # Mock chunk ID generation
         mock_generate_id.side_effect = lambda chunk: f"{chunk}_hash"
-        
-        mock_get_device.return_value = 'cpu'
+
+        mock_get_device.return_value = "cpu"
         mock_model = MagicMock()
-        mock_model.encode_document.return_value = np.array([[0.1, 0.2]], dtype=np.float32)
+        mock_model.encode_document.return_value = np.array(
+            [[0.1, 0.2]], dtype=np.float32
+        )
         mock_model_class.return_value = mock_model
 
         # Mock collection to return no existing chunks for both calls
@@ -202,8 +263,8 @@ class TestEmbedding:
 class TestGGUFEmbedding:
     """Test GGUF-based embedding model functionality."""
 
-    @patch('backend.pipeline.ingestion.embedding.Llama')
-    @patch('backend.pipeline.ingestion.embedding.get_device', return_value='cpu')
+    @patch("backend.pipeline.ingestion.embedding.Llama")
+    @patch("backend.pipeline.ingestion.embedding.get_device", return_value="cpu")
     def test_model_initialization_cpu(self, mock_get_device, mock_llama_class):
         """GGUF model should initialize with CPU defaults when CUDA unavailable."""
         mock_model = MagicMock()
@@ -213,13 +274,13 @@ class TestGGUFEmbedding:
 
         mock_llama_class.from_pretrained.assert_called_once()
         _, kwargs = mock_llama_class.from_pretrained.call_args
-        assert kwargs['embedding'] is True
+        assert kwargs["embedding"] is True
         # When running on CPU, n_gpu_layers defaults to 0 (no GPU offload)
-        assert kwargs.get('n_gpu_layers', 0) == 0
+        assert kwargs.get("n_gpu_layers", 0) == 0
         mock_get_device.assert_called_once()
 
-    @patch('backend.pipeline.ingestion.embedding.Llama')
-    @patch('backend.pipeline.ingestion.embedding.get_device', return_value='cuda')
+    @patch("backend.pipeline.ingestion.embedding.Llama")
+    @patch("backend.pipeline.ingestion.embedding.get_device", return_value="cuda")
     def test_model_initialization_gpu(self, mock_get_device, mock_llama_class):
         """GGUF model should enable GPU offload when CUDA is available."""
         mock_model = MagicMock()
@@ -229,27 +290,27 @@ class TestGGUFEmbedding:
 
         mock_llama_class.from_pretrained.assert_called_once()
         _, kwargs = mock_llama_class.from_pretrained.call_args
-        assert kwargs['n_gpu_layers'] == -1
-        assert kwargs['main_gpu'] == 0
+        assert kwargs["n_gpu_layers"] == -1
+        assert kwargs["main_gpu"] == 0
         mock_get_device.assert_called_once()
 
-    @patch('backend.pipeline.ingestion.embedding.Llama')
+    @patch("backend.pipeline.ingestion.embedding.Llama")
     def test_encode_document_batch_success(self, mock_llama_class):
-        """encode_document should process batches and return numpy array."""
+        """encode_document should process texts and return numpy array."""
         mock_model = MagicMock()
-        mock_model.embed.return_value = [[0.1] * 768, [0.2] * 768]
+        mock_model.embed.side_effect = [[0.1] * 768, [0.2] * 768]
         mock_llama_class.from_pretrained.return_value = mock_model
 
         model = GGUFEmbeddingModel()
         embeddings = model.encode_document(["text1", "text2"])
 
-        mock_model.embed.assert_called_once()
-        args, _ = mock_model.embed.call_args
-        prompted = args[0]
-        assert prompted[0].startswith("title: none | text: text1")
+        assert mock_model.embed.call_count == 2
+        call_args_list = mock_model.embed.call_args_list
+        assert call_args_list[0][0][0] == "title: none | text: text1"
+        assert call_args_list[1][0][0] == "title: none | text: text2"
         assert embeddings.shape == (2, 768)
 
-    @patch('backend.pipeline.ingestion.embedding.Llama')
+    @patch("backend.pipeline.ingestion.embedding.Llama")
     def test_encode_query_prompt(self, mock_llama_class):
         """encode_query should apply the correct retrieval prompt."""
         mock_model = MagicMock()
@@ -259,43 +320,7 @@ class TestGGUFEmbedding:
         model = GGUFEmbeddingModel()
         embedding = model.encode_query("example query")
 
-        mock_model.embed.assert_called_once_with("task: search result | query: example query")
+        mock_model.embed.assert_called_once_with(
+            "task: search result | query: example query"
+        )
         assert embedding.shape == (768,)
-
-    @patch('backend.pipeline.ingestion.embedding.psutil')
-    @patch('backend.pipeline.ingestion.embedding.Llama')
-    def test_memory_based_batch_size(self, mock_llama_class, mock_psutil):
-        """Batch size calculation should respect available memory."""
-        mock_model = MagicMock()
-        mock_llama_class.from_pretrained.return_value = mock_model
-
-        mock_mem = MagicMock()
-        mock_mem.available = 8 * 1024**3  # 8 GB available
-        mock_psutil.virtual_memory.return_value = mock_mem
-
-        model = GGUFEmbeddingModel()
-        batch_size = model._calculate_memory_based_batch_size(num_texts=100)
-
-        assert 1 <= batch_size <= 100
-
-    @patch('backend.pipeline.ingestion.embedding.Llama')
-    def test_batch_failure_fallback(self, mock_llama_class):
-        """When batch embedding fails repeatedly, fall back to single item embedding."""
-        mock_model = MagicMock()
-        mock_model.embed.side_effect = [
-            Exception("batch failure"),  # initial batch
-            Exception("batch failure"),  # retry with smaller batch
-            Exception("batch failure"),  # final batch before fallback
-            np.array([0.1] * 768, dtype=np.float32),  # fallback individual embedding
-            np.array([0.2] * 768, dtype=np.float32),  # remaining chunk succeeds in batch of 1
-        ]
-        mock_llama_class.from_pretrained.return_value = mock_model
-
-        model = GGUFEmbeddingModel()
-        embeddings = model.encode_document(["text1", "text2"])
-
-        # Expect three failed batch attempts, a single-item fallback call, then success
-        assert mock_model.embed.call_count == 5
-        # Ensure at least one fallback call was made with a raw string (individual embedding)
-        assert any(isinstance(call.args[0], str) for call in mock_model.embed.call_args_list)
-        assert embeddings.shape == (2, 768)

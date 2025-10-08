@@ -6,7 +6,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def generate_answer_with_gemini(query: str, chunks: List[Dict], model: str = "gemini-2.5-flash") -> str:
+
+def generate_answer_with_gemini(
+    query: str, chunks: List[Dict], model: str = "gemini-2.5-flash"
+) -> str:
     """Generate answer using Google Gemini with retrieved chunks as context."""
     # DEBUG: Print GEMINI_API_KEY (masked)
     gemini_key = os.getenv("GEMINI_API_KEY")
@@ -18,7 +21,7 @@ def generate_answer_with_gemini(query: str, chunks: List[Dict], model: str = "ge
     # Build context from chunks (use full content)
     context_parts = []
     for i, chunk in enumerate(chunks, 1):
-        content = chunk.get('content', '')
+        content = chunk.get("content", "")
         context_parts.append(f"Document {i} ({chunk['filename']}):\n{content}\n")
 
     context = "\n".join(context_parts)
@@ -36,7 +39,8 @@ def generate_answer_with_gemini(query: str, chunks: List[Dict], model: str = "ge
                 - If the context doesn't contain enough information to answer the question, say so.
                 - Be concise but comprehensive.
                 - Respond in the same language and style as the question.
-                
+                - Use numbered list instead of bulleted.
+
                 Answer:"""
 
     # Get API key from environment
@@ -54,10 +58,13 @@ def generate_answer_with_gemini(query: str, chunks: List[Dict], model: str = "ge
         config=types.GenerateContentConfig(
             temperature=0.3,  # Slightly higher to encourage concise responses
             max_output_tokens=1024,  # Limit response length to reduce token usage
-            thinking_config=types.ThinkingConfig(thinking_budget=0),  # Disable thinking for speed
-            # Remove tool_config entirely to disable AFC
-        )
+            thinking_config=types.ThinkingConfig(
+                thinking_budget=0
+            ),  # Disable thinking for speed
+            tool_config=types.ToolConfig(
+                function_calling_config=types.FunctionCallingConfig(mode="NONE")
+            ),
+        ),
     )
 
     return response.text
-
