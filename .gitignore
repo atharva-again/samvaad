@@ -221,3 +221,5 @@ frontend/
 vosk-*
 
 .gitignore
+hf_login.txt
+.github/copilot-instructions.md

@@ -6,20 +6,21 @@ import numpy as np
 from backend.pipeline.vectorstore.vectorstore import collection
 from backend.utils.gpu_utils import get_device
 from backend.pipeline.generation.generation import generate_answer_with_gemini
+from backend.pipeline.ingestion.embedding import GGUFEmbeddingModel
 
-# Use same embedding model as for documents
-_MODEL_NAME = "google/embeddinggemma-300m"
+# Use same GGUF quantized embedding model as for documents
+_MODEL_REPO = "unsloth/embeddinggemma-300m-GGUF"
+_QUANTIZATION = "Q8_0"
 
 # Global model instance to avoid reloading
 _embedding_model = None
 _cross_encoder = None
 
 def get_embedding_model():
-    """Get or create the embedding model instance."""
+    """Get or create the GGUF embedding model instance."""
     global _embedding_model
     if _embedding_model is None:
-        device = get_device()
-        _embedding_model = SentenceTransformer(_MODEL_NAME, device=device)
+        _embedding_model = GGUFEmbeddingModel(_MODEL_REPO, _QUANTIZATION)
     return _embedding_model
 
 def get_cross_encoder():
@@ -31,11 +32,10 @@ def get_cross_encoder():
     return _cross_encoder
 
 def embed_query(query: str) -> List[float]:
-    """Embed a query using the same model as documents."""
+    """Embed a query using the same GGUF model as documents."""
     model = get_embedding_model()
-    query_prompt = f"task: search result | query: {query}"
-    embeddings = model.encode_query(query_prompt, show_progress_bar=False, convert_to_numpy=True)
-    return embeddings.tolist()
+    embedding = model.encode_query(query)
+    return embedding.tolist()
 
 
 def summarize_chunk(text: str, max_chars: int = 200) -> str:

@@ -3,6 +3,7 @@ import tempfile
 import os
 from unittest.mock import patch, MagicMock
 import shutil
+import numpy as np
 
 # Import pipeline functions
 from backend.pipeline.ingestion.preprocessing import preprocess_file
@@ -102,10 +103,9 @@ class TestFullPipeline:
         with patch('backend.pipeline.ingestion.embedding._model', MagicMock()) as mock_model, \
              patch('backend.pipeline.ingestion.embedding.get_device', return_value='cpu'):
 
-            # Mock numpy array with tolist() method
-            mock_embeddings = MagicMock()
-            mock_embeddings.tolist.return_value = [[0.1] * 768 for _ in range(len(chunks))]
-            mock_model.encode.return_value = mock_embeddings
+            mock_model.encode_document.return_value = np.array(
+                [[0.1] * 768 for _ in range(len(chunks))], dtype=np.float32
+            )
 
             embeddings, indices = embed_chunks_with_dedup(chunks, test_filename)
             assert len(embeddings) == len(chunks)
@@ -121,9 +121,7 @@ class TestFullPipeline:
              patch('backend.pipeline.retrieval.query.generate_answer_with_gemini') as mock_generate:
 
             mock_emb_model_instance = MagicMock()
-            mock_embedding = MagicMock()
-            mock_embedding.tolist.return_value = [[0.1] * 768]
-            mock_emb_model_instance.encode.return_value = mock_embedding
+            mock_emb_model_instance.encode_query.return_value = np.array([0.1] * 768, dtype=np.float32)
             mock_emb_model.return_value = mock_emb_model_instance
 
             mock_search.return_value = [{

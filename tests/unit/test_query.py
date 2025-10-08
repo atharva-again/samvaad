@@ -1,5 +1,6 @@
 import pytest
 from unittest.mock import patch, MagicMock
+import numpy as np
 
 # Import modules to test
 from backend.pipeline.retrieval.query import (
@@ -19,33 +20,24 @@ class TestQuery:
     def test_embed_query(self, mock_get_model):
         """Test embedding a query."""
         mock_model = MagicMock()
-        # Mock numpy array with tolist() method
-        mock_embeddings = MagicMock()
-        mock_embeddings.tolist.return_value = [0.1, 0.2, 0.3]
-        mock_model.encode.return_value = [mock_embeddings]  # Return list with one element
+        mock_model.encode_query.return_value = np.array([0.1, 0.2, 0.3], dtype=np.float32)
         mock_get_model.return_value = mock_model
 
         query = "test query"
         embedding = embed_query(query)
 
-        assert embedding == [0.1, 0.2, 0.3]
-        mock_model.encode.assert_called_once()
+        assert embedding == pytest.approx([0.1, 0.2, 0.3])
+        mock_model.encode_query.assert_called_once_with("test query")
 
     @patch('backend.pipeline.retrieval.query.BM25Okapi')
     @patch('backend.pipeline.retrieval.query.collection')
     @patch('backend.pipeline.retrieval.query.get_cross_encoder')
-    @patch('backend.pipeline.retrieval.query.get_embedding_model')
-    def test_search_similar_chunks(self, mock_emb_model, mock_cross_encoder, mock_collection, mock_bm25):
+    def test_search_similar_chunks(self, mock_cross_encoder, mock_collection, mock_bm25):
         """Test searching for similar chunks."""
         # Mock BM25 to return predictable scores (higher for first document)
         mock_bm25_instance = MagicMock()
         mock_bm25_instance.get_scores.return_value = [2.0, 1.0]  # First doc scores higher
         mock_bm25.return_value = mock_bm25_instance
-        
-        # Mock embedding model
-        mock_emb_model_inst = MagicMock()
-        mock_emb_model_inst.encode.return_value = [[0.1] * 768]
-        mock_emb_model.return_value = mock_emb_model_inst
 
         # Mock collection
         mock_collection.get.return_value = {

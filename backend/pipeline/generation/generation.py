@@ -55,11 +55,7 @@ def generate_answer_with_gemini(query: str, chunks: List[Dict], model: str = "ge
             temperature=0.3,  # Slightly higher to encourage concise responses
             max_output_tokens=1024,  # Limit response length to reduce token usage
             thinking_config=types.ThinkingConfig(thinking_budget=0),  # Disable thinking for speed
-            tool_config=types.ToolConfig(
-                function_calling_config=types.FunctionCallingConfig(
-                    mode=types.FunctionCallingConfig.Mode.NONE
-                )
-            )
+            # Remove tool_config entirely to disable AFC
         )
     )
 
