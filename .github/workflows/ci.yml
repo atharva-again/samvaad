@@ -37,7 +37,7 @@ jobs:
       - name: Install dependencies
         run: |
           uv venv venv
-          uv pip install -r requirements-cpu.txt --index-strategy unsafe-best-match
+          uv pip install -e .[cpu] --index-strategy unsafe-best-match
 
       - name: Run tests
         env:
@@ -67,7 +67,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip/wheels
-          key: pytorch-gpu-${{ runner.os }}-py311-${{ hashFiles('requirements-gpu.txt') }}
+          key: pytorch-gpu-${{ runner.os }}-py311-${{ hashFiles('pyproject.toml') }}
           restore-keys: |
             pytorch-gpu-${{ runner.os }}-py311-
 
@@ -81,7 +81,7 @@ jobs:
       - name: Install dependencies
         run: |
           uv venv venv
-          uv pip install -r requirements-gpu.txt --index-strategy unsafe-best-match
+          uv pip install -e .[gpu] --index-strategy unsafe-best-match
 
       - name: Run tests
         env:
