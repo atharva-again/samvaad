@@ -37,12 +37,14 @@ jobs:
       - name: Install dependencies
         run: |
           uv venv venv
+          source venv/bin/activate
           uv pip install -e .[cpu] --index-strategy unsafe-best-match
 
       - name: Run tests
         env:
           PYTHONWARNINGS: default
         run: |
+          source venv/bin/activate
           pytest
 
   tests-gpu:
@@ -81,10 +83,12 @@ jobs:
       - name: Install dependencies
         run: |
           uv venv venv
+          source venv/bin/activate
           uv pip install -e .[gpu] --index-strategy unsafe-best-match
 
       - name: Run tests
         env:
           PYTHONWARNINGS: default
         run: |
+          source venv/bin/activate
           pytest
