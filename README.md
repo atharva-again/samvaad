@@ -10,13 +10,10 @@
 Please see the [issues](https://github.com/HapoSeiz/samvaad/issues) for ideas or to report bugs.
 
 ### Recent Updates
+- **Interactive CLI:** Improved user interface that can be called using the `samvaad` command
 - **Kokoro TTS:** Neural TTS engine with high-quality speech synthesis
 - **Voice Queries:** Ask questions or query documents in your preferred language (Hindi, English, etc.)
-- **GPU Acceleration:** Automatic GPU detection for faster processing
-- **Performance Monitoring:** Timing instrumentation for all pipeline steps
-- **OS Compatibility:** Cross-platform path resolution
-- **Separate Requirements:** CPU and GPU-specific dependency files
-- **Interactive CLI:** Improved user interface for all operations
+
 
 The modular design makes it easy to add new features. The backend/ and frontend/ folders are separate, so you can build the UI and connect to the backend API.icense-MIT-green)
 
@@ -53,50 +50,39 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 **Windows:**
+
 ```sh
-uv venv
+# Create a Python 3.11.x virtual environment
+uv venv --python=3.11
 venv\Scripts\activate
 ```
 
 **macOS/Linux:**
+
 ```sh
-uv venv
+# Create a Python 3.11.x virtual environment
+uv venv --python=3.11
 source .venv/bin/activate
 ```
 
-*Note: uv creates a `.venv` directory by default (with a dot). The activation command uses `.venv/bin/activate` on Unix systems.*
+*Note: uv creates a `.venv` directory by default (with a dot).*
 
 ### 3. Install Samvaad
 
-**Option 1: Install from PyPI (recommended):**
+**Install all dependencies using requirements.txt:**
 
-For CPU-only systems:
 ```sh
-pip install samvaad[cpu]
+uv pip install -r requirements.txt
 ```
 
-For GPU systems (CUDA 12.1):
+**Then, install Samvaad in editable mode to enable the CLI command:**
+
 ```sh
-pip install samvaad[gpu]
+pip install -e .
 ```
 
-**Option 2: Install from source:**
+**You must run both steps for the `samvaad` command to work.**
 
-For CPU-only systems:
-```sh
-git clone https://github.com/atharva-again/samvaad.git
-cd samvaad
-pip install -e .[cpu]
-```
-
-For GPU systems:
-```sh
-git clone https://github.com/atharva-again/samvaad.git
-cd samvaad
-pip install -e .[gpu]
-```
-
-**Note:** Always ensure your virtual environment is activated before installing packages. If you encounter PyTorch installation issues, visit https://pytorch.org/get-started/locally/ for manual installation instructions.
 
 ### 4. Add Your Documents
 

@@ -38,7 +38,8 @@ jobs:
         run: |
           uv venv venv
           source venv/bin/activate
-          uv pip install -e .[cpu] --index-strategy unsafe-best-match
+          uv pip install -r requirements.txt
+          uv pip install -e . --index-strategy unsafe-best-match
 
       - name: Run tests
         env:
@@ -84,7 +85,8 @@ jobs:
         run: |
           uv venv venv
           source venv/bin/activate
-          uv pip install -e .[gpu] --index-strategy unsafe-best-match
+          uv pip install -r requirements.txt
+          uv pip install -e . --index-strategy unsafe-best-match
 
       - name: Run tests
         env:
