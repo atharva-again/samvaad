@@ -98,6 +98,22 @@ pip install -e .[gpu]
 
 **Note:** Always ensure your virtual environment is activated before installing packages. If you encounter PyTorch installation issues, visit https://pytorch.org/get-started/locally/ for manual installation instructions.
 
+### Important: Install Required Llama-cpp-python Fork
+
+Samvaad requires a special fork of `llama-cpp-python` for Gemma model support. **You must install this manually before installing Samvaad:**
+
+```sh
+pip install git+https://github.com/inference-sh/llama-cpp-python.git
+```
+
+Then install Samvaad as usual:
+
+```sh
+pip install samvaad[cpu]
+# or
+pip install samvaad[gpu]
+```
+
 ### 4. Add Your Documents
 
 Place your documents inside the `data/documents/` folder. Supported file types include:

@@ -47,7 +47,6 @@ dependencies = [
     "kokoro-onnx>=0.3.1",
     "transformers",
     "tokenizers",
-    "llama-cpp-python @ git+https://github.com/inference-sh/llama-cpp-python.git",
     "pytest>=8.3.3",
     "pytest-mock>=3.14.0",
 ]

@@ -38,6 +38,7 @@ jobs:
         run: |
           uv venv venv
           source venv/bin/activate
+          pip install git+https://github.com/inference-sh/llama-cpp-python.git
           uv pip install -e .[cpu] --index-strategy unsafe-best-match
 
       - name: Run tests
@@ -84,6 +85,7 @@ jobs:
         run: |
           uv venv venv
           source venv/bin/activate
+          pip install git+https://github.com/inference-sh/llama-cpp-python.git
           uv pip install -e .[gpu] --index-strategy unsafe-best-match
 
       - name: Run tests
