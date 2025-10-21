@@ -4,13 +4,13 @@ import io
 from pathlib import Path
 
 # Import modules to test
-from backend.pipeline.generation.kokoro_tts import KokoroTTS, TTSConfig, VoiceSettings
+from samvaad.pipeline.generation.kokoro_tts import KokoroTTS, TTSConfig, VoiceSettings
 
 
 class TestKokoroTTS:
     """Test KokoroTTS class functionality."""
 
-    @patch('backend.pipeline.generation.kokoro_tts.torch')
+    @patch('samvaad.pipeline.generation.kokoro_tts.torch')
     def test_init_default_config(self, mock_torch):
         """Test initialization with default configuration."""
         mock_torch.cuda.is_available.return_value = False
@@ -20,7 +20,7 @@ class TestKokoroTTS:
         assert "hi" in tts._config.voices
         assert tts._config.default_language == "en"
 
-    @patch('backend.pipeline.generation.kokoro_tts.torch')
+    @patch('samvaad.pipeline.generation.kokoro_tts.torch')
     def test_init_custom_config(self, mock_torch):
         """Test initialization with custom configuration."""
         mock_torch.cuda.is_available.return_value = False
@@ -35,7 +35,7 @@ class TestKokoroTTS:
         assert tts._config == custom_config
         assert tts._config.default_language == "es"
 
-    @patch('backend.pipeline.generation.kokoro_tts.torch')
+    @patch('samvaad.pipeline.generation.kokoro_tts.torch')
     def test_init_empty_config_raises_error(self, mock_torch):
         """Test that empty config raises ValueError."""
         mock_torch.cuda.is_available.return_value = False
@@ -43,7 +43,7 @@ class TestKokoroTTS:
         with pytest.raises(ValueError, match="No Kokoro voices configured"):
             KokoroTTS(config=empty_config)
 
-    @patch('backend.pipeline.generation.kokoro_tts.torch')
+    @patch('samvaad.pipeline.generation.kokoro_tts.torch')
     def test_init_gpu_preference(self, mock_torch):
         """Test GPU preference detection."""
         mock_torch.cuda.is_available.return_value = True
@@ -54,7 +54,7 @@ class TestKokoroTTS:
         tts = KokoroTTS()
         assert tts._prefer_gpu is False
 
-    @patch('backend.pipeline.generation.kokoro_tts.torch')
+    @patch('samvaad.pipeline.generation.kokoro_tts.torch')
     def test_available_languages(self, mock_torch):
         """Test getting available languages."""
         mock_torch.cuda.is_available.return_value = False
@@ -63,7 +63,7 @@ class TestKokoroTTS:
         assert "en" in languages
         assert "hi" in languages
 
-    @patch('backend.pipeline.generation.kokoro_tts.torch')
+    @patch('samvaad.pipeline.generation.kokoro_tts.torch')
     @pytest.mark.parametrize("input_lang,expected", [
         ("en", "en"),
         ("en-us", "en"),
@@ -85,8 +85,8 @@ class TestKokoroTTS:
         result = tts._normalize_language(input_lang)
         assert result == expected
 
-    @patch('backend.pipeline.generation.kokoro_tts.torch')
-    @patch('backend.pipeline.generation.kokoro_tts.KPipeline')
+    @patch('samvaad.pipeline.generation.kokoro_tts.torch')
+    @patch('samvaad.pipeline.generation.kokoro_tts.KPipeline')
     def test_load_pipeline_caching(self, mock_kpipeline, mock_torch):
         """Test pipeline loading and caching."""
         mock_torch.cuda.is_available.return_value = False
@@ -98,7 +98,7 @@ class TestKokoroTTS:
         # First call should create pipeline
         pipeline1 = tts._load_pipeline("en")
         assert pipeline1 == mock_pipeline
-        mock_kpipeline.assert_called_once_with(lang_code="a")
+        mock_kpipeline.assert_called_once_with(repo_id='hexgrad/Kokoro-82M', lang_code="a")
 
         # Second call should return cached pipeline
         mock_kpipeline.reset_mock()
@@ -106,7 +106,7 @@ class TestKokoroTTS:
         assert pipeline2 == mock_pipeline
         mock_kpipeline.assert_not_called()  # Should use cache
 
-    @patch('backend.pipeline.generation.kokoro_tts.torch')
+    @patch('samvaad.pipeline.generation.kokoro_tts.torch')
     def test_load_pipeline_unsupported_language(self, mock_torch):
         """Test loading pipeline with unsupported language."""
         mock_torch.cuda.is_available.return_value = False
@@ -114,9 +114,9 @@ class TestKokoroTTS:
         with pytest.raises(ValueError, match="Unsupported language 'fr'"):
             tts._load_pipeline("fr")
 
-    @patch('backend.pipeline.generation.kokoro_tts.torch')
-    @patch('backend.pipeline.generation.kokoro_tts.KPipeline')
-    @patch('backend.pipeline.generation.kokoro_tts.np')
+    @patch('samvaad.pipeline.generation.kokoro_tts.torch')
+    @patch('samvaad.pipeline.generation.kokoro_tts.KPipeline')
+    @patch('samvaad.pipeline.generation.kokoro_tts.np')
     def test_synthesize_basic(self, mock_np, mock_kpipeline, mock_torch):
         """Test basic text synthesis."""
         mock_torch.cuda.is_available.return_value = False
@@ -143,7 +143,7 @@ class TestKokoroTTS:
         assert sample_width == 2
         assert channels == 1
 
-    @patch('backend.pipeline.generation.kokoro_tts.torch')
+    @patch('samvaad.pipeline.generation.kokoro_tts.torch')
     def test_synthesize_empty_text_raises_error(self, mock_torch):
         """Test that empty text raises ValueError."""
         mock_torch.cuda.is_available.return_value = False
@@ -154,10 +154,10 @@ class TestKokoroTTS:
         with pytest.raises(ValueError, match="Cannot synthesize empty text"):
             tts.synthesize("   ")
 
-    @patch('backend.pipeline.generation.kokoro_tts.torch')
-    @patch('backend.pipeline.generation.kokoro_tts.KPipeline')
-    @patch('backend.pipeline.generation.kokoro_tts.np')
-    @patch('backend.pipeline.generation.kokoro_tts.wave')
+    @patch('samvaad.pipeline.generation.kokoro_tts.torch')
+    @patch('samvaad.pipeline.generation.kokoro_tts.KPipeline')
+    @patch('samvaad.pipeline.generation.kokoro_tts.np')
+    @patch('samvaad.pipeline.generation.kokoro_tts.wave')
     def test_synthesize_wav(self, mock_wave, mock_np, mock_kpipeline, mock_torch):
         """Test WAV synthesis."""
         mock_torch.cuda.is_available.return_value = False
@@ -190,9 +190,9 @@ class TestKokoroTTS:
         mock_wav_file.setframerate.assert_called_with(24000)
         mock_wav_file.writeframes.assert_called_with(b'pcm_data')
 
-    @patch('backend.pipeline.generation.kokoro_tts.torch')
-    @patch('backend.pipeline.generation.kokoro_tts.KPipeline')
-    @patch('backend.pipeline.generation.kokoro_tts.np')
+    @patch('samvaad.pipeline.generation.kokoro_tts.torch')
+    @patch('samvaad.pipeline.generation.kokoro_tts.KPipeline')
+    @patch('samvaad.pipeline.generation.kokoro_tts.np')
     def test_synthesize_with_language_and_speed(self, mock_np, mock_kpipeline, mock_torch):
         """Test synthesis with specific language and speed."""
         mock_torch.cuda.is_available.return_value = False
@@ -214,7 +214,7 @@ class TestKokoroTTS:
         result = tts.synthesize("Hello", language="hi", speed=1.5)
 
         # Verify Hindi pipeline was used
-        mock_kpipeline.assert_called_with(lang_code="h")
+        mock_kpipeline.assert_called_with(repo_id='hexgrad/Kokoro-82M', lang_code="h")
         # Verify speed parameter was passed
         mock_pipeline.assert_called_with("Hello", voice="hf_alpha", speed=1.5)
 

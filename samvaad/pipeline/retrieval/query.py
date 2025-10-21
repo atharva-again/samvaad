@@ -3,24 +3,24 @@ from typing import List, Dict, Any
 from sentence_transformers import SentenceTransformer, CrossEncoder
 from rank_bm25 import BM25Okapi
 import numpy as np
-from backend.pipeline.vectorstore.vectorstore import collection
-from backend.utils.gpu_utils import get_device
-from backend.pipeline.generation.generation import generate_answer_with_gemini
+from samvaad.pipeline.vectorstore.vectorstore import get_collection
+from samvaad.utils.gpu_utils import get_device
+from samvaad.pipeline.generation.generation import generate_answer_with_gemini
+from samvaad.pipeline.ingestion.embedding import GGUFEmbeddingModel
 
-# Use same embedding model as for documents
-_MODEL_NAME = "BAAI/bge-m3"
-_INSTRUCTION = "Represent this sentence for retrieval: "
+# Use same GGUF quantized embedding model as for documents
+_MODEL_REPO = "unsloth/embeddinggemma-300m-GGUF"
+_QUANTIZATION = "Q8_0"
 
 # Global model instance to avoid reloading
 _embedding_model = None
 _cross_encoder = None
 
 def get_embedding_model():
-    """Get or create the embedding model instance."""
+    """Get or create the GGUF embedding model instance."""
     global _embedding_model
     if _embedding_model is None:
-        device = get_device()
-        _embedding_model = SentenceTransformer(_MODEL_NAME, device=device)
+        _embedding_model = GGUFEmbeddingModel(_MODEL_REPO, _QUANTIZATION)
     return _embedding_model
 
 def get_cross_encoder():
@@ -32,11 +32,10 @@ def get_cross_encoder():
     return _cross_encoder
 
 def embed_query(query: str) -> List[float]:
-    """Embed a query using the same model as documents."""
+    """Embed a query using the same GGUF model as documents."""
     model = get_embedding_model()
-    inputs = [_INSTRUCTION + query]
-    embeddings = model.encode(inputs, show_progress_bar=False, convert_to_numpy=True)
-    return embeddings[0].tolist()
+    embedding = model.encode_query(query)
+    return embedding.tolist()
 
 
 def summarize_chunk(text: str, max_chars: int = 200) -> str:
@@ -95,6 +94,9 @@ def reciprocal_rank_fusion(ranks1: List[Dict], ranks2: List[Dict], k: int = 60) 
 
 def search_similar_chunks(query_embedding: List[float], query_text: str, top_k: int = 3) -> List[Dict]:
     """Search for similar chunks using hybrid BM25 + Embedding + Cross-Encoder reranking."""
+    
+    # Get ChromaDB collection (lazy initialization)
+    collection = get_collection()
     
     # Get all chunks from ChromaDB (for BM25 indexing)
     all_results = collection.get(include=['documents', 'metadatas'])
@@ -171,7 +173,7 @@ def search_similar_chunks(query_embedding: List[float], query_text: str, top_k: 
     # Return top 3
     return reranked[:top_k]
 
-def rag_query_pipeline(query_text: str, top_k: int = 3, model: str = "gemini-2.5-flash") -> Dict[str, Any]:
+def rag_query_pipeline(query_text: str, top_k: int = 3, model: str = "gemini-2.5-flash", conversation_manager=None) -> Dict[str, Any]:
     """
     Complete RAG pipeline: embed query, search, generate answer.
 
@@ -187,11 +189,9 @@ def rag_query_pipeline(query_text: str, top_k: int = 3, model: str = "gemini-2.5
     """
     try:
         # Step 1: Embed the query
-        print("🔍 Embedding query...")
         query_embedding = embed_query(query_text)
 
         # Step 2: Search for similar chunks (hybrid retrieval with reranking)
-        print(f"🔎 Searching for top-{top_k} similar chunks...")
         chunks = search_similar_chunks(query_embedding, query_text, top_k)
 
         if not chunks:
@@ -204,9 +204,15 @@ def rag_query_pipeline(query_text: str, top_k: int = 3, model: str = "gemini-2.5
                 'rag_prompt': ""
             }
 
-        # Step 3: Generate answer with Gemini
-        print("🤖 Generating answer with Gemini...")
-        answer = generate_answer_with_gemini(query_text, chunks, model)
+        # Step 3: Generate answer with an LLM
+    
+        conversation_context = ""
+        if conversation_manager:
+            conversation_context = conversation_manager.get_context()
+        
+        answer = generate_answer_with_gemini(query_text, chunks, model, conversation_context)
+        from samvaad.utils.clean_markdown import strip_markdown
+        answer = strip_markdown(answer)
 
         # Step 4: Format sources for display
         sources = []

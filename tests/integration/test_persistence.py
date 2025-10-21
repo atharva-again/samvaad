@@ -1,9 +1,10 @@
 import chromadb
 import pytest
+from unittest.mock import patch
 
-from backend.pipeline.ingestion.chunking import find_new_chunks, update_chunk_file_db
-from backend.pipeline.vectorstore import vectorstore
-from backend.utils import filehash_db, hashing
+from samvaad.pipeline.ingestion.chunking import find_new_chunks, update_chunk_file_db
+from samvaad.pipeline.vectorstore import vectorstore
+from samvaad.utils import filehash_db, hashing
 
 
 @pytest.mark.integration
@@ -21,8 +22,8 @@ def test_ingestion_persists_across_restart(tmp_path, monkeypatch):
     except Exception as exc:
         pytest.skip(f"ChromaDB not available in test environment: {exc}")
     collection = client.get_or_create_collection("documents")
-    monkeypatch.setattr(vectorstore, "client", client)
-    monkeypatch.setattr(vectorstore, "collection", collection)
+    monkeypatch.setattr(vectorstore, "_client", client)
+    monkeypatch.setattr(vectorstore, "_collection", collection)
 
     # Simulate ingestion of a single chunk
     raw_bytes = b"Persistence test payload"
@@ -36,10 +37,12 @@ def test_ingestion_persists_across_restart(tmp_path, monkeypatch):
     update_chunk_file_db(new_chunks, file_id)
 
     chunk_id = new_chunks[0][1]
-    embeddings = [[0.1, 0.2, 0.3]]
+    embeddings = [[0.1] * 768]
     metadatas = [{"filename": filename, "chunk_id": chunk_id}]
 
-    vectorstore.add_embeddings([chunk_text], embeddings, metadatas, filename)
+    # Mock generate_chunk_id to return the consistent chunk_id
+    with patch('samvaad.pipeline.vectorstore.vectorstore.generate_chunk_id', return_value=chunk_id):
+        vectorstore.add_embeddings([chunk_text], embeddings, metadatas, filename)
 
     # Verify the data is queryable immediately
     stored = collection.get(ids=[chunk_id])
@@ -54,6 +57,7 @@ def test_ingestion_persists_across_restart(tmp_path, monkeypatch):
     assert stored_after_restart["ids"] == [chunk_id]
 
     # Adding the same chunk again should be a no-op because of deduplication
-    vectorstore.add_embeddings([chunk_text], embeddings, metadatas, filename)
+    with patch('samvaad.pipeline.vectorstore.vectorstore.generate_chunk_id', return_value=chunk_id):
+        vectorstore.add_embeddings([chunk_text], embeddings, metadatas, filename)
     dedup_check = restarted_collection.get(ids=[chunk_id])
     assert dedup_check["ids"] == [chunk_id]

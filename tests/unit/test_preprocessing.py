@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock
 import shutil
 
 # Import modules to test
-from backend.pipeline.ingestion.preprocessing import preprocess_file, update_file_metadata_db
+from samvaad.pipeline.ingestion.preprocessing import preprocess_file, update_file_metadata_db
 
 
 class TestPreprocessing:
@@ -20,15 +20,15 @@ class TestPreprocessing:
         """Clean up temporary database."""
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    @patch('backend.utils.filehash_db.DB_PATH')
+    @patch('samvaad.utils.filehash_db.DB_PATH')
     def test_preprocess_file_new_file(self, mock_db_path):
         """Test preprocess_file for a new file."""
         # Mock the database path
         mock_db_path.__str__ = lambda: self.db_path
         mock_db_path.__fspath__ = lambda: self.db_path
         
-        with patch('backend.pipeline.ingestion.preprocessing.init_db'):
-            with patch('backend.pipeline.ingestion.preprocessing.file_exists', return_value=False):
+        with patch('samvaad.pipeline.ingestion.preprocessing.init_db'):
+            with patch('samvaad.pipeline.ingestion.preprocessing.file_exists', return_value=False):
                 content = b"test content"
                 filename = "test.txt"
 
@@ -36,14 +36,14 @@ class TestPreprocessing:
                 result = preprocess_file(content, filename)
                 assert result == False
 
-    @patch('backend.utils.filehash_db.DB_PATH')
+    @patch('samvaad.utils.filehash_db.DB_PATH')
     def test_preprocess_file_duplicate(self, mock_db_path):
         """Test preprocess_file for a duplicate file."""
         mock_db_path.__str__ = lambda: self.db_path
         mock_db_path.__fspath__ = lambda: self.db_path
         
-        with patch('backend.pipeline.ingestion.preprocessing.init_db'):
-            with patch('backend.pipeline.ingestion.preprocessing.file_exists', return_value=True):
+        with patch('samvaad.pipeline.ingestion.preprocessing.init_db'):
+            with patch('samvaad.pipeline.ingestion.preprocessing.file_exists', return_value=True):
                 content = b"test content"
                 filename = "test.txt"
 
@@ -51,8 +51,8 @@ class TestPreprocessing:
                 result = preprocess_file(content, filename)
                 assert result == True
 
-    @patch('backend.pipeline.ingestion.preprocessing.add_file')
-    @patch('backend.pipeline.ingestion.preprocessing.generate_file_id')
+    @patch('samvaad.pipeline.ingestion.preprocessing.add_file')
+    @patch('samvaad.pipeline.ingestion.preprocessing.generate_file_id')
     def test_update_file_metadata_db(self, mock_generate_id, mock_add_file):
         """Test update_file_metadata_db calls add_file with correct parameters."""
         mock_generate_id.return_value = "test_file_id"

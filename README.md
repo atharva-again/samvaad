@@ -3,14 +3,14 @@
 ![Python](https://img.shields.io/badge/python-3.11-blue)
 
 ### Note
-- Voice queries are now fully supported with dual TTS engines (Kokoro & Piper) for high-quality speech synthesis in English and Hindi
+- Voice queries are now fully supported with Kokoro TTS for high-quality speech synthesis in English and Hindi
 - Frontend/UI is under development - currently CLI-only
 - Voice chat feature includes automatic markdown processing for clean display and natural pronunciation
 
 Please see the [issues](https://github.com/HapoSeiz/samvaad/issues) for ideas or to report bugs.
 
 ### Recent Updates
-- **Dual TTS Engines:** Support for both Kokoro (neural) and Piper (traditional) TTS engines with CLI flags
+- **Kokoro TTS:** Neural TTS engine with high-quality speech synthesis
 - **Voice Queries:** Ask questions or query documents in your preferred language (Hindi, English, etc.)
 - **GPU Acceleration:** Automatic GPU detection for faster processing
 - **Performance Monitoring:** Timing instrumentation for all pipeline steps
@@ -31,7 +31,7 @@ The modular design makes it easy to add new features. The backend/ and frontend/
 ## Getting Started
 
 ### Prerequisites
-- **Python 3.11**: This project is optimized for Python 3.11. Some dependencies (like PyAudio for voice features) have pre-built wheels only for this version. Ensure you're using 3.11:
+- **Python 3.11**: This project is optimized for Python 3.11. Some dependencies (like sounddevice for voice features) provide wheels primarily for this version. Ensure you're using 3.11:
   ```sh
   python --version  # Should show Python 3.11.x
   ```
@@ -47,56 +47,56 @@ cd samvaad
 
 ### 2. Set Up a Virtual Environment
 
+**Install uv (if not already installed):**
+```sh
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
 **Windows:**
 ```sh
-python -m venv venv
+uv venv
 venv\Scripts\activate
 ```
-*If you have multiple Python versions:* Use `py -3.11 -m venv venv` (Python Launcher) or specify the path (e.g., `C:\Python311\python.exe -m venv venv`).
 
 **macOS/Linux:**
 ```sh
-python3.11 -m venv venv  # Use python3.11 if available, otherwise python3
-source venv/bin/activate
+uv venv
+source .venv/bin/activate
 ```
-*If you have multiple Python versions:*
-- System-wide: `python3.11 -m venv venv`
-- pyenv: `pyenv local 3.11` then `python -m venv venv`
-- conda: `conda create -n samvaad python=3.11` then `conda activate samvaad`
 
-### 3. Install Dependencies
+*Note: uv creates a `.venv` directory by default (with a dot). The activation command uses `.venv/bin/activate` on Unix systems.*
 
-**System Dependencies (for voice features):**
-PyAudio requires PortAudio. If you encounter issues with voice queries:
+### 3. Install Samvaad
 
-**Windows:** No additional installation needed (included in PyAudio wheels).
+**Option 1: Install from PyPI (recommended):**
 
-**macOS:**
+For CPU-only systems:
 ```sh
-brew install portaudio
+pip install samvaad[cpu]
 ```
 
-**Linux (Ubuntu/Debian):**
+For GPU systems (CUDA 12.1):
 ```sh
-sudo apt-get install portaudio19-dev
+pip install samvaad[gpu]
 ```
 
-**Linux (Fedora/CentOS):**
+**Option 2: Install from source:**
+
+For CPU-only systems:
 ```sh
-sudo dnf install portaudio-devel  # or yum install portaudio-devel
+git clone https://github.com/atharva-again/samvaad.git
+cd samvaad
+pip install -e .[cpu]
 ```
 
-Choose the appropriate requirements file based on your hardware:
-
-**For CPU-only systems:**
+For GPU systems:
 ```sh
-pip install -r requirements-cpu.txt
+git clone https://github.com/atharva-again/samvaad.git
+cd samvaad
+pip install -e .[gpu]
 ```
 
-**For GPU-accelerated systems (requires CUDA-compatible GPU):**
-```sh
-pip install -r requirements-gpu.txt
-```
+**Note:** Always ensure your virtual environment is activated before installing packages. If you encounter PyTorch installation issues, visit https://pytorch.org/get-started/locally/ for manual installation instructions.
 
 ### 4. Add Your Documents
 
@@ -127,7 +127,7 @@ You can get your `Gemini_API_Key` [here](https://aistudio.google.com/api-keys).
 Run the interactive CLI to ingest documents:
 
 ```sh
-python -m backend.test
+samvaad
 ```
 
 Then use commands like:
@@ -139,7 +139,7 @@ Then use commands like:
 Use the interactive CLI for querying:
 
 ```sh
-python -m backend.test
+samvaad
 ```
 
 Inside the CLI:
@@ -152,7 +152,7 @@ Samvaad supports multilingual voice queries, allowing you to ask questions in Hi
 
 ```sh
 # Start interactive mode
-python -m backend.test
+samvaad
 
 # Inside CLI:
 v
@@ -163,15 +163,11 @@ v
 **Supported Languages:** Hindi, Hinglish (code-mixed), English, and auto-detection for other languages.
 
 **TTS Engine Options:**
-- **Kokoro TTS (-k):** Neural TTS engine with high-quality voices (English & Hindi)
-- **Piper TTS (-p):** Traditional TTS engine with fast response times
+- **Kokoro TTS:** Neural TTS engine with high-quality voices (English & Hindi)
 
 ```sh
-# Voice query with Kokoro TTS (neural, higher quality)
-v -k
-
-# Voice query with Piper TTS (traditional, faster)
-v -p
+# Voice query with Kokoro TTS
+v
 ```
 
 **Features:**
@@ -191,14 +187,12 @@ Content-Type: application/json
 
 {
   "text": "Your text here",
-  "language": "en",
-  "engine": "kokoro"
+  "language": "en"
 }
 ```
 
-**Supported TTS Engines:**
+**Supported TTS Engine:**
 - `kokoro` - Neural TTS (higher quality, English & Hindi)
-- `piper` - Traditional TTS (faster, multiple languages)
 
 **Response:**
 ```json
@@ -214,14 +208,11 @@ Content-Type: application/json
 For direct voice queries without the interactive CLI:
 
 ```sh
-# Voice query with Kokoro TTS (neural, higher quality)
-python -m backend.pipeline.retrieval.query_voice -k
-
-# Voice query with Piper TTS (traditional, faster)
-python -m backend.pipeline.retrieval.query_voice -p
+# Voice query with Kokoro TTS
+python -m backend.pipeline.retrieval.query_voice
 
 # Voice query with specific Gemini model
-python -m backend.pipeline.retrieval.query_voice --tts-engine kokoro --model gemini-2.5-flash
+python -m backend.pipeline.retrieval.query_voice --model gemini-2.5-flash
 ```
 
 
@@ -232,15 +223,13 @@ python -m backend.pipeline.retrieval.query_voice --tts-engine kokoro --model gem
 Samvaad now uses an interactive command-line interface for all operations:
 
 ```sh
-python -m backend.test
+samvaad
 ```
 
 Available commands:
 - `i <file>` or `ingest <file>` - Process and ingest a file
 - `q <text>` or `query <text>` - Query the knowledge base
 - `v` or `voice` - Start voice query mode (supports multiple languages like Hindi, English, Hinglish)
-- `v -k` or `voice -k` - Voice query with Kokoro TTS engine (neural, higher quality)
-- `v -p` or `voice -p` - Voice query with Piper TTS engine (traditional, faster)
 - `r <file>` or `remove <file>` - Remove a file and its embeddings
 - `h` or `help` - Show help
 - `e` or `exit` - Exit the CLI
@@ -249,7 +238,7 @@ Available commands:
 
 ```sh
 # Start interactive mode
-python -m backend.test
+samvaad
 
 # Inside CLI:
 i documents/research_paper.pdf
@@ -327,38 +316,36 @@ The theory of Ballism, formally known as the Principle of Spherical Convergence,
 
 ```
 samvaad/
-├── backend/          # Python code for the RAG pipeline and API
+├── samvaad/          # Python code for the RAG pipeline and API
 │   ├── pipeline/     # Core RAG components
-│   │   ├── generation/    # LLM integration and TTS engines (Kokoro, Piper)
+│   │   ├── generation/    # LLM integration and TTS engine (Kokoro)
 │   │   ├── ingestion/     # Document processing and chunking
 │   │   ├── retrieval/     # Query processing and voice recognition
 │   │   ├── vectorstore/   # Vector database operations
 │   │   └── deletion/      # Document removal utilities
 │   ├── utils/        # Utilities (hashing, DB, GPU detection)
-│   ├── main.py       # FastAPI server with TTS API
-│   └── test.py       # Interactive CLI for testing and usage
-├── frontend/         # React + Next.js user interface (WIP)
+│   ├── interfaces/   # CLI and API interfaces
+│   │   ├── api.py    # FastAPI server with TTS API
+│   │   └── cli.py    # Interactive CLI for testing and usage
 ├── data/             # Raw documents and audio responses
 │   ├── documents/    # Source documents for knowledge base
 │   └── audio_responses/  # Saved TTS audio files
 ├── tests/            # Unit and integration tests
-├── requirements-cpu.txt  # Dependencies for CPU-only usage
-├── requirements-gpu.txt  # Dependencies for GPU acceleration
+├── requirements.txt  # Dependencies
 └── README.md         # Project documentation
 ```
 
 **Directory Overview:**
-- **backend/**: Modular RAG pipeline, dual TTS engines, API, and CLI (Python)
-- **backend/pipeline/generation/**: LLM integration (Gemini) and TTS engines (Kokoro & Piper)
-- **backend/pipeline/retrieval/**: Query processing, voice recognition, and markdown handling
-- **frontend/**: Modern UI (React/Next.js) - coming soon
+- **samvaad/**: Modular RAG pipeline, dual TTS engines, API, and CLI (Python)
+- **samvaad/pipeline/generation/**: LLM integration (Gemini) and TTS engine (Kokoro)
+- **samvaad/pipeline/retrieval/**: Query processing, voice recognition, and markdown handling
 - **data/documents/**: Your source documents (PDFs, Office docs, text, images, etc.)
 - **data/audio_responses/**: Automatically saved TTS audio files with engine-specific names
 - **tests/**: Comprehensive test suite for reliability
 
 ## Features
 
-- **Dual TTS Engines:** Choose between Kokoro (neural, high-quality) and Piper (traditional, fast) text-to-speech engines
+- **Kokoro TTS:** Neural TTS engine with high-quality speech synthesis
 - **Smart Markdown Processing:** Automatic stripping of markdown formatting for clean terminal display and natural speech synthesis
 - **Multilingual Voice Support:** Voice queries and responses in Hindi, English, Hinglish, and auto-detection for other languages
 - **Retrieval-Augmented Generation (RAG):** Combines LLMs with your own documents for accurate, context-aware answers.
@@ -370,7 +357,7 @@ samvaad/
 - **Modern Frontend (Coming Soon):** React + Next.js interface for a seamless chat experience.
 - **Interactive CLI:** Full document processing and querying via an interactive command-line interface.
 - **Multiple LLM Support:** Works with OpenAI GPT models and Google Gemini, with graceful fallback.
-- **Easy Setup:** Simple installation with separate CPU/GPU configurations.
+- **Easy Setup:** Simple installation with manual PyTorch selection for CPU or GPU.
 - **Private & Secure:** Your data stays on your machine.
 
 ---
@@ -425,6 +412,22 @@ pytest tests/unit/test_utils.py -v
 - **Integration Tests:** Test the complete RAG pipeline end-to-end
 - **Mocking:** External dependencies (APIs, databases, ML models) are mocked for reliable testing
 - **CI/CD Ready:** Tests are designed to run in automated environments
+
+### About Test Warnings
+
+Some warnings may appear during test runs from external dependencies (e.g., `docling-core`, `google-genai`). These warnings are **not from Samvaad code** but from upstream libraries that have known deprecation issues in Pydantic v2.12+. Here's how to minimize them:
+
+**To reduce or eliminate warnings:**
+1. Keep dependencies updated: `uv pip install --upgrade docling google-genai pydantic setuptools`
+2. These are deprecation notices that will be fixed in future releases of the upstream libraries
+3. The warnings do not affect functionality - all 175+ tests pass successfully
+
+**Current state (as of Oct 2025):**
+- `docling-core` 2.49.0: Pending upstream fix for Pydantic validator pattern
+- `google-genai` 1.45.0: Pending upstream fix for Pydantic validator pattern  
+- `setuptools` 80.9.0: `pkg_resources` deprecation warning (expected to be removed in setuptools 81+)
+
+These warnings will disappear once the upstream libraries update their code to use instance methods instead of classmethods for Pydantic validators (required by Pydantic v2.12+).
 
 ## Continuous Integration
 

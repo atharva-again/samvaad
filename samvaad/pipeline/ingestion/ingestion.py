@@ -4,12 +4,12 @@ This module encapsulates the common ingestion logic used by test.py and main.py.
 """
 
 import os
-from backend.pipeline.ingestion.chunking import parse_file, chunk_text, find_new_chunks, update_chunk_file_db
-from backend.pipeline.ingestion.embedding import embed_chunks_with_dedup
-from backend.pipeline.vectorstore.vectorstore import add_embeddings
-from backend.pipeline.ingestion.preprocessing import preprocess_file
-from backend.utils.hashing import generate_file_id
-from backend.utils.filehash_db import add_file
+from samvaad.pipeline.ingestion.chunking import parse_file, chunk_text, find_new_chunks, update_chunk_file_db
+from samvaad.pipeline.ingestion.embedding import embed_chunks_with_dedup
+from samvaad.pipeline.vectorstore.vectorstore import add_embeddings
+from samvaad.pipeline.ingestion.preprocessing import preprocess_file
+from samvaad.utils.hashing import generate_file_id
+from samvaad.utils.filehash_db import add_file
 
 
 def ingest_file_pipeline(filename, content_type, contents):

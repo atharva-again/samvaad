@@ -1,194 +1,399 @@
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 import tempfile
 import os
 import sys
-import importlib.util
+import sqlite3
 from pathlib import Path
 
-# Import CLI functions to test - avoid 'test' module name conflict
-backend_test_path = os.path.join(os.path.dirname(__file__), '..', '..', 'backend', 'test.py')
-spec = importlib.util.spec_from_file_location("backend_test", backend_test_path)
-backend_test = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(backend_test)
-# Expose the dynamically loaded module so patch() lookups succeed.
-sys.modules.setdefault("backend_test", backend_test)
-
-# Import CLI functions to test
-strip_markdown = backend_test.strip_markdown
-resolve_document_path = backend_test.resolve_document_path
-print_help = backend_test.print_help
-handle_query_interactive = backend_test.handle_query_interactive
-remove_file_interactive = backend_test.remove_file_interactive
-process_file_interactive = backend_test.process_file_interactive
-test_path_resolution = backend_test.test_path_resolution
+# Import the new CLI interface
+from samvaad.interfaces.cli import SamvaadInterface, Colors
 
 
-class TestCLIUtils:
-    """Test CLI utility functions."""
+class TestSamvaadInterface:
+    """Test cases for the new SamvaadInterface CLI."""
 
-    def test_resolve_document_path_absolute(self):
-        """Test resolving absolute paths."""
-        abs_path = "/absolute/path/to/file.pdf"
-        result = resolve_document_path(abs_path)
-        assert result == abs_path
+    @pytest.fixture
+    def cli_interface(self):
+        """Create a CLI interface instance for testing."""
+        return SamvaadInterface()
 
-    def test_resolve_document_path_relative(self):
-        """Test resolving relative paths to documents directory."""
-        # Mock the path operations
-        with patch('os.path.dirname', return_value='/fake/samvaad'), \
-             patch('os.path.join') as mock_join, \
-             patch('os.path.isabs', return_value=False):
+    def test_initialization(self, cli_interface):
+        """Test CLI interface initialization."""
+        assert cli_interface.console is not None
+        assert cli_interface.conversation_active is False
+        assert cli_interface._should_exit is False
+        assert 'messages' in cli_interface.session_stats
+        assert 'start_time' in cli_interface.session_stats
+        assert 'voice_queries' in cli_interface.session_stats
+        assert 'text_queries' in cli_interface.session_stats
+        assert cli_interface.completer is not None
+        assert cli_interface.prompt_session is not None
 
-            def join_side_effect(*args):
-                # Simulate os.path.join behaviour for both base path and final path computation.
-                if args == ('/fake/samvaad', 'data', 'documents'):
-                    return '/fake/samvaad/data/documents'
-                return '/'.join(args)
+    def test_setup_completions(self, cli_interface):
+        """Test completion setup."""
+        # Check that completer has expected commands
+        completer = cli_interface.completer
+        assert hasattr(completer, 'commands')
+        expected_commands = ['/help', '/h', '/voice', '/v', '/text', '/t',
+                           '/settings', '/cfg', '/quit', '/q', '/exit',
+                           '/status', '/s', '/stat', '/ingest', '/i',
+                           '/remove', '/rm']
+        for cmd in expected_commands:
+            assert cmd in completer.commands
 
-            mock_join.side_effect = join_side_effect
+    def test_display_banner(self, cli_interface):
+        """Test banner display."""
+        with patch.object(cli_interface, 'console') as mock_console:
+            # Mock console.size to avoid comparison issues
+            mock_console.size.width = 80
+            cli_interface.display_banner()
+            # Verify that print was called (banner contains multiple lines)
+            assert mock_console.print.call_count > 5
 
-            result = resolve_document_path("test.pdf")
-            assert result == '/fake/samvaad/data/documents/test.pdf'
-            mock_join.assert_any_call('/fake/samvaad/data/documents', 'test.pdf')
+    def test_display_help(self, cli_interface):
+        """Test help display."""
+        with patch.object(cli_interface, 'console') as mock_console:
+            cli_interface.display_help()
+            # Verify help panel was created and printed
+            assert mock_console.print.called
+            call_args = mock_console.print.call_args
+            assert 'Panel' in str(call_args)
 
-    def test_resolve_document_path_already_in_documents(self):
-        """Test paths already in documents directory."""
-        doc_path = "/fake/samvaad/data/documents/file.pdf"
-        with patch('backend_test.os.path.dirname') as mock_dirname:
-            mock_dirname.return_value = "/fake/samvaad"
+    def test_display_status_no_start_time(self, cli_interface):
+        """Test status display when no session started."""
+        with patch.object(cli_interface, 'console') as mock_console:
+            cli_interface.display_status()
+            # Should show appropriate message for no start time
+            assert mock_console.print.called
 
-            result = resolve_document_path(doc_path)
-            assert result == doc_path
+    def test_display_status_with_session(self, cli_interface):
+        """Test status display with active session."""
+        with patch.object(cli_interface, 'console') as mock_console, \
+             patch('samvaad.interfaces.cli.time') as mock_time:
+            # Set up session stats
+            cli_interface.session_stats['start_time'] = 1000
+            cli_interface.session_stats['messages'] = 5
+            cli_interface.session_stats['voice_queries'] = 2
+            cli_interface.session_stats['text_queries'] = 3
 
-    @patch('builtins.print')
-    def test_print_help(self, mock_print):
-        """Test help message printing."""
-        print_help()
+            mock_time.time.return_value = 1100  # 100 seconds later
 
-        # Verify that help was printed (check that print was called multiple times)
-        assert mock_print.call_count > 5
+            cli_interface.display_status()
 
-        # Check some key help content
-        calls = [str(call) for call in mock_print.call_args_list]
-        help_text = ' '.join(calls)
+            # Verify table was printed
+            assert mock_console.print.called
 
-        assert 'Available commands:' in help_text
-        assert '/query' in help_text
-        assert '/voice' in help_text
-        assert '/ingest' in help_text
-        assert '/remove' in help_text
+    def test_display_welcome(self, cli_interface):
+        """Test welcome message display."""
+        with patch.object(cli_interface, 'console') as mock_console:
+            cli_interface.display_welcome()
+            assert mock_console.print.called
 
-    @patch('backend.pipeline.retrieval.query.rag_query_pipeline')
-    @patch('time.perf_counter')
-    @patch('builtins.print')
-    def test_handle_query_interactive(self, mock_print, mock_perfcounter, mock_rag):
-        """Test interactive query handling."""
-        mock_perfcounter.side_effect = [100.0, 105.5]  # Start and end times
+    def test_show_settings(self, cli_interface):
+        """Test settings display."""
+        with patch.object(cli_interface, 'console') as mock_console:
+            cli_interface.show_settings()
+            assert mock_console.print.called
 
-        mock_rag.return_value = {
-            "success": True,
-            "answer": "Test answer",
-            "sources": [{"filename": "test.txt", "content_preview": "content", "distance": 0.1}],
-            "query": "test query",
-            "retrieval_count": 1,
-            "rag_prompt": "test prompt"
+    def test_format_ai_response(self, cli_interface):
+        """Test AI response formatting."""
+        with patch.object(cli_interface, 'console') as mock_console:
+            response = "Test response"
+            sources = [{"filename": "test.txt", "content_preview": "content"}]
+            query_time = 1.5
+
+            cli_interface.format_ai_response(response, sources, query_time)
+
+            # Verify response panel was created
+            assert mock_console.print.called
+
+    def test_format_user_message_text(self, cli_interface):
+        """Test user message formatting for text mode."""
+        with patch.object(cli_interface, 'console') as mock_console:
+            cli_interface.format_user_message("Hello world", "text")
+            assert mock_console.print.called
+
+    def test_format_user_message_voice(self, cli_interface):
+        """Test user message formatting for voice mode."""
+        with patch.object(cli_interface, 'console') as mock_console:
+            message = "Hello world"
+            cli_interface.format_user_message(message, "voice")
+            assert mock_console.print.called
+
+    def test_handle_slash_command_help(self, cli_interface):
+        """Test help command handling."""
+        with patch.object(cli_interface, 'display_help') as mock_display:
+            result = cli_interface.handle_slash_command('/help')
+            assert result is True
+            mock_display.assert_called_once()
+
+    def test_handle_slash_command_status(self, cli_interface):
+        """Test status command handling."""
+        with patch.object(cli_interface, 'display_status') as mock_display:
+            result = cli_interface.handle_slash_command('/status')
+            assert result is True
+            mock_display.assert_called_once()
+
+    def test_handle_slash_command_quit(self, cli_interface):
+        """Test quit command handling."""
+        result = cli_interface.handle_slash_command('/quit')
+        assert result is False  # Should return False to exit
+
+    def test_handle_slash_command_unknown(self, cli_interface):
+        """Test unknown command handling."""
+        with patch.object(cli_interface.console, 'print') as mock_print:
+            result = cli_interface.handle_slash_command('/unknown')
+            assert result is True
+            mock_print.assert_called()
+
+    @patch('samvaad.interfaces.cli.Progress')
+    @patch('samvaad.pipeline.ingestion.ingestion.ingest_file_pipeline')
+    @patch('samvaad.interfaces.cli.glob')
+    @patch('samvaad.interfaces.cli.os')
+    @patch('samvaad.interfaces.cli.console')
+    def test_handle_ingest_command_success(self, mock_console, mock_os, mock_glob, mock_ingest, mock_progress, cli_interface):
+        """Test successful file ingestion command."""
+        # Mock file discovery
+        mock_glob.glob.return_value = ['test.pdf']
+        mock_os.path.isfile.return_value = True
+        mock_os.path.getsize.return_value = 1000
+
+        # Mock successful ingestion
+        mock_ingest.return_value = {
+            'num_chunks': 10,
+            'new_chunks_embedded': 8,
+            'error': None
         }
 
-        handle_query_interactive("test query")
+        # Mock file reading
+        with patch('builtins.open', create=True) as mock_open:
+            mock_file = MagicMock()
+            mock_file.read.return_value = b'file content'
+            mock_open.return_value.__enter__.return_value = mock_file
+
+            cli_interface.handle_ingest_command('/ingest test.pdf')
+
+            # Verify ingestion was called
+            mock_ingest.assert_called_once()
+
+    @patch('samvaad.interfaces.cli.Progress')
+    @patch('samvaad.interfaces.cli.glob')
+    @patch('samvaad.interfaces.cli.os')
+    @patch('samvaad.interfaces.cli.console')
+    @patch('samvaad.utils.filehash_db.delete_file_and_cleanup')
+    def test_handle_remove_command_success(self, mock_delete, mock_console, mock_os, mock_glob, mock_progress, cli_interface):
+        """Test successful file removal command."""
+        # Mock file discovery - glob should return a unique list (set-like behavior)
+        mock_glob.glob.return_value = ['test.pdf']
+        mock_os.path.isfile.return_value = True
+
+        # Mock the database operations by patching at the method level
+        with patch('samvaad.interfaces.cli.sqlite3') as mock_sqlite, \
+             patch('samvaad.pipeline.vectorstore.vectorstore.get_collection') as mock_get_collection:
+            # Mock database connection and cursor
+            mock_conn = MagicMock()
+            mock_cursor = MagicMock()
+            mock_sqlite.connect.return_value = mock_conn
+            mock_conn.cursor.return_value = mock_cursor
+            # Mock finding a file in database
+            mock_cursor.fetchall.return_value = [(1, 'test.pdf')]
+
+            # Mock successful deletion
+            mock_delete.return_value = [1, 2, 3, 4, 5]  # 5 orphaned chunks
+
+            # Mock collection for ChromaDB deletion
+            mock_collection = MagicMock()
+            mock_get_collection.return_value = mock_collection
+
+            cli_interface.handle_remove_command('/remove test.pdf')
+
+            # Verify deletion was called at least once
+            assert mock_delete.call_count >= 1
+
+    @patch('samvaad.pipeline.retrieval.query.rag_query_pipeline')
+    @patch('samvaad.interfaces.cli.Progress')
+    @patch('samvaad.interfaces.cli.time')
+    @patch('samvaad.interfaces.cli.console')
+    def test_process_text_query_success(self, mock_console, mock_time, mock_progress, mock_rag, cli_interface):
+        """Test successful text query processing."""
+        # Mock time
+        mock_time.time.side_effect = [100.0, 101.5]  # Start and end times
+
+        # Mock successful RAG response
+        mock_rag.return_value = {
+            'answer': 'Test answer',
+            'success': True,
+            'sources': [{'filename': 'test.txt'}]
+        }
+
+        result = cli_interface.process_text_query('test query')
 
         # Verify RAG pipeline was called
-        mock_rag.assert_called_once_with("test query", top_k=3, model="gemini-2.5-flash")
+        mock_rag.assert_called_once_with(
+            'test query',
+            model='gemini-2.5-flash',
+            conversation_manager=cli_interface.conversation_manager
+        )
 
-        # Verify output was printed
-        assert mock_print.call_count > 5
+        # Verify result structure
+        assert result['answer'] == 'Test answer'
+        assert result['success'] is True
+        assert 'query_time' in result
+        assert result['query_time'] == 1.5
 
-    @patch('backend.pipeline.deletion.deletion.delete_file_and_embeddings')
-    @patch('time.perf_counter')
-    @patch('builtins.print')
-    def test_remove_file_interactive(self, mock_print, mock_perfcounter, mock_delete):
-        """Test interactive file removal."""
-        mock_perfcounter.side_effect = [200.0, 202.5]
-        mock_delete.return_value = [1, 2, 3]  # Orphaned chunk IDs
+        # Verify stats were updated
+        assert cli_interface.session_stats['messages'] == 1
+        assert cli_interface.session_stats['text_queries'] == 1
 
-        with patch('backend_test.resolve_document_path', return_value="/path/to/file.pdf"):
-            remove_file_interactive("file.pdf")
+    @patch('samvaad.pipeline.retrieval.query.rag_query_pipeline')
+    @patch('samvaad.interfaces.cli.Progress')
+    @patch('samvaad.interfaces.cli.time')
+    @patch('samvaad.interfaces.cli.console')
+    def test_process_text_query_error(self, mock_console, mock_time, mock_progress, mock_rag, cli_interface):
+        """Test text query processing with error."""
+        # Mock time
+        mock_time.time.side_effect = [100.0, 101.0]
 
-            mock_delete.assert_called_once_with("/path/to/file.pdf")
-            assert mock_print.call_count > 2
+        # Mock RAG pipeline error
+        mock_rag.side_effect = Exception('API Error')
 
-    @patch('backend.pipeline.ingestion.ingestion.ingest_file_pipeline')
-    @patch('time.perf_counter')
-    @patch('builtins.print')
-    @patch('builtins.open', create=True)
-    def test_process_file_interactive(self, mock_open, mock_print, mock_perfcounter, mock_ingest):
-        """Test interactive file processing."""
-        mock_perfcounter.side_effect = [300.0, 305.0]
+        result = cli_interface.process_text_query('test query')
 
-        mock_ingest.return_value = {
-            "num_chunks": 10,
-            "new_chunks_embedded": 8,
-            "error": None,
-            "chunk_preview": ["chunk1", "chunk2", "chunk3"]
+        # Verify error handling
+        assert 'error' in result['answer'].lower()
+        assert result['success'] is False
+        assert 'query_time' in result
+
+    @patch('samvaad.interfaces.cli.console')
+    def test_show_thinking_indicator(self, mock_console, cli_interface):
+        """Test thinking indicator display."""
+        cli_interface.show_thinking_indicator("Processing...")
+        # This uses console.status which is harder to mock directly
+        # Just verify the method exists and can be called
+        assert True
+
+    @patch('samvaad.pipeline.retrieval.voice_mode.VoiceMode')
+    @patch('samvaad.pipeline.retrieval.voice_mode.initialize_whisper_model')
+    @patch('samvaad.pipeline.retrieval.query.get_embedding_model')
+    @patch('samvaad.pipeline.retrieval.voice_mode.get_kokoro_tts')
+    @patch('samvaad.pipeline.retrieval.voice_mode.ConversationManager')
+    @patch('samvaad.interfaces.cli.Progress')
+    @patch('samvaad.interfaces.cli.console')
+    def test_start_voice_mode_success(self, mock_console, mock_progress, mock_conv_manager, mock_tts, mock_embedding, mock_whisper, mock_voice_mode):
+        """Test starting voice mode successfully."""
+        cli_interface = SamvaadInterface()
+        cli_interface.console = mock_console
+
+        # Mock the progress context manager
+        mock_progress_instance = MagicMock()
+        mock_progress.return_value.__enter__.return_value = mock_progress_instance
+        mock_progress_instance.add_task.return_value = "task_id"
+
+        # Mock voice mode
+        mock_voice_instance = MagicMock()
+        mock_voice_mode.return_value = mock_voice_instance
+
+        cli_interface.start_voice_mode()
+
+        # Verify progress was used
+        mock_progress.assert_called()
+        # Verify models were initialized
+        mock_whisper.assert_called_once()
+        mock_embedding.assert_called_once()
+        mock_tts.assert_called_once()
+        # Verify voice mode was created and run
+        mock_voice_mode.assert_called_once()
+        mock_voice_instance.run.assert_called_once()
+
+    @patch('samvaad.pipeline.retrieval.voice_mode.VoiceMode')
+    @patch('samvaad.interfaces.cli.Progress')
+    @patch('samvaad.interfaces.cli.console')
+    def test_run_voice_conversation_success(self, mock_console, mock_progress, mock_voice_mode):
+        """Test running voice conversation successfully."""
+        cli_interface = SamvaadInterface()
+        cli_interface.console = mock_console
+
+        # Mock voice mode
+        mock_voice_instance = MagicMock()
+        mock_voice_mode.return_value = mock_voice_instance
+
+        cli_interface.run_voice_conversation()
+
+        # Verify voice mode was created and run
+        mock_voice_mode.assert_called_once()
+        mock_voice_instance.run.assert_called_once()
+
+    @patch('samvaad.pipeline.retrieval.voice_mode.VoiceMode')
+    @patch('samvaad.interfaces.cli.Progress')
+    @patch('samvaad.interfaces.cli.console')
+    def test_run_voice_conversation_error(self, mock_console, mock_progress, mock_voice_mode):
+        """Test running voice conversation with error."""
+        cli_interface = SamvaadInterface()
+        cli_interface.console = mock_console
+
+        # Mock voice mode to raise exception
+        mock_voice_mode.side_effect = Exception("Voice error")
+
+        cli_interface.run_voice_conversation()
+
+        # Verify error message was printed
+        mock_console.print.assert_called()
+
+    @patch('samvaad.pipeline.retrieval.voice_mode.ConversationManager')
+    def test_init_conversation_components_success(self, mock_conv_manager, cli_interface):
+        """Test initializing conversation components successfully."""
+        mock_manager_instance = MagicMock()
+        mock_conv_manager.return_value = mock_manager_instance
+
+        cli_interface.init_conversation_components()
+
+        # Verify conversation manager was created
+        mock_conv_manager.assert_called_once_with(max_history=50, context_window=10)
+        assert cli_interface.conversation_manager == mock_manager_instance
+
+    @patch('samvaad.pipeline.retrieval.voice_mode.ConversationManager')
+    def test_init_conversation_components_error(self, mock_conv_manager, cli_interface):
+        """Test initializing conversation components with error."""
+        mock_conv_manager.side_effect = Exception("Init error")
+
+        with patch.object(cli_interface, 'console') as mock_console:
+            cli_interface.init_conversation_components()
+
+            # Verify error message was printed
+            mock_console.print.assert_called()
+
+    @patch('samvaad.pipeline.retrieval.query.rag_query_pipeline')
+    @patch('samvaad.interfaces.cli.Progress')
+    def test_process_text_query_success(self, mock_progress, mock_rag, cli_interface):
+        """Test processing text query successfully."""
+        mock_progress_instance = MagicMock()
+        mock_progress.return_value.__enter__.return_value = mock_progress_instance
+        mock_progress_instance.add_task.return_value = "task_id"
+
+        mock_rag.return_value = {
+            'answer': 'Test response',
+            'success': True,
+            'sources': []
         }
 
-        # Mock file operations
-        mock_file = MagicMock()
-        mock_file.read.return_value = b"file content"
-        mock_open.return_value.__enter__.return_value = mock_file
+        result = cli_interface.process_text_query("Test query")
 
-        with patch('backend_test.resolve_document_path', return_value="/path/to/file.pdf"), \
-             patch('os.path.isfile', return_value=True), \
-             patch('os.path.splitext', return_value=("/path/to/file", ".pdf")):
+        assert result['answer'] == 'Test response'
+        assert result['success'] is True
+        assert 'query_time' in result
 
-            process_file_interactive("file.pdf")
+    @patch('samvaad.pipeline.retrieval.query.rag_query_pipeline')
+    @patch('samvaad.interfaces.cli.Progress')
+    def test_process_text_query_error(self, mock_progress, mock_rag, cli_interface):
+        """Test processing text query with error."""
+        mock_progress_instance = MagicMock()
+        mock_progress.return_value.__enter__.return_value = mock_progress_instance
+        mock_progress_instance.add_task.return_value = "task_id"
 
-            mock_ingest.assert_called_once()
-            args, kwargs = mock_ingest.call_args
-            assert args[0] == "/path/to/file.pdf"
-            assert args[1] == "application/pdf"
-            assert args[2] == b"file content"
+        mock_rag.side_effect = Exception("Query error")
 
-    @patch('os.path.isfile', return_value=False)
-    @patch('builtins.print')
-    def test_process_file_interactive_file_not_found(self, mock_print, mock_isfile):
-        """Test file processing when file doesn't exist."""
-        with patch('backend_test.resolve_document_path', return_value="/nonexistent/file.pdf"):
-            process_file_interactive("file.pdf")
+        result = cli_interface.process_text_query("Test query")
 
-            mock_print.assert_called_with("File not found: /nonexistent/file.pdf")
-
-    @patch('builtins.print')
-    def test_test_path_resolution(self, mock_print):
-        """Test path resolution testing function."""
-        with patch('os.path.dirname', return_value="/fake/samvaad"), \
-             patch('os.path.join') as mock_join:
-
-            mock_join.side_effect = lambda *args: "/".join(args)
-
-            test_path_resolution()
-
-            # Verify print was called for test results
-            assert mock_print.call_count > 3
-
-    @patch('backend.test.interactive_cli')
-    @patch('backend.test.test_path_resolution')
-    @patch('sys.argv', ['test.py', '--test-paths'])
-    def test_main_with_test_paths(self, mock_test_paths, mock_interactive_cli):
-        """Test main function with --test-paths flag."""
-        from backend.test import main
-
-        main()
-
-        mock_test_paths.assert_called_once()
-        mock_interactive_cli.assert_not_called()
-
-    @patch('backend.test.interactive_cli')
-    @patch('sys.argv', ['test.py'])
-    def test_main_default(self, mock_interactive_cli):
-        """Test main function default behavior."""
-        from backend.test import main
-
-        main()
-
-        mock_interactive_cli.assert_called_once()
+        assert "error" in result['answer']
+        assert result['success'] is False
