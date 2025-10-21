@@ -1,15 +1,32 @@
 import chromadb
-from backend.utils.hashing import generate_chunk_id
+from samvaad.utils.hashing import generate_chunk_id
 
-# Initialize ChromaDB persistent client and collection
-client = chromadb.PersistentClient(path="chroma_db")
-collection = client.get_or_create_collection("documents")
+# Lazy initialization of ChromaDB
+_client = None
+_collection = None
+client = None  # For testing
+
+def get_collection():
+    """Get or create the ChromaDB collection with lazy initialization."""
+    global _client, _collection
+    if _client is None:
+        _client = chromadb.PersistentClient(path="chroma_db", settings=chromadb.Settings(allow_reset=True))
+    if _collection is None:
+        _collection = _client.get_or_create_collection("documents")
+    return _collection
+
+# For backward compatibility, keep collection as a property
+@property
+def collection():
+    return get_collection()
 
 def add_embeddings(chunks, embeddings, metadatas=None, filename=None):
     """
     Add text chunks and their embeddings to ChromaDB, avoiding duplicates by content-based chunk IDs.
     filename: should be a string (e.g., file path or name) to uniquely identify the source file.
     """
+    collection = get_collection()
+    
     if filename is None:
         filename = "unknown"
     
@@ -60,6 +77,8 @@ def query_embedding(query_embedding, top_k=3):
     Query ChromaDB for the most similar chunks to the query embedding.
     Returns: List of dicts with 'document', 'metadata', and 'distance'.
     """
+    collection = get_collection()
+    
     results = collection.query(
         query_embeddings=[query_embedding],
         n_results=top_k

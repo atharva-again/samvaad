@@ -1,5 +1,5 @@
-from backend.utils.filehash_db import init_db, file_exists, add_file
-from backend.utils.hashing import generate_file_id
+from samvaad.utils.filehash_db import init_db, file_exists, add_file
+from samvaad.utils.hashing import generate_file_id
 
 
 # This function can be extended for more preprocessing steps

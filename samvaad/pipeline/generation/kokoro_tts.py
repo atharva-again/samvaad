@@ -113,7 +113,7 @@ class KokoroTTS:
             if not settings:
                 raise ValueError(f"Unsupported language '{lang}'. Available: {sorted(self._config.voices)}")
 
-            pipeline = KPipeline(lang_code=settings.lang_code)
+            pipeline = KPipeline(repo_id='hexgrad/Kokoro-82M', lang_code=settings.lang_code)
             self._pipeline_cache[lang] = pipeline
             return pipeline
 

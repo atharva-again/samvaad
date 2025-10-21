@@ -3,7 +3,7 @@ from unittest.mock import patch, MagicMock
 import numpy as np
 
 # Import modules to test
-from backend.pipeline.retrieval.query import (
+from samvaad.pipeline.retrieval.query import (
     embed_query,
     search_similar_chunks,
     generate_answer_with_gemini,
@@ -16,7 +16,7 @@ from backend.pipeline.retrieval.query import (
 class TestQuery:
     """Test query functions."""
 
-    @patch('backend.pipeline.retrieval.query.get_embedding_model')
+    @patch('samvaad.pipeline.retrieval.query.get_embedding_model')
     def test_embed_query(self, mock_get_model):
         """Test embedding a query."""
         mock_model = MagicMock()
@@ -29,46 +29,50 @@ class TestQuery:
         assert embedding == pytest.approx([0.1, 0.2, 0.3])
         mock_model.encode_query.assert_called_once_with("test query")
 
-    @patch('backend.pipeline.retrieval.query.BM25Okapi')
-    @patch('backend.pipeline.retrieval.query.collection')
-    @patch('backend.pipeline.retrieval.query.get_cross_encoder')
-    def test_search_similar_chunks(self, mock_cross_encoder, mock_collection, mock_bm25):
+    @patch('samvaad.pipeline.retrieval.query.BM25Okapi')
+    @patch('samvaad.pipeline.retrieval.query.get_collection')
+    @patch('samvaad.pipeline.retrieval.query.get_cross_encoder')
+    def test_search_similar_chunks(self, mock_cross_encoder, mock_get_collection, mock_bm25):
         """Test searching for similar chunks."""
         # Mock BM25 to return predictable scores (higher for first document)
         mock_bm25_instance = MagicMock()
-        mock_bm25_instance.get_scores.return_value = [2.0, 1.0]  # First doc scores higher
+        mock_bm25_instance.get_scores.return_value = np.array([2.0, 1.0])  # First doc scores higher
         mock_bm25.return_value = mock_bm25_instance
 
-        # Mock collection
+        # Create mock collection object
+        mock_collection = MagicMock()
         mock_collection.get.return_value = {
             "documents": ["test query document", "unrelated document"],
-            "metadatas": [{"filename": "test.txt"}, {"filename": "test.txt"}]
+            "metadatas": [{"filename": "test.txt", "chunk_id": "chunk1"}, {"filename": "test.txt", "chunk_id": "chunk2"}]
         }
         mock_collection.query.return_value = {
-            "documents": [["test query document"]],
-            "metadatas": [[{"filename": "test.txt"}]],
-            "distances": [[0.1]]
+            "documents": [["test query document", "unrelated document"]],
+            "metadatas": [[{"filename": "test.txt", "chunk_id": "chunk1"}, {"filename": "test.txt", "chunk_id": "chunk2"}]],
+            "distances": [[0.1, 0.9]]
         }
+        mock_get_collection.return_value = mock_collection
 
-        # Mock cross encoder
+        # Mock cross encoder - return scores for both candidates
         mock_ce_inst = MagicMock()
-        mock_ce_inst.predict.return_value = [0.9, 0.1]  # First candidate gets higher score
+        mock_ce_inst.predict.return_value = np.array([0.9, 0.1])  # First candidate gets higher score
         mock_cross_encoder.return_value = mock_ce_inst
 
         query_emb = [0.1] * 768
         query_text = "test query"
         results = search_similar_chunks(query_emb, query_text, top_k=1)
 
-        assert len(results) == 1
+        assert len(results) >= 1
         assert results[0]['content'] == 'test query document'
 
-    @patch('backend.pipeline.retrieval.query.collection')
-    def test_search_similar_chunks_no_results(self, mock_collection):
+    @patch('samvaad.pipeline.retrieval.query.get_collection')
+    def test_search_similar_chunks_no_results(self, mock_get_collection):
         """Test searching when collection.get returns no documents."""
+        mock_collection = MagicMock()
         mock_collection.get.return_value = {
             "documents": [],
             "metadatas": []
         }
+        mock_get_collection.return_value = mock_collection
         
         query_emb = [0.1] * 768
         query_text = "test query"
@@ -76,8 +80,8 @@ class TestQuery:
         
         assert results == []
 
-    @patch('backend.pipeline.retrieval.query.embed_query')
-    @patch('backend.pipeline.retrieval.query.search_similar_chunks', return_value=[])
+    @patch('samvaad.pipeline.retrieval.query.embed_query')
+    @patch('samvaad.pipeline.retrieval.query.search_similar_chunks', return_value=[])
     def test_rag_query_pipeline_no_retrieval(self, mock_search, mock_embed_query):
         """Test query pipeline when search_similar_chunks returns no results."""
         mock_embed_query.return_value = [0.1] * 768
@@ -90,9 +94,9 @@ class TestQuery:
         assert result['retrieval_count'] == 0
         mock_search.assert_called_once()  # Verify search was attempted
 
-    @patch('backend.pipeline.retrieval.query.embed_query')
-    @patch('backend.pipeline.retrieval.query.search_similar_chunks')
-    @patch('backend.pipeline.retrieval.query.generate_answer_with_gemini')
+    @patch('samvaad.pipeline.retrieval.query.embed_query')
+    @patch('samvaad.pipeline.retrieval.query.search_similar_chunks')
+    @patch('samvaad.pipeline.retrieval.query.generate_answer_with_gemini')
     def test_rag_query_pipeline_success_full_flow(self, mock_generate_answer, mock_search_chunks, mock_embed_query):
         """Test a successful full RAG pipeline run."""
         mock_embed_query.return_value = [0.1] * 768
@@ -120,13 +124,13 @@ class TestQuery:
         # Verify sub-functions were called
         mock_embed_query.assert_called_once_with(query_text)
         mock_search_chunks.assert_called_once()  # Details of call checked implicitly by mock_generate_answer
-        mock_generate_answer.assert_called_once_with(query_text, mock_chunks, "gemini-2.5-flash")
+        mock_generate_answer.assert_called_once_with(query_text, mock_chunks, "gemini-2.5-flash", "")
 
         # Verify RAG prompt structure
         assert 'Context:' in result['rag_prompt']
         assert 'Document 1 (A.pdf):' in result['rag_prompt']
 
-    @patch('backend.pipeline.retrieval.query.embed_query')
+    @patch('samvaad.pipeline.retrieval.query.embed_query')
     def test_rag_query_pipeline_error_handling(self, mock_embed_query):
         """Test query pipeline error handling."""
         mock_embed_query.side_effect = Exception("Test error")

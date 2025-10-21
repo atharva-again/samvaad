@@ -4,8 +4,8 @@ Document ingestion pipeline with Docling integration.
 Supports GPU acceleration when available for faster processing.
 """
 
-from backend.utils.filehash_db import chunk_exists, add_chunk
-from backend.utils.hashing import generate_file_id, generate_chunk_id
+from samvaad.utils.filehash_db import chunk_exists, add_chunk
+from samvaad.utils.hashing import generate_file_id, generate_chunk_id
 from docling.document_converter import DocumentConverter
 from docling.chunking import HybridChunker
 from docling_core.transforms.chunker.hierarchical_chunker import HierarchicalChunker

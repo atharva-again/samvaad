@@ -1,0 +1,119 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "samvaad"
+version = "0.1.0"
+description = "An AI-powered conversational assistant with voice support and document intelligence"
+authors = [
+    {name = "Atharva Verma", email = "atharva.verma18@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.8"
+license = "MIT"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+dependencies = [
+    "rich>=13.0.0",
+    "click>=8.0.4",
+    "python-dotenv>=1.1.1",
+    "prompt-toolkit>=3.0.0",
+    "psutil>=6.1.0",
+    "fastapi>=0.116.1",
+    "uvicorn>=0.35.0",
+    "python-multipart>=0.0.20",
+    "chromadb>=1.0.20",
+    "openai>=1.106.0",
+    "sentence-transformers>=5.1.0",
+    "tiktoken>=0.11.0",
+    "google-genai>=1.36.0",
+    "docling>=2.53.0",
+    "beautifulsoup4>=4.13.5",
+    "requests>=2.32.5",
+    "rank-bm25>=0.2.2",
+    "faster-whisper>=1.2.0",
+    "sounddevice>=0.4.7",
+    "webrtcvad>=2.0.10",
+    "kokoro>=0.9.4",
+    "kokoro-onnx>=0.3.1",
+    "transformers",
+    "tokenizers",
+    "pytest>=8.3.3",
+    "pytest-mock>=3.14.0",
+]
+
+[project.scripts]
+samvaad = "samvaad.interfaces.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/atharva-again/samvaad"
+Repository = "https://github.com/atharva-again/samvaad"
+Issues = "https://github.com/atharva-again/samvaad/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["samvaad*"]
+
+[tool.setuptools.package-data]
+samvaad = ["*.py"]
+
+# Development dependencies
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.3",
+    "pytest-mock>=3.14.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.5.0",
+    "pre-commit>=3.5.0",
+]
+cpu = [
+    "torch",
+]
+gpu = [
+    "torch[cu121]",
+]
+voice = [
+    "sounddevice>=0.4.7",
+    "webrtcvad>=2.0.10",
+    "kokoro>=0.9.4",
+    "kokoro-onnx>=0.3.1",
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = "-v --tb=short --strict-markers --cov=samvaad --cov-report=html --cov-report=term-missing"
+markers = [
+    "unit: Unit tests for individual components",
+    "integration: Integration tests for the full pipeline",
+    "slow: Slow running tests",
+]

@@ -1,7 +1,7 @@
 from typing import List, Tuple, Union
-from backend.pipeline.vectorstore.vectorstore import collection
-from backend.utils.hashing import generate_chunk_id
-from backend.utils.gpu_utils import get_device
+from samvaad.pipeline.vectorstore.vectorstore import get_collection
+from samvaad.utils.hashing import generate_chunk_id
+from samvaad.utils.gpu_utils import get_device
 from llama_cpp import Llama
 import numpy as np
 import contextlib
@@ -54,6 +54,7 @@ class GGUFEmbeddingModel:
             "n_ctx": 2048,  # Max context length for EmbeddingGemma
             "n_threads": -1,  # Use all available CPU threads
             "verbose": False,  # Reduce logging
+            "local_files_only": True,  # Use only local cached files, no network access
         }
 
         # Add GPU acceleration if available
@@ -67,7 +68,8 @@ class GGUFEmbeddingModel:
                 }
             )
 
-        self.model = Llama.from_pretrained(**model_kwargs)
+        with contextlib.redirect_stderr(open(os.devnull, "w")):
+            self.model = Llama.from_pretrained(**model_kwargs)
 
     def encode_document(self, texts: Union[str, List[str]]) -> np.ndarray:
         """
@@ -150,6 +152,7 @@ def embed_chunks_with_dedup(
     existing = set()
     if len(unique_chunk_ids) > 0:
         try:
+            collection = get_collection()
             get_res = collection.get(ids=unique_chunk_ids)
         except Exception as exc:
             print(

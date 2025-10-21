@@ -37,10 +37,10 @@ def strip_markdown(text: str) -> str:
     text = re.sub(r"~~([^~]+)~~", r"\1", text)
 
     # Remove links [text](url) -> text
-    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1", text)
 
     # Remove images ![alt](url) -> alt
-    text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"!\[([^\]]+)\]\(([^)]+)\)", r"\1", text)
 
     # Remove blockquotes (> text)
     text = re.sub(r"^>\s+", "", text, flags=re.MULTILINE)

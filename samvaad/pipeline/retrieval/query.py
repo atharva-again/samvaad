@@ -3,10 +3,10 @@ from typing import List, Dict, Any
 from sentence_transformers import SentenceTransformer, CrossEncoder
 from rank_bm25 import BM25Okapi
 import numpy as np
-from backend.pipeline.vectorstore.vectorstore import collection
-from backend.utils.gpu_utils import get_device
-from backend.pipeline.generation.generation import generate_answer_with_gemini
-from backend.pipeline.ingestion.embedding import GGUFEmbeddingModel
+from samvaad.pipeline.vectorstore.vectorstore import get_collection
+from samvaad.utils.gpu_utils import get_device
+from samvaad.pipeline.generation.generation import generate_answer_with_gemini
+from samvaad.pipeline.ingestion.embedding import GGUFEmbeddingModel
 
 # Use same GGUF quantized embedding model as for documents
 _MODEL_REPO = "unsloth/embeddinggemma-300m-GGUF"
@@ -95,6 +95,9 @@ def reciprocal_rank_fusion(ranks1: List[Dict], ranks2: List[Dict], k: int = 60) 
 def search_similar_chunks(query_embedding: List[float], query_text: str, top_k: int = 3) -> List[Dict]:
     """Search for similar chunks using hybrid BM25 + Embedding + Cross-Encoder reranking."""
     
+    # Get ChromaDB collection (lazy initialization)
+    collection = get_collection()
+    
     # Get all chunks from ChromaDB (for BM25 indexing)
     all_results = collection.get(include=['documents', 'metadatas'])
     all_chunks = []
@@ -170,7 +173,7 @@ def search_similar_chunks(query_embedding: List[float], query_text: str, top_k: 
     # Return top 3
     return reranked[:top_k]
 
-def rag_query_pipeline(query_text: str, top_k: int = 3, model: str = "gemini-2.5-flash") -> Dict[str, Any]:
+def rag_query_pipeline(query_text: str, top_k: int = 3, model: str = "gemini-2.5-flash", conversation_manager=None) -> Dict[str, Any]:
     """
     Complete RAG pipeline: embed query, search, generate answer.
 
@@ -186,11 +189,9 @@ def rag_query_pipeline(query_text: str, top_k: int = 3, model: str = "gemini-2.5
     """
     try:
         # Step 1: Embed the query
-        print("🔍 Embedding query...")
         query_embedding = embed_query(query_text)
 
         # Step 2: Search for similar chunks (hybrid retrieval with reranking)
-        print(f"🔎 Searching for top-{top_k} similar chunks...")
         chunks = search_similar_chunks(query_embedding, query_text, top_k)
 
         if not chunks:
@@ -203,9 +204,15 @@ def rag_query_pipeline(query_text: str, top_k: int = 3, model: str = "gemini-2.5
                 'rag_prompt': ""
             }
 
-        # Step 3: Generate answer with Gemini
-        print("🤖 Generating answer with Gemini...")
-        answer = generate_answer_with_gemini(query_text, chunks, model)
+        # Step 3: Generate answer with an LLM
+    
+        conversation_context = ""
+        if conversation_manager:
+            conversation_context = conversation_manager.get_context()
+        
+        answer = generate_answer_with_gemini(query_text, chunks, model, conversation_context)
+        from samvaad.utils.clean_markdown import strip_markdown
+        answer = strip_markdown(answer)
 
         # Step 4: Format sources for display
         sources = []
