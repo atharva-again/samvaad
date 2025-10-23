@@ -22,28 +22,34 @@ jobs:
         with:
           python-version: '3.11'
 
+
+      - name: Cache uv, pip, and wheels
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/uv
+            ~/.cache/pip
+            ~/.cache/pip/wheels
+          key: deps-cpu-${{ runner.os }}-py311-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            deps-cpu-${{ runner.os }}-py311-
+
       - name: Install uv
         uses: astral-sh/setup-uv@v4
         with:
           version: "latest"
 
-  # Install PortAudio (required by sounddevice)
+      # Install PortAudio (required by sounddevice)
       - name: Install PortAudio dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y portaudio19-dev
-      
-
-
-      - name: Install torch (CPU-only)
-        run: |
-          source venv/bin/activate
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
 
       - name: Install dependencies
         run: |
           uv venv venv
           source venv/bin/activate
+          uv pip install torch --no-cache-dir --index-url https://download.pytorch.org/whl/cpu
           uv pip install -r requirements.txt
           uv pip install -e . --index-strategy unsafe-best-match
 
@@ -72,31 +78,30 @@ jobs:
         with:
           version: "latest"
 
-      - name: Cache PyTorch GPU wheel
+
+      - name: Cache uv, pip, and wheels
         uses: actions/cache@v4
         with:
-          path: ~/.cache/pip/wheels
-          key: pytorch-gpu-${{ runner.os }}-py311-${{ hashFiles('pyproject.toml') }}
+          path: |
+            ~/.cache/uv
+            ~/.cache/pip
+            ~/.cache/pip/wheels
+          key: deps-gpu-${{ runner.os }}-py311-${{ hashFiles('pyproject.toml') }}
           restore-keys: |
-            pytorch-gpu-${{ runner.os }}-py311-
+            deps-gpu-${{ runner.os }}-py311-
 
   # Install PortAudio (required by sounddevice)
       - name: Install PortAudio dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y portaudio19-dev
-   
-
-
-      - name: Install torch (GPU, CUDA 12.1)
-        run: |
-          source venv/bin/activate
-          pip install torch --index-url https://download.pytorch.org/whl/cu121
+          
 
       - name: Install dependencies
         run: |
           uv venv venv
           source venv/bin/activate
+          uv pip install torch --no-cache-dir --index-url https://download.pytorch.org/whl/cu121
           uv pip install -r requirements.txt
           uv pip install -e . --index-strategy unsafe-best-match
 
