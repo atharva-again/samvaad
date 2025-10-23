@@ -38,12 +38,6 @@ jobs:
         uses: astral-sh/setup-uv@v4
         with:
           version: "latest"
-
-      - name: Hugging Face Auth
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          hf auth login --token "$HF_TOKEN"
         
       # Install PortAudio (required by sounddevice)
       - name: Install PortAudio dependencies
@@ -58,6 +52,12 @@ jobs:
           uv pip install torch torchvision --no-cache-dir --index-url https://download.pytorch.org/whl/cpu
           uv pip install -r requirements.txt
           uv pip install -e . --index-strategy unsafe-best-match
+
+      - name: Hugging Face Auth
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          hf auth login --token "$HF_TOKEN"
 
       - name: Run tests
         env:
@@ -101,12 +101,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y portaudio19-dev
-
-      - name: Hugging Face Auth
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          hf auth login --token "$HF_TOKEN"
           
       - name: Install dependencies
         run: |
@@ -115,6 +109,12 @@ jobs:
           uv pip install torch torchvision --no-cache-dir --index-url https://download.pytorch.org/whl/cu121
           uv pip install -r requirements.txt
           uv pip install -e . --index-strategy unsafe-best-match
+
+      - name: Hugging Face Auth
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          hf auth login --token "$HF_TOKEN"
 
       - name: Run tests
         env:
