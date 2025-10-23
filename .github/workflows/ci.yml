@@ -57,6 +57,7 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
+          source venv/bin/activate
           hf auth login --token "$HF_TOKEN"
 
       - name: Run tests
@@ -114,6 +115,7 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
+          source venv/bin/activate
           hf auth login --token "$HF_TOKEN"
 
       - name: Run tests
