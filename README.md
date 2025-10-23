@@ -67,18 +67,39 @@ source .venv/bin/activate
 
 *Note: uv creates a `.venv` directory by default (with a dot).*
 
+
 ### 3. Install Samvaad
 
-**Install all dependencies using requirements.txt:**
+#### ⚡️ Important: Install the Correct PyTorch Version
+
+Samvaad and its dependencies require PyTorch (`torch`), but the version you need depends on whether you want GPU acceleration or not:
+
+- **For GPU support (NVIDIA CUDA):**
+  - Install the GPU-enabled version of torch (replace `cu121` with your CUDA version if needed):
+    ```sh
+    uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+    ```
+  - See the [PyTorch Get Started](https://pytorch.org/get-started/locally/) page for other CUDA versions.
+
+- **For CPU-only (no GPU):**
+  - Install the CPU-only version of torch:
+    ```sh
+    uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+    ```
+
+**Why?**
+If you do not install torch first, the dependency resolver may download a large GPU version (with CUDA libraries) even if you only want CPU, or vice versa. Installing torch explicitly ensures you get the right version for your hardware.
+
+#### Install all other dependencies
 
 ```sh
 uv pip install -r requirements.txt
 ```
 
-**Then, install Samvaad in editable mode to enable the CLI command:**
+#### Install Samvaad in editable mode to enable the CLI command
 
 ```sh
-pip install -e .
+uv pip install -e .
 ```
 
 **You must run both steps for the `samvaad` command to work.**

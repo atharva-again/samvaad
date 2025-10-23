@@ -179,9 +179,7 @@ def embed_chunks_with_dedup(
     embed_indices = list(embed_indices)
     chunks_to_embed = list(chunks_to_embed)
 
-    print(
-        f"Embedding {len(chunks_to_embed)} new chunks out of {len(chunks)} total chunks."
-    )
+   
 
     # Compute embeddings only for new chunks
     global _model

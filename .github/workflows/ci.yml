@@ -34,6 +34,12 @@ jobs:
           sudo apt-get install -y portaudio19-dev
       
 
+
+      - name: Install torch (CPU-only)
+        run: |
+          source venv/bin/activate
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+
       - name: Install dependencies
         run: |
           uv venv venv
@@ -80,6 +86,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y portaudio19-dev
    
+
+
+      - name: Install torch (GPU, CUDA 12.1)
+        run: |
+          source venv/bin/activate
+          pip install torch --index-url https://download.pytorch.org/whl/cu121
 
       - name: Install dependencies
         run: |
