@@ -39,6 +39,12 @@ jobs:
         with:
           version: "latest"
 
+      - name: Hugging Face Auth
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          hf auth login --token "$HF_TOKEN"
+        
       # Install PortAudio (required by sounddevice)
       - name: Install PortAudio dependencies
         run: |
@@ -49,7 +55,7 @@ jobs:
         run: |
           uv venv venv
           source venv/bin/activate
-          uv pip install torch --no-cache-dir --index-url https://download.pytorch.org/whl/cpu
+          uv pip install torch torchvision --no-cache-dir --index-url https://download.pytorch.org/whl/cpu
           uv pip install -r requirements.txt
           uv pip install -e . --index-strategy unsafe-best-match
 
@@ -95,13 +101,18 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y portaudio19-dev
-          
 
+      - name: Hugging Face Auth
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          hf auth login --token "$HF_TOKEN"
+          
       - name: Install dependencies
         run: |
           uv venv venv
           source venv/bin/activate
-          uv pip install torch --no-cache-dir --index-url https://download.pytorch.org/whl/cu121
+          uv pip install torch torchvision --no-cache-dir --index-url https://download.pytorch.org/whl/cu121
           uv pip install -r requirements.txt
           uv pip install -e . --index-strategy unsafe-best-match
 
