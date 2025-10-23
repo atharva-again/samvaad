@@ -206,20 +206,14 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 .env.local
-backend/utils/filehashes.sqlite3
-backend/models/piper/
+
 data/audio_responses/
 
 #Node Modules
 node_modules/
 dist/
 
-#frontend folder
-frontend/
 
-#vosk models
-vosk-*
-
-.gitignore
 hf_login.txt
 .github/copilot-instructions.md
+samvaad/utils/filehashes.sqlite3

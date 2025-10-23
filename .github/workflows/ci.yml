@@ -22,24 +22,43 @@ jobs:
         with:
           python-version: '3.11'
 
+
+      - name: Cache uv, pip, and wheels
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/uv
+            ~/.cache/pip
+            ~/.cache/pip/wheels
+          key: deps-cpu-${{ runner.os }}-py311-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            deps-cpu-${{ runner.os }}-py311-
+
       - name: Install uv
         uses: astral-sh/setup-uv@v4
         with:
           version: "latest"
-
-  # Install PortAudio (required by sounddevice)
+        
+      # Install PortAudio (required by sounddevice)
       - name: Install PortAudio dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y portaudio19-dev
-      
 
       - name: Install dependencies
         run: |
           uv venv venv
           source venv/bin/activate
+          uv pip install torch torchvision --no-cache-dir --index-url https://download.pytorch.org/whl/cpu
           uv pip install -r requirements.txt
           uv pip install -e . --index-strategy unsafe-best-match
+
+      - name: Hugging Face Auth
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          source venv/bin/activate
+          hf auth login --token "$HF_TOKEN"
 
       - name: Run tests
         env:
@@ -66,27 +85,38 @@ jobs:
         with:
           version: "latest"
 
-      - name: Cache PyTorch GPU wheel
+
+      - name: Cache uv, pip, and wheels
         uses: actions/cache@v4
         with:
-          path: ~/.cache/pip/wheels
-          key: pytorch-gpu-${{ runner.os }}-py311-${{ hashFiles('pyproject.toml') }}
+          path: |
+            ~/.cache/uv
+            ~/.cache/pip
+            ~/.cache/pip/wheels
+          key: deps-gpu-${{ runner.os }}-py311-${{ hashFiles('pyproject.toml') }}
           restore-keys: |
-            pytorch-gpu-${{ runner.os }}-py311-
+            deps-gpu-${{ runner.os }}-py311-
 
   # Install PortAudio (required by sounddevice)
       - name: Install PortAudio dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y portaudio19-dev
-   
-
+          
       - name: Install dependencies
         run: |
           uv venv venv
           source venv/bin/activate
+          uv pip install torch torchvision --no-cache-dir --index-url https://download.pytorch.org/whl/cu121
           uv pip install -r requirements.txt
           uv pip install -e . --index-strategy unsafe-best-match
+
+      - name: Hugging Face Auth
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          source venv/bin/activate
+          hf auth login --token "$HF_TOKEN"
 
       - name: Run tests
         env:

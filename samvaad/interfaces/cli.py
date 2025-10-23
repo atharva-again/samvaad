@@ -71,6 +71,15 @@ class SamvaadInterface:
         # Initialize prompt session with completions
         self.setup_completions()
         
+    def get_terminal_width(self):
+        """Get current terminal width for responsive design."""
+        return self.console.size.width
+        
+    def get_responsive_panel_width(self, max_width_percent=0.9):
+        """Calculate responsive panel width based on terminal size."""
+        terminal_width = self.get_terminal_width()
+        return min(int(terminal_width * max_width_percent), terminal_width - 4)  # Leave some margin
+        
     def setup_completions(self):
         """Set up tab completion for commands."""
         from prompt_toolkit.completion import Completer, Completion
@@ -117,7 +126,7 @@ class SamvaadInterface:
 │                                                                         │
 │           Facilitating Dialogue-Based Learning Through AI               │
 │                                                                         │
-│     🗣️  Voice-First  •  📚 Document-Aware  •  🤖 AI-Powered             │
+│     🗣️  Voice-First  •  📚 Document-Aware  •  🤖 AI-Powered             │                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 
 ╰─────────────────────────────────────────────────────────────────────────╯
 """
         else:
@@ -135,37 +144,105 @@ class SamvaadInterface:
 ╰─────────────────────────────────────────╯
 """
         
-        # Display the ASCII art with beautiful gradient colors
+        # Display the ASCII art with beautiful gradient colors.
+        # Print border characters (corners and vertical bars) with a consistent
+        # border color, and print the interior content with the intended
+        # gradient / accent styles so the outline remains uniform.
         lines = ascii_art.strip().split('\n')
         for i, line in enumerate(lines):
-            if "╭" in line or "╰" in line or "│" in line[:3]:  # Borders
-                if "███" in line:  # SAMVAAD text lines with special gradient
-                    # Gradient effect for the ASCII letters
+                # Corner-only lines (top/bottom) - print full line as border
+            if line.startswith(("╭", "╰", "╮", "╯")):
+                self.console.print(line, style=Colors.BORDER)
+                continue
+
+            # Lines with vertical borders and interior content
+            if line.startswith("│") and line.endswith("│"):
+                left_border = line[0]
+                inner = line[1:-1]
+                right_border = line[-1]
+
+                # Decide the interior style (preserve previous gradient logic)
+                if "███" in inner:  # SAMVAAD text lines
                     if i == 1:  # First line - brightest blue
-                        self.console.print(line, style=f"bold {Colors.PRIMARY}")
-                    elif i == 2:  # Second line - medium blue  
-                        self.console.print(line, style=f"bold #3b82f6")
+                        inner_style = f"bold {Colors.PRIMARY}"
+                    elif i == 2:  # Second line - medium blue
+                        inner_style = f"bold #3b82f6"
                     elif i == 3:  # Third line - bright blue
-                        self.console.print(line, style=f"bold {Colors.TEXT_ACCENT}")
+                        inner_style = f"bold {Colors.TEXT_ACCENT}"
                     elif i == 4:  # Fourth line - medium blue
-                        self.console.print(line, style=f"bold #3b82f6") 
+                        inner_style = f"bold #3b82f6"
                     elif i == 5:  # Fifth line - primary blue
-                        self.console.print(line, style=f"bold {Colors.PRIMARY}")
+                        inner_style = f"bold {Colors.PRIMARY}"
                     else:
-                        self.console.print(line, style=f"bold {Colors.PRIMARY}")
-                elif "🎙️" in line:  # Subtitle with voice emoji
-                    self.console.print(line, style=f"bold {Colors.SUCCESS}")
-                elif "🗣️" in line or "Voice-First" in line:  # Feature line
-                    self.console.print(line, style=Colors.TEXT_ACCENT)
-                elif "Facilitating" in line:  # Tagline - use normal text
-                    self.console.print(line, style=Colors.TEXT_PRIMARY)
-                else:  # Regular border lines
-                    self.console.print(line, style=Colors.BORDER)
+                        inner_style = f"bold {Colors.PRIMARY}"
+                elif "🎙️" in inner:  # Subtitle with voice emoji
+                    inner_style = f"bold {Colors.SUCCESS}"
+                elif "🗣️" in inner or "Voice-First" in inner:  # Feature line
+                    inner_style = Colors.TEXT_ACCENT
+                elif "Facilitating" in inner:  # Tagline - use normal text
+                    inner_style = Colors.TEXT_PRIMARY
+                else:
+                    # Default interior text color
+                    inner_style = Colors.TEXT_PRIMARY
+
+                # Print left border, interior, and right border with correct styles
+                self.console.print(left_border, style=Colors.BORDER, end="")
+                self.console.print(inner, style=inner_style, end="")
+                self.console.print(right_border, style=Colors.BORDER)
+                continue
+
+            # Fallback: print the whole line as border (safe default)
+            self.console.print(line, style=Colors.BORDER)
         
         self.console.print()
         
     def display_help(self):
         """Display help information similar to Copilot CLI help."""
+        help_text = """
+# Available Commands
+
+## Core Commands
+- **Start conversation**: Just type your message or question and press enter
+- **/voice** (/v) - Switch to continuous voice conversation mode for hands-free interaction
+- **/text** (/t) - Switch back to text-only mode
+
+## Document Management
+- **/ingest <file_path>** (/i) - Ingest documents for Q&A (supports multiple files, folders, and glob patterns)
+  - Examples: `/ingest document.pdf`, `/i document.pdf`, `/ingest *.txt`, `/ingest folder/`, `/ingest file1.pdf file2.txt`
+- **/remove <file_path>** (/rm) - Remove ingested documents from knowledge base
+  - Examples: `/remove document.pdf`, `/rm document.pdf`, `/remove *.txt`, `/remove folder`, `/remove file1.pdf file2.txt`
+
+## Conversation Management  
+- **/clear** (/c) - Clear conversation history and start fresh
+- **/status** (/s, /stat) - Show current session statistics
+
+## Information & Help
+- **/help** (/h) - Show this help message
+- **/settings** (/cfg) - View current configuration
+
+## Exit Commands
+- **/quit** (/q) or **/exit** - Exit Samvaad
+- **Ctrl+C** or **Ctrl+D** - Quick exit
+
+## Tips
+- Type naturally - no special formatting needed
+- Use /voice for hands-free conversations  
+- Use /ingest to add documents, /remove to delete them
+- Commands start with / (slash), aliases shown in parentheses
+"""
+        
+    def display_help(self):
+        """Display help information similar to Copilot CLI help."""
+        # Check terminal width for fixed design
+        terminal_width = self.console.size.width
+        
+        if terminal_width >= 75:
+            # Full help panel for wide terminals
+            panel_width = 75
+        else:
+            # Compact help panel for narrow terminals
+            panel_width = 60
+        
         help_text = """
 # Available Commands
 
@@ -204,7 +281,8 @@ class SamvaadInterface:
             markdown,
             title="[bold]Samvaad Help[/bold]",
             border_style=Colors.INFO,
-            box=box.ROUNDED
+            box=box.ROUNDED,
+            width=panel_width
         )
         
         self.console.print(help_panel)
@@ -217,6 +295,16 @@ class SamvaadInterface:
         else:
             duration_str = "0s"
             
+        # Check terminal width for fixed design
+        terminal_width = self.console.size.width
+        
+        if terminal_width >= 75:
+            # Full status panel for wide terminals
+            panel_width = 75
+        else:
+            # Compact status panel for narrow terminals
+            panel_width = 60
+            
         status_table = Table(title="Session Status", box=box.ROUNDED)
         status_table.add_column("Metric", style=Colors.TEXT_ACCENT)
         status_table.add_column("Value", style=Colors.TEXT_PRIMARY)
@@ -227,12 +315,30 @@ class SamvaadInterface:
         status_table.add_row("Text Queries", str(self.session_stats['text_queries']))
         status_table.add_row("Conversation Active", "✅ Yes" if self.conversation_active else "❌ No")
         
-        self.console.print(status_table)
+        # Wrap table in a panel with fixed width
+        status_panel = Panel(
+            status_table,
+            border_style=Colors.INFO,
+            box=box.ROUNDED,
+            width=panel_width
+        )
+        
+        self.console.print(status_panel)
         
     def display_welcome(self):
         """Display welcome message with getting started tips."""
+        # Check terminal width for fixed design like the banner
+        terminal_width = self.console.size.width
+        
+        if terminal_width >= 75:
+            # Full welcome panel for wide terminals (matching banner width)
+            panel_width = 75
+        else:
+            # Compact welcome panel for narrow terminals
+            panel_width = 60
+        
         welcome_text = Text()
-        welcome_text.append("Welcome to Samvaad! \n", style=f"bold Colors.SUCCESS")
+        welcome_text.append("Welcome to Samvaad! \n", style=f"bold {Colors.SUCCESS}")
         
         # Supported file types
         file_types_text = Text()
@@ -283,7 +389,8 @@ class SamvaadInterface:
             welcome_text + file_types_text + commands_text,
             border_style=Colors.SUCCESS,
             box=box.ROUNDED,
-            padding=(1, 2)
+            padding=(1, 2),
+            width=panel_width
         )
         
         self.console.print(welcome_panel)
@@ -295,6 +402,16 @@ class SamvaadInterface:
             
     def format_ai_response(self, response: str, sources: List[Dict] = None, query_time: float = None):
         """Format AI response with proper styling and enhanced information."""
+        # Check terminal width for fixed design
+        terminal_width = self.console.size.width
+        
+        if terminal_width >= 75:
+            # Full response panel for wide terminals
+            panel_width = 75
+        else:
+            # Compact response panel for narrow terminals
+            panel_width = 60
+        
         # Create response content
         response_content = Text()
         response_content.append(response, style=Colors.TEXT_PRIMARY)
@@ -311,7 +428,8 @@ class SamvaadInterface:
             title_align="left", 
             border_style=Colors.AI_RESPONSE,
             box=box.ROUNDED,
-            padding=(1, 2)
+            padding=(1, 2),
+            width=panel_width
         )
         
         self.console.print(response_panel)
@@ -326,9 +444,9 @@ class SamvaadInterface:
         #         show_header=True,
         #         header_style=Colors.TEXT_ACCENT
         #     )
-        #     sources_table.add_column("Document", style=Colors.TEXT_PRIMARY, width=30)
-        #     sources_table.add_column("Relevance", style=Colors.SUCCESS, width=12)
-        #     sources_table.add_column("Preview", style=Colors.TEXT_SECONDARY, width=50)
+        #     sources_table.add_column("Document", style=Colors.TEXT_PRIMARY, width=min(30, self.get_terminal_width() // 4))
+        #     sources_table.add_column("Relevance", style=Colors.SUCCESS, width=min(12, self.get_terminal_width() // 8))
+        #     sources_table.add_column("Preview", style=Colors.TEXT_SECONDARY, width=min(50, self.get_terminal_width() // 3))
         #     
         #     for i, source in enumerate(sources[:3]):  # Show top 3 sources
         #         doc_name = source.get('metadata', {}).get('filename', 'Unknown')
@@ -341,7 +459,14 @@ class SamvaadInterface:
         #             preview
         #         )
         #     
-        #     self.console.print(sources_table)
+        #     # Wrap sources table in responsive panel
+        #     sources_panel = Panel(
+        #         sources_table,
+        #         border_style=Colors.TEXT_MUTED,
+        #         box=box.ROUNDED,
+        #         width=self.get_responsive_panel_width()
+        #     )
+        #     self.console.print(sources_panel)
         # else:
         #     # No sources message
         #     no_sources = Text("💡 ", style=Colors.TEXT_MUTED)
@@ -408,6 +533,16 @@ class SamvaadInterface:
         
     def show_settings(self):
         """Display current settings."""
+        # Check terminal width for fixed design
+        terminal_width = self.console.size.width
+        
+        if terminal_width >= 75:
+            # Full settings panel for wide terminals
+            panel_width = 75
+        else:
+            # Compact settings panel for narrow terminals
+            panel_width = 60
+            
         settings_table = Table(title="Current Settings", box=box.ROUNDED)
         settings_table.add_column("Setting", style=Colors.TEXT_ACCENT)
         settings_table.add_column("Value", style=Colors.TEXT_PRIMARY)
@@ -418,7 +553,15 @@ class SamvaadInterface:
         settings_table.add_row("Voice Mode", "Available")
         settings_table.add_row("Max History", "50 messages")
         
-        self.console.print(settings_table)
+        # Wrap table in a panel with fixed width
+        settings_panel = Panel(
+            settings_table,
+            border_style=Colors.INFO,
+            box=box.ROUNDED,
+            width=panel_width
+        )
+        
+        self.console.print(settings_panel)
         
     def handle_ingest_command(self, command: str):
         """Handle document ingestion command."""
@@ -437,7 +580,8 @@ class SamvaadInterface:
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
-            console=self.console
+            console=self.console,
+            transient=True
         ) as progress:
             setup_task = progress.add_task("[cyan]Preparing files for ingestion...", total=None)
             
@@ -508,18 +652,20 @@ class SamvaadInterface:
             # Mark setup complete and show file count
             progress.update(setup_task, completed=True, visible=False)
             
-        self.console.print(f"📚 Found {len(valid_files)} file(s) to process", 
+        self.console.print(f"Found {len(valid_files)} file(s) to process", 
                          style=Colors.INFO)
         
         # Process files with progress bar that works with multiple files
         successful = 0
         failed = 0
+        unchanged = 0
         
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             TextColumn("({task.completed}/{task.total})"),
-            console=self.console
+            console=self.console,
+            transient=True
         ) as progress:
             main_task = progress.add_task(f"[cyan]Processing {len(valid_files)} file(s)...", total=len(valid_files))
             
@@ -538,25 +684,49 @@ class SamvaadInterface:
                     if not content_type:
                         content_type = 'application/octet-stream'
                     
-                    # Import ingestion pipeline
-                    from samvaad.pipeline.ingestion.ingestion import ingest_file_pipeline
+                    # Suppress all logging during ingestion
+                    import logging
+                    import sys
+                    from io import StringIO
                     
-                    # Process file
-                    result = ingest_file_pipeline(
-                        filename=os.path.basename(file_path),
-                        content_type=content_type,
-                        contents=contents
-                    )
+                    # Save original handlers
+                    logging.disable(logging.CRITICAL)
+                    old_stdout = sys.stdout
+                    old_stderr = sys.stderr
+                    sys.stdout = StringIO()
+                    sys.stderr = StringIO()
+                    
+                    try:
+                        # Import and run ingestion pipeline
+                        from samvaad.pipeline.ingestion.ingestion import ingest_file_pipeline
+                        
+                        result = ingest_file_pipeline(
+                            filename=os.path.basename(file_path),
+                            content_type=content_type,
+                            contents=contents
+                        )
+                    finally:
+                        # Restore logging and output
+                        logging.disable(logging.NOTSET)
+                        sys.stdout = old_stdout
+                        sys.stderr = old_stderr
                     
                     if result.get('error'):
-                        self.console.print(f"❌ Failed to ingest {os.path.basename(file_path)}: {result['error']}", 
-                                         style=Colors.ERROR)
-                        failed += 1
+                        err = result['error']
+                        # Treat already-processed/no-new-chunks/no-new-embeddings as 'unchanged'
+                        if err in ("File already processed", "No new chunks to process", "No new embeddings"):
+                            self.console.print(f"⏭️ Skipped {os.path.basename(file_path)}: {err}", 
+                                               style=Colors.TEXT_MUTED)
+                            unchanged += 1
+                        else:
+                            self.console.print(f"❌ Failed to ingest {os.path.basename(file_path)}: {err}", 
+                                               style=Colors.ERROR)
+                            failed += 1
                     else:
                         chunks = result.get('num_chunks', 0)
                         new_chunks = result.get('new_chunks_embedded', 0)
-                        self.console.print(f"✅ Ingested {os.path.basename(file_path)}: {chunks} chunks, {new_chunks} new", 
-                                         style=Colors.SUCCESS)
+                        self.console.print(f"Ingested {os.path.basename(file_path)}: {chunks} chunks, {new_chunks} new", 
+                                         style=Colors.TEXT_PRIMARY)
                         successful += 1
                         
                 except Exception as e:
@@ -568,181 +738,137 @@ class SamvaadInterface:
                 progress.update(main_task, advance=1)
         
         # Summary
-        self.console.print(f"\n📊 Ingestion complete: {successful} successful, {failed} failed", 
-                         style=Colors.SUCCESS if failed == 0 else Colors.WARNING)
+        # Final summary: include unchanged (skipped) files
+        summary_style = Colors.SUCCESS if failed == 0 else Colors.WARNING
+        self.console.print(f"\nIngestion complete: {successful} successful, {failed} failed, {unchanged} unchanged", 
+                         style=summary_style)
         
     def handle_remove_command(self, command: str):
         """Handle document removal command."""
         # Parse command arguments
         parts = command.split()
         if len(parts) < 2:
-            self.console.print("❌ Usage: /remove <file_path> [file_path2 ...] or /rm <file_path>", 
+            self.console.print("❌ Usage: /remove <file_or_folder> [file_or_folder2 ...]", 
                              style=Colors.ERROR)
             self.console.print("Examples:", style=Colors.TEXT_MUTED)
             self.console.print("  /remove document.pdf", style=Colors.TEXT_MUTED)
-            self.console.print("  /remove *.txt", style=Colors.TEXT_MUTED)
-            self.console.print("  /remove folder/", style=Colors.TEXT_MUTED)
+            self.console.print("  /remove folder_name", style=Colors.TEXT_MUTED)
             self.console.print("  /remove file1.pdf file2.txt", style=Colors.TEXT_MUTED)
             return
         
-        # Show immediate progress for setup work
+        # Get file/folder paths from command
+        file_patterns = parts[1:]
+        
+        # Collect all files to remove (get basenames from disk)
+        files_to_remove = set()
+        
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
-            console=self.console
+            console=self.console,
+            transient=True
         ) as progress:
-            setup_task = progress.add_task("[cyan]Preparing files for removal...", total=None)
+            setup_task = progress.add_task("[cyan]Collecting files to remove...", total=None)
             
-            # Get file paths/patterns from command
-            file_patterns = parts[1:]
-            
-            # Expand glob patterns and resolve paths
-            expanded_paths = []
             for pattern in file_patterns:
-                # Expand glob patterns
-                matches = glob.glob(pattern)
-                if matches:
-                    expanded_paths.extend(matches)
-                else:
-                    # If no glob matches, try common locations and treat as literal
-                    possible_paths = [
-                        pattern,  # As given
-                        f"data/documents/{pattern}",  # In documents directory
-                        f"./{pattern}",  # Explicit relative
-                    ]
-                    
-                    # For removal, we don't need the file to exist on disk
-                    # We just collect all possible patterns to search in DB
-                    expanded_paths.append(pattern)
-                    
-                    # Also try with data/documents prefix for better matching
-                    if not pattern.startswith('data/documents/'):
-                        expanded_paths.append(f"data/documents/{pattern}")
-            
-            # Remove duplicates
-            expanded_paths = list(set(expanded_paths))
-            
-            if not expanded_paths:
-                progress.update(setup_task, visible=False)
-                self.console.print("❌ No file patterns specified for removal", 
-                                 style=Colors.ERROR)
-                return
+                # Try to find the path
+                possible_paths = [
+                    pattern,
+                    f"data/documents/{pattern}",
+                    f"./{pattern}",
+                ]
                 
-            # Mark setup complete
-            progress.update(setup_task, completed=True, visible=False)
+                found_path = None
+                for possible_path in possible_paths:
+                    if os.path.exists(possible_path):
+                        found_path = possible_path
+                        break
+                
+                if found_path:
+                    if os.path.isdir(found_path):
+                        # Recursively collect all files from directory
+                        for root, dirs, files in os.walk(found_path):
+                            for file in files:
+                                files_to_remove.add(file)
+                    elif os.path.isfile(found_path):
+                        # Single file
+                        files_to_remove.add(os.path.basename(found_path))
+                else:
+                    # Path doesn't exist on disk - still try to remove by basename
+                    files_to_remove.add(os.path.basename(pattern))
+            
+            progress.update(setup_task, visible=False)
         
-        self.console.print(f"🔍 Searching for {len(expanded_paths)} pattern(s) to remove", 
-                         style=Colors.INFO)
+        if not files_to_remove:
+            self.console.print("ℹNo files found to remove", style=Colors.INFO)
+            return
         
-        # Find and remove files
+        # Query database for these basenames
+        all_matches = []
+        try:
+            import sqlite3
+            from samvaad.utils.filehash_db import DB_PATH, delete_file_and_cleanup
+            from samvaad.pipeline.vectorstore.vectorstore import get_collection
+
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+
+            for filename in files_to_remove:
+                c.execute('SELECT file_id, filename FROM file_metadata WHERE filename = ?', (filename,))
+                matches = c.fetchall()
+                all_matches.extend(matches)
+
+            conn.close()
+        except Exception as e:
+            self.console.print(f"❌ Database error: {e}", style=Colors.ERROR)
+            return
+
+        if not all_matches:
+            self.console.print("No matching files found in database", style=Colors.INFO)
+            return
+
+        # Remove files with progress bar
         removed_files = 0
         removed_chunks = 0
-        
+        failed = 0
+
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             TextColumn("({task.completed}/{task.total})"),
-            console=self.console
+            console=self.console,
+            transient=True,
         ) as progress:
-            main_task = progress.add_task(f"[cyan]Processing {len(expanded_paths)} pattern(s)...", total=len(expanded_paths))
-            
-            for i, pattern in enumerate(expanded_paths):
-                # Update progress description for current pattern
-                progress.update(main_task, description=f"[cyan]Searching for {os.path.basename(pattern)}...")
-                
+            main_task = progress.add_task(f"[cyan]Removing {len(all_matches)} file(s)...", total=len(all_matches))
+
+            for file_id, stored_filename in all_matches:
                 try:
-                    # Search the database for files matching this pattern
-                    import sqlite3
-                    from samvaad.utils.filehash_db import DB_PATH, delete_file_and_cleanup
-                    from samvaad.pipeline.vectorstore.vectorstore import get_collection
-                    
-                    conn = sqlite3.connect(DB_PATH)
-                    c = conn.cursor()
-                    
-                    # Create search patterns for different matching strategies
-                    basename = os.path.basename(pattern)
-                    dirname = os.path.dirname(pattern) if os.path.dirname(pattern) else ""
-                    
-                    # Search queries - try multiple matching strategies
-                    search_queries = []
-                    
-                    # 1. Exact filename match
-                    search_queries.append(('SELECT file_id, filename FROM file_metadata WHERE filename = ?', (pattern,)))
-                    
-                    # 2. Basename match (for files that might have been stored with different paths)
-                    if basename != pattern:
-                        search_queries.append(('SELECT file_id, filename FROM file_metadata WHERE filename LIKE ?', (f'%{basename}%',)))
-                    
-                    # 3. Full pattern match with wildcards
-                    if '*' in pattern or '?' in pattern:
-                        # Convert glob to SQL LIKE pattern
-                        sql_pattern = pattern.replace('*', '%').replace('?', '_')
-                        search_queries.append(('SELECT file_id, filename FROM file_metadata WHERE filename LIKE ?', (sql_pattern,)))
-                    
-                    # 4. Directory match - find all files in directory
-                    if dirname and not basename:
-                        search_queries.append(('SELECT file_id, filename FROM file_metadata WHERE filename LIKE ?', (f'{dirname}/%',)))
-                    
-                    # Collect all matching files
-                    all_matches = set()
-                    for query, params in search_queries:
-                        c.execute(query, params)
-                        matches = c.fetchall()
-                        all_matches.update(matches)
-                    
-                    conn.close()
-                    
-                    if not all_matches:
-                        self.console.print(f"⚠️  No ingested files found matching: {pattern}", 
-                                         style=Colors.WARNING)
-                        progress.update(main_task, advance=1)
-                        continue
-                    
-                    # Remove each matching file
-                    pattern_removed = 0
-                    pattern_chunks = 0
-                    
-                    for file_id, stored_filename in all_matches:
-                        self.console.print(f"🗑️  Removing {stored_filename}...", 
-                                         style=Colors.INFO)
-                        
-                        # Get orphaned chunks and remove from DB
-                        orphaned_chunks = delete_file_and_cleanup(file_id)
-                        
-                        # Remove orphaned chunks from ChromaDB
-                        if orphaned_chunks:
-                            try:
-                                collection = get_collection()
-                                collection.delete(ids=orphaned_chunks)
-                                pattern_chunks += len(orphaned_chunks)
-                            except Exception as e:
-                                self.console.print(f"⚠️  Warning: Could not remove some chunks from vector store: {e}", 
-                                                 style=Colors.WARNING)
-                        
-                        pattern_removed += 1
-                        removed_files += 1
-                        removed_chunks += pattern_chunks
-                        
-                        self.console.print(f"✅ Removed {stored_filename}: {len(orphaned_chunks)} chunks deleted", 
-                                         style=Colors.SUCCESS)
-                    
-                    if pattern_removed > 0:
-                        self.console.print(f"📊 Pattern '{pattern}': {pattern_removed} files removed", 
-                                         style=Colors.SUCCESS)
-                        
+                    orphaned_chunks = delete_file_and_cleanup(file_id)
+
+                    # Remove orphaned chunks from ChromaDB
+                    if orphaned_chunks:
+                        try:
+                            collection = get_collection()
+                            collection.delete(ids=orphaned_chunks)
+                            removed_chunks += len(orphaned_chunks)
+                        except Exception:
+                            # Silent warning - don't clutter output
+                            pass
+
+                    removed_files += 1
+                    self.console.print(f"Removed {stored_filename}", style=Colors.TEXT_PRIMARY)
                 except Exception as e:
-                    self.console.print(f"❌ Error processing pattern {pattern}: {e}", 
-                                     style=Colors.ERROR)
-                
-                # Update progress
+                    failed += 1
+                    self.console.print(f"Failed to remove {stored_filename}: {e}", style=Colors.ERROR)
+
                 progress.update(main_task, advance=1)
         
-        # Summary
+        # Final summary only
         if removed_files > 0:
-            self.console.print(f"\n📊 Bulk removal complete: {removed_files} files removed, {removed_chunks} chunks deleted", 
+            self.console.print(f"Removed {removed_files} file(s), {removed_chunks} chunks deleted", 
                              style=Colors.SUCCESS)
         else:
-            self.console.print("\n📊 No files were removed", 
+            self.console.print("No matching files found to remove", 
                              style=Colors.INFO)
         
     def start_voice_mode(self):

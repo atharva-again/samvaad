@@ -636,7 +636,7 @@ class VoiceMode:
         finally:
             self.cleanup_audio()
             self.conversation_manager.end_conversation()
-            print("🎤 Voice Mode ended.")
+            
 
 def voice_query_cli(model: str = "gemini-2.5-flash"):
     """

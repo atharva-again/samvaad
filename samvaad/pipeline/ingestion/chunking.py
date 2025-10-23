@@ -51,7 +51,7 @@ def get_docling_chunker():
     if _chunker is None:
         # Use the same tokenizer as before for consistency
         tokenizer = HuggingFaceTokenizer(
-            tokenizer=AutoTokenizer.from_pretrained("BAAI/bge-m3"),
+            tokenizer=AutoTokenizer.from_pretrained("google/embeddinggemma-300m", use_fast=True),
             max_tokens=200,  # Set to 200 tokens as requested
         )
 
@@ -199,7 +199,6 @@ def chunk_text(text: str, chunk_size: int = 200) -> List[str]:
             return chunk_texts
         else:
             # For simple text files, use fallback chunking directly
-            print("Using fallback chunking for text file")
             return _fallback_chunk_text(text, chunk_size)
 
     except Exception as e:
@@ -227,7 +226,7 @@ def _fallback_chunk_text(text: str, chunk_size: int = 200) -> List[str]:
         with _tokenizer_lock:
             _tokenizer = getattr(_fallback_chunk_text, "_tokenizer", None)
             if _tokenizer is None:
-                _tokenizer = AutoTokenizer.from_pretrained("BAAI/bge-m3")
+                _tokenizer = AutoTokenizer.from_pretrained("google/embeddinggemma-300m", use_fast=True)
                 setattr(_fallback_chunk_text, "_tokenizer", _tokenizer)
 
     separators = ["\n\n", "\n", ".", "?", "!", " ", ""]
