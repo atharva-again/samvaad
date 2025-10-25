@@ -18,3 +18,11 @@ def get_device():
             RuntimeWarning,
         )
     return 'cpu'
+
+
+def get_ort_provider():
+    """Return the preferred ONNX Runtime execution provider."""
+    device = get_device()
+    if device == 'cuda':
+        return 'CUDAExecutionProvider'
+    return 'CPUExecutionProvider'

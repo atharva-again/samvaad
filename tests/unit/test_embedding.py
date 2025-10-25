@@ -6,7 +6,7 @@ from numpy.testing import assert_allclose
 # Import modules to test
 from samvaad.pipeline.ingestion.embedding import (
     embed_chunks_with_dedup,
-    GGUFEmbeddingModel,
+    ONNXEmbeddingModel,
 )
 
 
@@ -22,7 +22,7 @@ class TestEmbedding:
     """Test embedding functions."""
 
     @patch("samvaad.pipeline.vectorstore.vectorstore.get_collection")
-    @patch("samvaad.pipeline.ingestion.embedding.GGUFEmbeddingModel")
+    @patch("samvaad.pipeline.ingestion.embedding.ONNXEmbeddingModel")
     @patch("samvaad.pipeline.ingestion.embedding.get_device")
     @patch(
         "samvaad.pipeline.ingestion.embedding.generate_chunk_id"
@@ -91,7 +91,7 @@ class TestEmbedding:
         assert mock_generate_id.call_count == 2
 
     @patch("samvaad.pipeline.ingestion.embedding.get_collection")
-    @patch("samvaad.pipeline.ingestion.embedding.GGUFEmbeddingModel")
+    @patch("samvaad.pipeline.ingestion.embedding.ONNXEmbeddingModel")
     @patch("samvaad.pipeline.ingestion.embedding.get_device")
     @patch("samvaad.pipeline.ingestion.embedding.generate_chunk_id")
     @patch("builtins.print")
@@ -128,7 +128,7 @@ class TestEmbedding:
         mock_print.assert_called()
 
     @patch("samvaad.pipeline.ingestion.embedding.get_collection")
-    @patch("samvaad.pipeline.ingestion.embedding.GGUFEmbeddingModel")
+    @patch("samvaad.pipeline.ingestion.embedding.ONNXEmbeddingModel")
     @patch("samvaad.pipeline.ingestion.embedding.get_device")
     @patch(
         "samvaad.pipeline.ingestion.embedding.generate_chunk_id"
@@ -173,7 +173,7 @@ class TestEmbedding:
         assert mock_generate_id.call_count == 3
 
     @patch("samvaad.pipeline.ingestion.embedding.get_collection")
-    @patch("samvaad.pipeline.ingestion.embedding.GGUFEmbeddingModel")
+    @patch("samvaad.pipeline.ingestion.embedding.ONNXEmbeddingModel")
     @patch("samvaad.pipeline.ingestion.embedding.get_device")
     @patch(
         "samvaad.pipeline.ingestion.embedding.generate_chunk_id"
@@ -222,7 +222,7 @@ class TestEmbedding:
         assert mock_generate_id.call_count == 3
 
     @patch("samvaad.pipeline.ingestion.embedding.get_collection")
-    @patch("samvaad.pipeline.ingestion.embedding.GGUFEmbeddingModel")
+    @patch("samvaad.pipeline.ingestion.embedding.ONNXEmbeddingModel")
     @patch("samvaad.pipeline.ingestion.embedding.get_device")
     @patch(
         "samvaad.pipeline.ingestion.embedding.generate_chunk_id"
@@ -273,67 +273,83 @@ class TestEmbedding:
         assert mock_generate_id.call_count == 2
 
 
-class TestGGUFEmbedding:
-    """Test GGUF-based embedding model functionality."""
+class TestONNXEmbedding:
+    """Test ONNX-based embedding model functionality."""
 
-    @patch("samvaad.pipeline.ingestion.embedding.Llama")
+    @patch("samvaad.pipeline.ingestion.embedding.ort.InferenceSession")
+    @patch("samvaad.pipeline.ingestion.embedding.AutoTokenizer")
+    @patch("samvaad.pipeline.ingestion.embedding.hf_hub_download")
     @patch("samvaad.pipeline.ingestion.embedding.get_device", return_value="cpu")
-    def test_model_initialization_cpu(self, mock_get_device, mock_llama_class):
-        """GGUF model should initialize with CPU defaults when CUDA unavailable."""
-        mock_model = MagicMock()
-        mock_llama_class.from_pretrained.return_value = mock_model
+    def test_model_initialization_cpu(self, mock_get_device, mock_hf_download, mock_tokenizer_class, mock_session_class):
+        """ONNX model should initialize with CPU provider when CUDA unavailable."""
+        mock_session = MagicMock()
+        mock_session_class.return_value = mock_session
+        mock_tokenizer = MagicMock()
+        mock_tokenizer_class.from_pretrained.return_value = mock_tokenizer
 
-        GGUFEmbeddingModel()
+        ONNXEmbeddingModel()
 
-        mock_llama_class.from_pretrained.assert_called_once()
-        _, kwargs = mock_llama_class.from_pretrained.call_args
-        assert kwargs["embedding"] is True
-        # When running on CPU, n_gpu_layers defaults to 0 (no GPU offload)
-        assert kwargs.get("n_gpu_layers", 0) == 0
+        mock_hf_download.assert_called()  # Should download model files
+        mock_session_class.assert_called_once()
+        mock_tokenizer_class.from_pretrained.assert_called_once()
         mock_get_device.assert_called_once()
 
-    @patch("samvaad.pipeline.ingestion.embedding.Llama")
+    @patch("samvaad.pipeline.ingestion.embedding.ort.InferenceSession")
+    @patch("samvaad.pipeline.ingestion.embedding.AutoTokenizer")
+    @patch("samvaad.pipeline.ingestion.embedding.hf_hub_download")
     @patch("samvaad.pipeline.ingestion.embedding.get_device", return_value="cuda")
-    def test_model_initialization_gpu(self, mock_get_device, mock_llama_class):
-        """GGUF model should enable GPU offload when CUDA is available."""
-        mock_model = MagicMock()
-        mock_llama_class.from_pretrained.return_value = mock_model
+    def test_model_initialization_gpu(self, mock_get_device, mock_hf_download, mock_tokenizer_class, mock_session_class):
+        """ONNX model should enable GPU provider when CUDA is available."""
+        mock_session = MagicMock()
+        mock_session_class.return_value = mock_session
+        mock_tokenizer = MagicMock()
+        mock_tokenizer_class.from_pretrained.return_value = mock_tokenizer
 
-        GGUFEmbeddingModel()
+        ONNXEmbeddingModel()
 
-        mock_llama_class.from_pretrained.assert_called_once()
-        _, kwargs = mock_llama_class.from_pretrained.call_args
-        assert kwargs["n_gpu_layers"] == -1
-        assert kwargs["main_gpu"] == 0
+        mock_hf_download.assert_called()  # Should download model files
+        mock_session_class.assert_called_once()
+        # Check that CUDA provider is included
+        call_args = mock_session_class.call_args
+        providers = call_args[1]['providers']
+        assert 'CUDAExecutionProvider' in providers
+        mock_tokenizer_class.from_pretrained.assert_called_once()
         mock_get_device.assert_called_once()
 
-    @patch("samvaad.pipeline.ingestion.embedding.Llama")
-    def test_encode_document_batch_success(self, mock_llama_class):
+    @patch("samvaad.pipeline.ingestion.embedding.ort.InferenceSession")
+    @patch("samvaad.pipeline.ingestion.embedding.AutoTokenizer")
+    @patch("samvaad.pipeline.ingestion.embedding.hf_hub_download")
+    def test_encode_document_batch_success(self, mock_hf_download, mock_tokenizer_class, mock_session_class):
         """encode_document should process texts and return numpy array."""
-        mock_model = MagicMock()
-        mock_model.embed.side_effect = [[0.1] * 768, [0.2] * 768]
-        mock_llama_class.from_pretrained.return_value = mock_model
+        mock_session = MagicMock()
+        mock_session.run.return_value = [[np.array([[0.1] * 768])], [np.array([[0.2] * 768])]]
+        mock_session_class.return_value = mock_session
+        
+        mock_tokenizer = MagicMock()
+        mock_tokenizer.return_value = {"input_ids": np.array([[1, 2, 3]]), "attention_mask": np.array([[1, 1, 1]])}
+        mock_tokenizer_class.from_pretrained.return_value = mock_tokenizer
 
-        model = GGUFEmbeddingModel()
+        model = ONNXEmbeddingModel()
         embeddings = model.encode_document(["text1", "text2"])
 
-        assert mock_model.embed.call_count == 2
-        call_args_list = mock_model.embed.call_args_list
-        assert call_args_list[0][0][0] == "title: none | text: text1"
-        assert call_args_list[1][0][0] == "title: none | text: text2"
+        assert mock_session.run.call_count == 2
         assert embeddings.shape == (2, 768)
 
-    @patch("samvaad.pipeline.ingestion.embedding.Llama")
-    def test_encode_query_prompt(self, mock_llama_class):
+    @patch("samvaad.pipeline.ingestion.embedding.ort.InferenceSession")
+    @patch("samvaad.pipeline.ingestion.embedding.AutoTokenizer")
+    @patch("samvaad.pipeline.ingestion.embedding.hf_hub_download")
+    def test_encode_query_prompt(self, mock_hf_download, mock_tokenizer_class, mock_session_class):
         """encode_query should apply the correct retrieval prompt."""
-        mock_model = MagicMock()
-        mock_model.embed.return_value = [0.3] * 768
-        mock_llama_class.from_pretrained.return_value = mock_model
+        mock_session = MagicMock()
+        mock_session.run.return_value = [[np.array([0.3] * 768)]]
+        mock_session_class.return_value = mock_session
+        
+        mock_tokenizer = MagicMock()
+        mock_tokenizer.return_value = {"input_ids": np.array([[1, 2, 3]]), "attention_mask": np.array([[1, 1, 1]])}
+        mock_tokenizer_class.from_pretrained.return_value = mock_tokenizer
 
-        model = GGUFEmbeddingModel()
+        model = ONNXEmbeddingModel()
         embedding = model.encode_query("example query")
 
-        mock_model.embed.assert_called_once_with(
-            "task: search result | query: example query"
-        )
+        mock_session.run.assert_called_once()
         assert embedding.shape == (768,)

@@ -247,37 +247,48 @@ class TestSamvaadInterface:
         assert True
 
     @patch('samvaad.pipeline.retrieval.voice_mode.VoiceMode')
-    @patch('samvaad.pipeline.retrieval.voice_mode.initialize_whisper_model')
-    @patch('samvaad.pipeline.retrieval.query.get_embedding_model')
-    @patch('samvaad.pipeline.retrieval.voice_mode.get_kokoro_tts')
     @patch('samvaad.pipeline.retrieval.voice_mode.ConversationManager')
     @patch('samvaad.interfaces.cli.Progress')
     @patch('samvaad.interfaces.cli.console')
-    def test_start_voice_mode_success(self, mock_console, mock_progress, mock_conv_manager, mock_tts, mock_embedding, mock_whisper, mock_voice_mode):
+    def test_start_voice_mode_success(self, mock_console, mock_progress, mock_conv_manager, mock_voice_mode):
         """Test starting voice mode successfully."""
-        cli_interface = SamvaadInterface()
-        cli_interface.console = mock_console
+        import sys
+        # Mock the modules to avoid ImportError
+        sys.modules['sounddevice'] = MagicMock()
+        sys.modules['webrtcvad'] = MagicMock()
+        sys.modules['faster_whisper'] = MagicMock()
+        
+        try:
+            cli_interface = SamvaadInterface()
+            cli_interface.console = mock_console
 
-        # Mock the progress context manager
-        mock_progress_instance = MagicMock()
-        mock_progress.return_value.__enter__.return_value = mock_progress_instance
-        mock_progress_instance.add_task.return_value = "task_id"
+            # Mock the progress context manager
+            mock_progress_instance = MagicMock()
+            mock_progress.return_value.__enter__.return_value = mock_progress_instance
+            mock_progress_instance.add_task.return_value = "task_id"
 
-        # Mock voice mode
-        mock_voice_instance = MagicMock()
-        mock_voice_mode.return_value = mock_voice_instance
+            # Mock conversation manager
+            mock_conv_instance = MagicMock()
+            mock_conv_manager.return_value = mock_conv_instance
 
-        cli_interface.start_voice_mode()
+            # Mock voice mode
+            mock_voice_instance = MagicMock()
+            mock_voice_mode.return_value = mock_voice_instance
 
-        # Verify progress was used
-        mock_progress.assert_called()
-        # Verify models were initialized
-        mock_whisper.assert_called_once()
-        mock_embedding.assert_called_once()
-        mock_tts.assert_called_once()
-        # Verify voice mode was created and run
-        mock_voice_mode.assert_called_once()
-        mock_voice_instance.run.assert_called_once()
+            cli_interface.start_voice_mode()
+
+            # Verify progress was used
+            mock_progress.assert_called()
+            # Verify conversation manager was created
+            mock_conv_manager.assert_called_once_with(max_history=50, context_window=10)
+            # Verify voice mode was created and run
+            mock_voice_mode.assert_called_once()
+            mock_voice_instance.run.assert_called_once()
+        finally:
+            # Clean up
+            for mod in ['sounddevice', 'webrtcvad', 'faster_whisper']:
+                if mod in sys.modules:
+                    del sys.modules[mod]
 
     @patch('samvaad.pipeline.retrieval.voice_mode.VoiceMode')
     @patch('samvaad.interfaces.cli.Progress')

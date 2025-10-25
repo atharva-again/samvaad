@@ -11,7 +11,6 @@ chromadb==1.0.20
 
 # Embeddings and LLMs
 openai==1.106.0
-sentence-transformers==5.1.0
 tiktoken==0.11.0
 google-genai==1.36.0
 
@@ -42,9 +41,8 @@ spacy
 transformers
 tokenizers
 
-# Usinf a fork of llama-cpp-python because the officially one doesn't 
-# support Gemma Models yet
-git+https://github.com/inference-sh/llama-cpp-python.git
+# ONNX Runtime for optimized inference
+onnxruntime
 
 # Testing
 pytest==8.3.3

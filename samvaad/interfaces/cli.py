@@ -30,7 +30,7 @@ from prompt_toolkit.shortcuts import print_formatted_text
 from prompt_toolkit.formatted_text import HTML
 
 # Initialize console for rich output
-console = Console()
+console = Console(file=sys.__stdout__)
 
 # Color scheme inspired by GitHub Copilot CLI and Gemini CLI
 class Colors:
@@ -38,7 +38,7 @@ class Colors:
     PRIMARY = "#2563eb"      # Blue
     SUCCESS = "#16a34a"      # Green  
     WARNING = "#ea580c"      # Orange
-    ERROR = "#dc2626"        # Red
+    ERROR = "#ff4040"        # Red
     INFO = "#0891b2"         # Cyan
     
     # Text colors
@@ -57,7 +57,7 @@ class SamvaadInterface:
     """Main CLI interface for Samvaad with rich terminal UI."""
     
     def __init__(self):
-        self.console = Console()
+        self.console = Console(file=sys.__stdout__)
         self.conversation_active = False
         self.conversation_manager = None
         self._should_exit = False  # Flag to control exit
@@ -568,13 +568,39 @@ class SamvaadInterface:
         # Parse command arguments
         parts = command.split()
         if len(parts) < 2:
-            self.console.print("❌ Usage: /ingest <file_path> [file_path2 ...]", 
+            self.console.print("❌ Usage: /ingest <file_or_folder> [file_or_folder2 ...]", 
                              style=Colors.ERROR)
-            self.console.print("Example: /ingest document.pdf", 
-                             style=Colors.TEXT_MUTED)
-            self.console.print("Example: /ingest data/documents/*.pdf", 
-                             style=Colors.TEXT_MUTED)
+            self.console.print("Examples:", style=Colors.TEXT_MUTED)
+            self.console.print("  /ingest document.pdf", style=Colors.TEXT_MUTED)
+            self.console.print("  /ingest folder_name", style=Colors.TEXT_MUTED)
+            self.console.print("  /ingest file1.pdf file2.txt", style=Colors.TEXT_MUTED)
             return
+        
+        # Show loading progress bar for ingestion dependencies
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=self.console
+        ) as progress:
+            load_task = progress.add_task("[cyan]Loading ingestion dependencies...", total=None)
+            
+            try:
+                # Import heavy ingestion modules here to show loading progress
+                from samvaad.pipeline.ingestion.ingestion import ingest_file_pipeline_with_progress
+                from samvaad.pipeline.ingestion.chunking import parse_file, chunk_text
+                from samvaad.pipeline.ingestion.embedding import embed_chunks_with_dedup
+                from samvaad.pipeline.vectorstore.vectorstore import add_embeddings
+                from samvaad.utils.filehash_db import add_file
+                from samvaad.utils.hashing import generate_file_id
+                
+                # Mark loading complete
+                progress.update(load_task, completed=True, visible=False)
+                
+            except Exception as e:
+                progress.update(load_task, visible=False)
+                self.console.print(f"❌ Error loading ingestion dependencies: {e}", 
+                                 style=Colors.ERROR)
+                return
         
         # Show immediate progress for setup work
         with Progress(
@@ -655,7 +681,7 @@ class SamvaadInterface:
         self.console.print(f"Found {len(valid_files)} file(s) to process", 
                          style=Colors.INFO)
         
-        # Process files with progress bar that works with multiple files
+        # Process files with detailed progress tracking
         successful = 0
         failed = 0
         unchanged = 0
@@ -663,15 +689,15 @@ class SamvaadInterface:
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
-            TextColumn("({task.completed}/{task.total})"),
             console=self.console,
             transient=True
         ) as progress:
             main_task = progress.add_task(f"[cyan]Processing {len(valid_files)} file(s)...", total=len(valid_files))
             
             for i, file_path in enumerate(valid_files):
-                # Update progress description for current file
-                progress.update(main_task, description=f"[cyan]Processing {os.path.basename(file_path)}...")
+                filename = os.path.basename(file_path)
+                self.console.print(f"\nStarting {filename} ingestion", style=Colors.TEXT_PRIMARY)
+                progress.update(main_task, description="[cyan]Reading file...", refresh=True)
                 
                 try:
                     # Read file
@@ -683,6 +709,8 @@ class SamvaadInterface:
                     content_type, _ = mimetypes.guess_type(file_path)
                     if not content_type:
                         content_type = 'application/octet-stream'
+                    
+                    progress.update(main_task, description="[cyan]Parsing file...", refresh=True)
                     
                     # Suppress all logging during ingestion
                     import logging
@@ -697,14 +725,26 @@ class SamvaadInterface:
                     sys.stderr = StringIO()
                     
                     try:
-                        # Import and run ingestion pipeline
-                        from samvaad.pipeline.ingestion.ingestion import ingest_file_pipeline
-                        
-                        result = ingest_file_pipeline(
-                            filename=os.path.basename(file_path),
+                        # Process the file through the ingestion pipeline with detailed progress
+                        def progress_callback(step: str, current: int = None, total: int = None):
+                            suffix = ""
+                            progress.update(
+                                main_task,
+                                description=f"[cyan]{step}{suffix}",
+                                refresh=True,
+                            )
+
+                        result = ingest_file_pipeline_with_progress(
+                            filename=filename,
                             content_type=content_type,
-                            contents=contents
+                            contents=contents,
+                            progress_callback=progress_callback
                         )
+                        
+                        # Add small delay to allow spinner animation
+                        import time
+                        time.sleep(0.05)
+                        
                     finally:
                         # Restore logging and output
                         logging.disable(logging.NOTSET)
@@ -715,27 +755,27 @@ class SamvaadInterface:
                         err = result['error']
                         # Treat already-processed/no-new-chunks/no-new-embeddings as 'unchanged'
                         if err in ("File already processed", "No new chunks to process", "No new embeddings"):
-                            self.console.print(f"⏭️ Skipped {os.path.basename(file_path)}: {err}", 
+                            self.console.print(f"Skipped {filename}: {err}", 
                                                style=Colors.TEXT_MUTED)
                             unchanged += 1
                         else:
-                            self.console.print(f"❌ Failed to ingest {os.path.basename(file_path)}: {err}", 
+                            self.console.print(f"❌ Failed to ingest {filename}: {err}", 
                                                style=Colors.ERROR)
                             failed += 1
                     else:
                         chunks = result.get('num_chunks', 0)
                         new_chunks = result.get('new_chunks_embedded', 0)
-                        self.console.print(f"Ingested {os.path.basename(file_path)}: {chunks} chunks, {new_chunks} new", 
+                        self.console.print(f"Ingested {filename}: {chunks} chunks, {new_chunks} new", 
                                          style=Colors.TEXT_PRIMARY)
                         successful += 1
                         
                 except Exception as e:
-                    self.console.print(f"❌ Error processing {os.path.basename(file_path)}: {e}", 
+                    self.console.print(f"❌ Error processing {filename}: {e}", 
                                      style=Colors.ERROR)
                     failed += 1
                 
                 # Update progress
-                progress.update(main_task, advance=1)
+                progress.update(main_task, advance=1, refresh=True)
         
         # Summary
         # Final summary: include unchanged (skipped) files
@@ -835,7 +875,6 @@ class SamvaadInterface:
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
-            TextColumn("({task.completed}/{task.total})"),
             console=self.console,
             transient=True,
         ) as progress:
@@ -912,37 +951,6 @@ class SamvaadInterface:
                 old_stdout = sys.stdout
                 sys.stdout = StringIO()
                 
-                try:
-                    # Define loading steps
-                    whisper_task = progress.add_task("[cyan]Loading Whisper model...", total=None)
-                    embedding_task = progress.add_task("[cyan]Loading embedding model...", total=None)
-                    tts_task = progress.add_task("[cyan]Loading Kokoro TTS...", total=None)
-                    
-                    # Preload models one by one
-                    try:
-                        from samvaad.pipeline.retrieval.voice_mode import initialize_whisper_model
-                        initialize_whisper_model(model_size="small", device="auto")
-                        progress.update(whisper_task, completed=True, visible=False)
-                    except Exception as e:
-                        progress.update(whisper_task, description=f"[red]Failed to load Whisper: {e}", completed=True)
-                    
-                    try:
-                        from samvaad.pipeline.retrieval.query import get_embedding_model
-                        get_embedding_model()
-                        progress.update(embedding_task, completed=True, visible=False)
-                    except Exception as e:
-                        progress.update(embedding_task, description=f"[red]Failed to load embedding model: {e}", completed=True)
-                    
-                    try:
-                        from samvaad.pipeline.retrieval.voice_mode import get_kokoro_tts
-                        get_kokoro_tts()
-                        progress.update(tts_task, completed=True, visible=False)
-                    except Exception as e:
-                        progress.update(tts_task, description=f"[red]Failed to load TTS: {e}", completed=True)
-                        
-                finally:
-                    # Always restore stdout
-                    sys.stdout = old_stdout
 
             except (ImportError, RuntimeError) as e:
                 # If any part of initialization fails, hide progress and show error

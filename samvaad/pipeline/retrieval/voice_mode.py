@@ -48,24 +48,10 @@ logging.getLogger("llama_cpp").setLevel(logging.ERROR)
 logging.getLogger("llama").setLevel(logging.ERROR)
 logging.getLogger().setLevel(logging.WARNING)
 
-# Defer heavy imports
+
 from samvaad.pipeline.retrieval.query import rag_query_pipeline
-# from samvaad.pipeline.generation.kokoro_tts import KokoroTTS  # Deferred
+from samvaad.pipeline.generation.kokoro_tts import KokoroTTS  
 from samvaad.utils.clean_markdown import strip_markdown
-
-# Global TTS instance
-_kokoro_tts: Optional[KokoroTTS] = None
-
-def get_kokoro_tts() -> KokoroTTS:
-    """Get or create Kokoro TTS instance."""
-    global _kokoro_tts
-    if _kokoro_tts is None:
-        try:
-            from samvaad.pipeline.generation.kokoro_tts import KokoroTTS
-            _kokoro_tts = KokoroTTS()
-        except Exception as exc:
-            raise RuntimeError(f"Failed to initialise Kokoro TTS: {exc}") from exc
-    return _kokoro_tts
 
 def play_audio_response(text: str = None, language: str | None = None, pcm: bytes = None, sample_rate: int = None, sample_width: int = None, channels: int = None, mode: str = 'both') -> Optional[Tuple[bytes, int, int, int, str]]:
     """Generate and/or play an audio response for the provided text."""
@@ -82,7 +68,7 @@ def play_audio_response(text: str = None, language: str | None = None, pcm: byte
             return None
 
         try:
-            tts_engine = get_kokoro_tts()
+            tts_engine = KokoroTTS
             
             pcm, sample_rate, sample_width, channels = tts_engine.synthesize(
                 text, language=language, speed=1.0
@@ -293,11 +279,7 @@ class VoiceMode:
             self.initialize_whisper_only(silent=True)
         except Exception as e:
             print(f"⚠️ Whisper preload failed: {e}")
-        if self.whisper_model:
-            try:
-                get_kokoro_tts()
-            except Exception as e:
-                print(f"⚠️ TTS preload failed: {e}")
+        
 
     def initialize_whisper_only(self, silent: bool = False):
         """Initialize Whisper model."""

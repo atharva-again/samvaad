@@ -1,38 +1,33 @@
 import pathlib
 from typing import List, Dict, Any
-from sentence_transformers import SentenceTransformer, CrossEncoder
 from rank_bm25 import BM25Okapi
 import numpy as np
 from samvaad.pipeline.vectorstore.vectorstore import get_collection
 from samvaad.utils.gpu_utils import get_device
 from samvaad.pipeline.generation.generation import generate_answer_with_gemini
-from samvaad.pipeline.ingestion.embedding import GGUFEmbeddingModel
+from samvaad.utils.onnx_embedding import ONNXEmbeddingModel
+from samvaad.utils.onnx_cross_encoder import get_onnx_cross_encoder
 
-# Use same GGUF quantized embedding model as for documents
-_MODEL_REPO = "unsloth/embeddinggemma-300m-GGUF"
-_QUANTIZATION = "Q8_0"
-
-# Global model instance to avoid reloading
+# Global model instances to avoid reloading
 _embedding_model = None
 _cross_encoder = None
 
 def get_embedding_model():
-    """Get or create the GGUF embedding model instance."""
+    """Get or create the ONNX embedding model instance."""
     global _embedding_model
     if _embedding_model is None:
-        _embedding_model = GGUFEmbeddingModel(_MODEL_REPO, _QUANTIZATION)
+        _embedding_model = ONNXEmbeddingModel()
     return _embedding_model
 
-def get_cross_encoder():
-    """Get or create the cross-encoder model instance."""
+def get_cross_encoder(model_file: str = "onnx/model.onnx"):
+    """Get or create the ONNX cross-encoder model instance."""
     global _cross_encoder
     if _cross_encoder is None:
-        device = get_device()
-        _cross_encoder = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2', device=device)
+        _cross_encoder = get_onnx_cross_encoder(model_file=model_file)
     return _cross_encoder
 
 def embed_query(query: str) -> List[float]:
-    """Embed a query using the same GGUF model as documents."""
+    """Embed a query using the same ONNX model as documents."""
     model = get_embedding_model()
     embedding = model.encode_query(query)
     return embedding.tolist()
@@ -160,7 +155,7 @@ def search_similar_chunks(query_embedding: List[float], query_text: str, top_k: 
         return []
     
     # Cross-Encoder Reranking
-    cross_encoder = get_cross_encoder()
+    cross_encoder = get_cross_encoder(model_file="onnx/model_qint8_avx512.onnx")  # Use quantized model
     query_chunk_pairs = [[query_text, chunk['content']] for chunk in candidates]
     rerank_scores = cross_encoder.predict(query_chunk_pairs)
     
