@@ -176,10 +176,6 @@ def initialize_whisper_model(model_size: str = "small", device: str = "auto", si
         if not silent:
             print(f"❌ Whisper init failed: {e}")
         return None
-    except Exception as e:
-        if not silent:
-            print(f"❌ Whisper init failed: {e}")
-        return None
 
 class ConversationMessage:
     """Represents a conversation message."""
@@ -300,11 +296,20 @@ class VoiceMode:
                     samplerate=self.sample_rate,
                     blocksize=frame_size,
                     dtype='int16',
-                    channels=1
+                    channels=1,
+                    device=None  # Let sounddevice choose default device
                 )
                 self.stream.start()
             except Exception as e:
                 print(f"❌ Audio init failed: {e}")
+                print(f"   Available audio devices:")
+                try:
+                    import sounddevice as sd
+                    devices = sd.query_devices()
+                    for i, device in enumerate(devices):
+                        print(f"   {i}: {device['name']} (in: {device['max_input_channels']}, out: {device['max_output_channels']})")
+                except Exception as dev_e:
+                    print(f"   Could not list devices: {dev_e}")
                 raise
 
     def cleanup_audio(self):
@@ -318,130 +323,106 @@ class VoiceMode:
             finally:
                 self.stream = None
 
-    def listen_for_speech(self, timeout_seconds: int = 5, silent: bool = False, do_transcription: bool = True) -> Tuple[Union[str, bytes], str]:
-        """Listen for speech and optionally transcribe it."""
-        def is_frame_silent(frame_bytes, threshold=0.01):
-            audio = np.frombuffer(frame_bytes, dtype=np.int16).astype(np.float32) / 32768.0
-            rms = np.sqrt(np.mean(audio**2))
-            return rms < threshold
+    def listen_for_speech(self, timeout_seconds: int = 5, silence_duration: float = 2.0, silent: bool = False, do_transcription: bool = True) -> Tuple[Optional[bytes], Optional[str]]:
+        """
+        Listen for speech with initial timeout and silence detection.
         
-        if not silent:
-            print("🎤 Listening for speech...")
-        
-        # Audio parameters
-        rate = self.sample_rate
-        frame_ms = self.frame_duration_ms
-        frame_samples = int(rate * frame_ms / 1000)
-        frame_bytes_size = frame_samples * 2  # 16-bit
-        
-        # Buffers
-        pre_speech_buffer = deque(maxlen=25)  # 500ms buffer
-        recorded_audio = []
-        
-        # Timing
-        start_wait = time.time()
-        max_wait_frames = int(timeout_seconds * 1000 / frame_ms)
-        wait_frame_count = 0
-        
-        # Phase 1: Wait for speech onset
-        speech_started = False
-        while not speech_started:
-            # Timeout check
-            current_time = time.time()
-            wait_frame_count += 1
-            if (current_time - start_wait >= timeout_seconds) or (wait_frame_count >= max_wait_frames):
-                if not silent:
-                    print(f"⏰ No speech detected within {timeout_seconds}s")
-                return ("", "") if do_transcription else (b"", "")
+        Args:
+            timeout_seconds: Maximum time to wait for speech to start
+            silence_duration: How long to wait after speech stops before ending recording
+            silent: Whether to suppress status messages
+            do_transcription: Whether to return transcription (for backward compatibility)
             
-            # Capture audio frame
-            try:
-                data, _ = self.stream.read(frame_samples)
-            except Exception as e:
-                if not silent:
-                    print(f"⚠️ Audio capture error: {e}")
-                time.sleep(0.01)
-                continue
-            
-            frame_data = bytes(data)
-            
-            # VAD check with RMS filter
-            try:
-                if self.vad.is_speech(frame_data, rate) and not is_frame_silent(frame_data, threshold=0.005):
-                    # Speech detected, include buffer
-                    recorded_audio.extend(pre_speech_buffer)
-                    recorded_audio.append(frame_data)
-                    speech_started = True
-                    if not silent:
-                        print(f"✓ Speech detected at {current_time - start_wait:.1f}s")
-                else:
-                    pre_speech_buffer.append(frame_data)
-            except Exception as e:
-                if not silent:
-                    print(f"⚠️ VAD error: {e}")
-                continue
-        
-        # Phase 2: Record until silence
-        silence_limit = 2.0
-        last_speech = time.time()
-        recording_start = time.time()
-        max_recording = 180
-        
-        while True:
-            # Max duration check
-            if time.time() - recording_start > max_recording:
-                if not silent:
-                    print("⚠️ Recording limit reached")
-                break
-            
-            # Capture frame
-            try:
-                data, _ = self.stream.read(frame_samples)
-            except Exception as e:
-                if not silent:
-                    print(f"⚠️ Audio capture error: {e}")
-                time.sleep(0.01)
-                continue
-            
-            frame_data = bytes(data)
-            recorded_audio.append(frame_data)
-            
-            # VAD check
-            try:
-                speech_detected = self.vad.is_speech(frame_data, rate) and not is_frame_silent(frame_data, threshold=0.005)
-                if speech_detected:
-                    last_speech = time.time()
-                else:
-                    if time.time() - last_speech > silence_limit:
-                        if not silent:
-                            print(f"🔇 Silence detected after {silence_limit}s")
-                        break
-            except Exception as e:
-                if not silent:
-                    print(f"⚠️ VAD error: {e}")
-                continue
-        
-        # Phase 3: Transcribe if needed
-        if not recorded_audio:
-            return ("", "") if do_transcription else (b"", "")
-        
-        combined_audio = b"".join(recorded_audio)
-        
-        if not do_transcription:
-            return combined_audio, ""
-        
-        # Prepare for Whisper
-        audio_float = np.frombuffer(combined_audio, dtype=np.int16).astype(np.float32) / 32768.0
+        Returns:
+            Tuple of (audio_data, transcription) or (None, None) if no speech detected
+        """
+        if not self.stream or not self.vad:
+            print("❌ CRITICAL: Audio not initialized even though test passed!")
+            print(f"   Stream: {self.stream}")
+            print(f"   VAD: {self.vad}")
+            return None, None
+
+        frame_size = int(self.sample_rate * self.frame_duration_ms / 1000)
+        audio_buffer = deque(maxlen=int(30 * self.sample_rate / frame_size))  # 30 seconds max
+        speech_detected = False
+        speech_frames = []
+        silence_frames = 0
+        silence_threshold = int(silence_duration * self.sample_rate / frame_size)
         
         try:
-            result = self.whisper_model.transcribe(audio_float, language=None)
-            text = " ".join(seg.text for seg in result[0]).strip()
-            lang = result[1].language
-            return text, lang
-        except Exception as e:
+            start_time = time.time()
+            max_timeout = timeout_seconds + 10  # Allow 10 extra seconds as safety margin
+            loop_count = 0
+            while (time.time() - start_time < timeout_seconds or speech_detected) and (time.time() - start_time < max_timeout):
+                loop_count += 1
+                elapsed = time.time() - start_time
+                
+                try:
+                    try:
+                        result = self.stream.read(frame_size)
+                        data = result[0]
+                        # Convert buffer to numpy array
+                        if not isinstance(data, np.ndarray):
+                            data = np.frombuffer(data, dtype=np.int16)
+                    except Exception as read_e:
+                        break
+                    
+                    audio_buffer.append(data)
+                    
+                    # Convert to bytes for VAD
+                    frame_bytes = data.tobytes()
+                    
+                    # Check if frame contains speech
+                    try:
+                        is_speech = self.vad.is_speech(frame_bytes, self.sample_rate)
+                    except Exception as e:
+                        # If VAD fails, use simple energy-based detection
+                        energy = np.sum(np.abs(data.astype(np.float32)))
+                        is_speech = energy > 200  # Even lower threshold
+                    
+                    if is_speech:
+                        if not speech_detected:
+                            speech_detected = True
+                        speech_frames.extend(audio_buffer)
+                        audio_buffer.clear()
+                        silence_frames = 0
+                    elif speech_detected: 
+                        speech_frames.append(data)
+                        silence_frames += 1
+                        
+                        # Check if we've had enough silence to stop recording
+                        if silence_frames >= silence_threshold:
+                            break
+                    
+                except Exception as e:
+                    break
+                    
+        except KeyboardInterrupt:
             if not silent:
-                print(f"⚠️ Transcription error: {e}")
-            return "", ""
+                print("\n🛑 Recording interrupted")
+            return None, None
+        
+        if not speech_detected:
+            return None, None
+        
+        if not speech_frames:
+            return None, None
+        
+        # Combine all speech frames
+        audio_data = b''.join(frame.tobytes() for frame in speech_frames)
+        
+        # For backward compatibility, return transcription if requested
+        transcription = None
+        if do_transcription and self.whisper_model:
+            try:
+                audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
+                segments, _ = self.whisper_model.transcribe(audio_np, language=None)
+                transcription = " ".join(segment.text for segment in segments).strip()
+            except Exception as e:
+                if not silent:
+                    print(f"⚠️ Transcription failed: {e}")
+        
+        return audio_data, transcription
 
     def process_query(self, transcription: str, detected_language: str) -> Dict[str, Any]:
         """Process transcription through RAG."""
@@ -520,95 +501,103 @@ class VoiceMode:
             )
             console.print(voice_panel)
             
+            # Brief pause before starting recording
+            time.sleep(1)
+            
             self.running = True
-            last_activity = time.time()
 
             while self.running:
-                # Call listening progress callback
+                # ASR Phase: Listen for speech with 5-second timeout
                 if 'listening' in self.progress_callbacks:
                     progress = self.progress_callbacks['listening']()
                     with progress:
                         task = progress.add_task("Listening for speech...", total=None)
-                        audio_data, _ = self.listen_for_speech(timeout_seconds=5, silent=True, do_transcription=False)
+                        audio_data, _ = self.listen_for_speech(timeout_seconds=5, silence_duration=2.0, silent=True, do_transcription=False)
                         progress.update(task, completed=True, visible=False)
                 else:
-                    audio_data, _ = self.listen_for_speech(timeout_seconds=5, silent=True, do_transcription=False)
+                    audio_data, _ = self.listen_for_speech(timeout_seconds=5, silence_duration=2.0, silent=True, do_transcription=False)
                 
-                if audio_data:
-                    # Transcribe the audio
-                    if 'transcribing' in self.progress_callbacks:
-                        progress = self.progress_callbacks['transcribing']()
-                        with progress:
-                            task = progress.add_task("Transcribing...", total=None)
-                            audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
-                            try:
-                                segments, info = self.whisper_model.transcribe(audio_np, language=None)
-                                transcription = " ".join(segment.text for segment in segments).strip()
-                                detected_language = info.language
-                                progress.update(task, completed=True, visible=False)
-                            except Exception as e:
-                                progress.update(task, completed=True, visible=False)
-                                print(f"⚠️ Transcription failed: {e}")
-                                transcription = ""
-                                detected_language = ""
-                    else:
+                # If no speech detected in 5 seconds, exit voice mode
+                if not audio_data:
+                    print("No speech detected during listening period. Exiting.")
+                    break
+                
+                # Transcribe the recorded audio
+                if 'transcribing' in self.progress_callbacks:
+                    progress = self.progress_callbacks['transcribing']()
+                    with progress:
+                        task = progress.add_task("Transcribing...", total=None)
                         audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
                         try:
                             segments, info = self.whisper_model.transcribe(audio_np, language=None)
                             transcription = " ".join(segment.text for segment in segments).strip()
                             detected_language = info.language
+                            progress.update(task, completed=True, visible=False)
                         except Exception as e:
+                            progress.update(task, completed=True, visible=False)
                             print(f"⚠️ Transcription failed: {e}")
-                            transcription = ""
-                            detected_language = ""
-                    
-                    if transcription:
-                        # Styled output to match CLI prompt aesthetic
-                        console.print(f"[cyan]❯[/cyan] {transcription}")
-                        
-                        if not self.handle_command(transcription):
-                            break
-                        
-                        # Call processing progress callback
-                        if 'processing' in self.progress_callbacks:
-                            progress = self.progress_callbacks['processing']()
-                            with progress:
-                                task = progress.add_task("Processing query...", total=None)
-                                result = self.process_query(transcription, detected_language)
-                                progress.update(task, completed=True, visible=False)
-                        else:
-                            result = self.process_query(transcription, detected_language)
-                        
-                        response = result.get("response", "No response generated.")
-                        
-                        # Use response callback if available, otherwise print directly
-                        if 'response' in self.progress_callbacks:
-                            self.progress_callbacks['response'](response, result.get('query_time'))
-                        else:
-                            print(f"Response: {response}")
-                            if 'query_time' in result:
-                                print(f"⏱️  Response generated in {result['query_time']:.2f}s")
-                        
-                        # Call speaking progress callback
-                        if 'speaking' in self.progress_callbacks:
-                            progress = self.progress_callbacks['speaking']()
-                            with progress:
-                                task = progress.add_task("Generating speech...", total=None)
-                                plain_text = strip_markdown(response)
-                                result = play_audio_response(plain_text, detected_language, mode='generate')
-                                if result:
-                                    pcm, sample_rate, sample_width, channels, filename = result
-                                    progress.update(task, description="Speaking..")
-                                    play_audio_response(pcm=pcm, sample_rate=sample_rate, sample_width=sample_width, channels=channels, mode='play')
-                                progress.update(task, completed=True, visible=False)
-                        else:
-                            self.speak_response(response, detected_language)
-                        
-                        last_activity = time.time()
-                    else:
-                        # No speech detected within the listen timeout - treat as inactivity and end
-                        print("⏰ Inactivity timeout. Ending conversation.")
-                        break
+                            continue  # Go back to listening
+                else:
+                    audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
+                    try:
+                        segments, info = self.whisper_model.transcribe(audio_np, language=None)
+                        transcription = " ".join(segment.text for segment in segments).strip()
+                        detected_language = info.language
+                    except Exception as e:
+                        print(f"⚠️ Transcription failed: {e}")
+                        continue  # Go back to listening
+                
+                if not transcription:
+                    print("⚠️ No transcription generated. Continuing to listen...")
+                    continue
+                
+                # Display the transcribed text
+                console.print(f"[cyan]❯[/cyan] {transcription}")
+                
+                # Handle voice commands
+                if not self.handle_command(transcription):
+                    break
+                
+                # Generation Phase: Process the query through RAG
+                if 'processing' in self.progress_callbacks:
+                    progress = self.progress_callbacks['processing']()
+                    with progress:
+                        task = progress.add_task("Processing query...", total=None)
+                        result = self.process_query(transcription, detected_language)
+                        progress.update(task, completed=True, visible=False)
+                else:
+                    result = self.process_query(transcription, detected_language)
+                
+                response = result.get("response", "No response generated.")
+                
+                # Display the response
+                if 'response' in self.progress_callbacks:
+                    self.progress_callbacks['response'](response, result.get('query_time'))
+                else:
+                    print(f"Response: {response}")
+                    if 'query_time' in result:
+                        print(f"⏱️  Response generated in {result['query_time']:.2f}s")
+                
+                # TTS Phase: Speak the response
+                if 'speaking' in self.progress_callbacks:
+                    progress = self.progress_callbacks['speaking']()
+                    with progress:
+                        task = progress.add_task("Generating speech...", total=None)
+                        plain_text = strip_markdown(response)
+                        audio_result = play_audio_response(plain_text, detected_language, mode='generate')
+                        if audio_result:
+                            pcm, sample_rate, sample_width, channels, filename = audio_result
+                            progress.update(task, description="Speaking...")
+                            play_audio_response(pcm=pcm, sample_rate=sample_rate, sample_width=sample_width, channels=channels, mode='play')
+                        progress.update(task, completed=True, visible=False)
+                else:
+                    self.speak_response(response, detected_language)
+                
+                # Prepare for next query
+                print("\n🎯 Ready for your next question...")
+                time.sleep(1)
+                
+                # Complete ASR-Generation-TTS cycle - continue to next iteration
 
         except KeyboardInterrupt:
             print("\n🛑 Interrupted by user.")
