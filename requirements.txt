@@ -16,6 +16,7 @@ google-genai==1.36.0
 
 # Document loaders and parsing
 docling
+transformers
 
 # Environment variables
 python-dotenv==1.1.1
@@ -31,14 +32,12 @@ webrtcvad==2.0.10
 sounddevice==0.5.2
 
 # Text-to-Speech
-kokoro
-kokoro-onnx
+kokoro-onnx>=0.4.9
 
 # SpaCy models for text processing in TTS
 spacy
 
 # Lightweight text processing models
-transformers
 tokenizers
 
 # ONNX Runtime for optimized inference

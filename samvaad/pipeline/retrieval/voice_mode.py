@@ -52,6 +52,7 @@ logging.getLogger().setLevel(logging.WARNING)
 from samvaad.pipeline.retrieval.query import rag_query_pipeline
 from samvaad.pipeline.generation.kokoro_tts import KokoroTTS  
 from samvaad.utils.clean_markdown import strip_markdown
+from samvaad.utils.gpu_utils import get_device
 
 def play_audio_response(text: str = None, language: str | None = None, pcm: bytes = None, sample_rate: int = None, sample_width: int = None, channels: int = None, mode: str = 'both') -> Optional[Tuple[bytes, int, int, int, str]]:
     """Generate and/or play an audio response for the provided text."""
@@ -68,7 +69,7 @@ def play_audio_response(text: str = None, language: str | None = None, pcm: byte
             return None
 
         try:
-            tts_engine = KokoroTTS
+            tts_engine = KokoroTTS()
             
             pcm, sample_rate, sample_width, channels = tts_engine.synthesize(
                 text, language=language, speed=1.0
@@ -141,7 +142,7 @@ def clean_transcription(text: str) -> str:
     try:
         prompt = f"""Clean and summarize this speech transcription 
                     for RAG retrieval.
-                    Preserve intent and keywords. Correct typos.
+                    Preserve intent and keywords. Correct typos and common mispronunciations (e.g., 'Ensopic' likely means 'Anthropic').
                     Single sentence, same language/style: {text}"""
         
         response = clean_transcription._client.models.generate_content(
@@ -163,7 +164,7 @@ def initialize_whisper_model(model_size: str = "small", device: str = "auto", si
     try:
         from faster_whisper import WhisperModel
         if device == "auto":
-            device = "cuda" if hasattr(__import__('torch'), 'cuda') and __import__('torch').cuda.is_available() else "cpu"
+            device = "cuda" if get_device() == 'cuda' else "cpu"
         compute_type = "float16" if device == "cuda" else "int8"
         if not silent:
             print(f"🔄 Loading Whisper ({model_size}) on {device}...")
@@ -294,7 +295,7 @@ class VoiceMode:
             try:
                 import sounddevice as sd
                 import webrtcvad
-                self.vad = webrtcvad.Vad(3)  # Most restrictive for better silence detection  
+                self.vad = webrtcvad.Vad(3)  # Most restrictive VAD for silence detection  
                 self.stream = sd.RawInputStream(
                     samplerate=self.sample_rate,
                     blocksize=frame_size,
@@ -317,132 +318,130 @@ class VoiceMode:
             finally:
                 self.stream = None
 
-    def listen_for_speech(self, timeout_seconds: int = 10, silent: bool = False, do_transcription: bool = True) -> Tuple[Union[str, bytes], str]:
-        """Listen for speech and transcribe with improved VAD logic."""
-        if not silent:
-            print("Listening...")
-        sample_rate = self.sample_rate
-        frame_duration_ms = self.frame_duration_ms
-        frame_size = int(sample_rate * frame_duration_ms / 1000)
-        padding_duration_ms = 800  # for initial speech detection
-        num_padding_frames = max(1, padding_duration_ms // frame_duration_ms)
-        ring_buffer: deque[Tuple[bytes, bool]] = deque(maxlen=num_padding_frames)
-        voiced_frames: List[bytes] = []
-        listen_start = time.time()
-
-        # Phase 1: Wait for initial speech (up to timeout_seconds)
-        initial_speech_timeout = timeout_seconds
-        if not silent:
-            print("🎤 Waiting for speech...")
-
-        triggered = False
-        while time.time() - listen_start < initial_speech_timeout:
-            data, overflowed = self.stream.read(frame_size)
-            if overflowed and not silent:
-                print("⚠️ Input overflow detected")
-            if data is None:
-                continue
-            try:
-                frame_bytes = data.tobytes()
-            except AttributeError:
-                # sounddevice RawInputStream returns a cffi buffer without tobytes support
-                frame_bytes = bytes(data)
-
-            is_speech = self.vad.is_speech(frame_bytes, sample_rate)
-            ring_buffer.append((frame_bytes, is_speech))
-
-            if len(ring_buffer) < ring_buffer.maxlen:
-                continue
-
-            num_voiced = sum(1 for _, is_voiced in ring_buffer if is_voiced)
-            if num_voiced >= int(0.8 * ring_buffer.maxlen):
-                triggered = True
-                if not silent:
-                    print("🎤 Speech detected, recording...")
-                voiced_frames.extend(frame for frame, _ in ring_buffer)
-                ring_buffer.clear()
-                break
-
-        if not triggered:
-            if not silent:
-                print("⏰ No speech detected within timeout")
-            return "", ""
-
-        # Phase 2: Record until trailing silence
-        silence_duration_ms = 2000  # Stop after 2 seconds of continuous silence
-        consecutive_silent_frames = 0
-        required_silent_frames = int(silence_duration_ms / frame_duration_ms)  # 100 frames for 2 seconds
+    def listen_for_speech(self, timeout_seconds: int = 5, silent: bool = False, do_transcription: bool = True) -> Tuple[Union[str, bytes], str]:
+        """Listen for speech and optionally transcribe it."""
+        def is_frame_silent(frame_bytes, threshold=0.01):
+            audio = np.frombuffer(frame_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+            rms = np.sqrt(np.mean(audio**2))
+            return rms < threshold
         
-        recording_start = time.time()
-        max_recording_duration = 180  # hard safety cap
-
-        while True:
-            data, overflowed = self.stream.read(frame_size)
-            if overflowed and not silent:
-                print("⚠️ Input overflow detected")
-            if data is None:
-                continue
-
+        if not silent:
+            print("🎤 Listening for speech...")
+        
+        # Audio parameters
+        rate = self.sample_rate
+        frame_ms = self.frame_duration_ms
+        frame_samples = int(rate * frame_ms / 1000)
+        frame_bytes_size = frame_samples * 2  # 16-bit
+        
+        # Buffers
+        pre_speech_buffer = deque(maxlen=25)  # 500ms buffer
+        recorded_audio = []
+        
+        # Timing
+        start_wait = time.time()
+        max_wait_frames = int(timeout_seconds * 1000 / frame_ms)
+        wait_frame_count = 0
+        
+        # Phase 1: Wait for speech onset
+        speech_started = False
+        while not speech_started:
+            # Timeout check
+            current_time = time.time()
+            wait_frame_count += 1
+            if (current_time - start_wait >= timeout_seconds) or (wait_frame_count >= max_wait_frames):
+                if not silent:
+                    print(f"⏰ No speech detected within {timeout_seconds}s")
+                return ("", "") if do_transcription else (b"", "")
+            
+            # Capture audio frame
             try:
-                frame_bytes = data.tobytes()
-            except AttributeError:
-                frame_bytes = bytes(data)
-            is_speech = self.vad.is_speech(frame_bytes, sample_rate)
-            voiced_frames.append(frame_bytes)
-            
-            if not is_speech:
-                consecutive_silent_frames += 1
-            else:
-                consecutive_silent_frames = 0  # Reset on speech
-            
-            if consecutive_silent_frames >= required_silent_frames:
+                data, _ = self.stream.read(frame_samples)
+            except Exception as e:
                 if not silent:
-                    print("🔇 Silence detected, stopping recording...")
-                break
-
-            if (time.time() - recording_start) > max_recording_duration:
+                    print(f"⚠️ Audio capture error: {e}")
+                time.sleep(0.01)
+                continue
+            
+            frame_data = bytes(data)
+            
+            # VAD check with RMS filter
+            try:
+                if self.vad.is_speech(frame_data, rate) and not is_frame_silent(frame_data, threshold=0.005):
+                    # Speech detected, include buffer
+                    recorded_audio.extend(pre_speech_buffer)
+                    recorded_audio.append(frame_data)
+                    speech_started = True
+                    if not silent:
+                        print(f"✓ Speech detected at {current_time - start_wait:.1f}s")
+                else:
+                    pre_speech_buffer.append(frame_data)
+            except Exception as e:
                 if not silent:
-                    print("⚠️ Maximum recording duration reached, stopping...")
+                    print(f"⚠️ VAD error: {e}")
+                continue
+        
+        # Phase 2: Record until silence
+        silence_limit = 2.0
+        last_speech = time.time()
+        recording_start = time.time()
+        max_recording = 180
+        
+        while True:
+            # Max duration check
+            if time.time() - recording_start > max_recording:
+                if not silent:
+                    print("⚠️ Recording limit reached")
                 break
-
-        if not voiced_frames:
+            
+            # Capture frame
+            try:
+                data, _ = self.stream.read(frame_samples)
+            except Exception as e:
+                if not silent:
+                    print(f"⚠️ Audio capture error: {e}")
+                time.sleep(0.01)
+                continue
+            
+            frame_data = bytes(data)
+            recorded_audio.append(frame_data)
+            
+            # VAD check
+            try:
+                speech_detected = self.vad.is_speech(frame_data, rate) and not is_frame_silent(frame_data, threshold=0.005)
+                if speech_detected:
+                    last_speech = time.time()
+                else:
+                    if time.time() - last_speech > silence_limit:
+                        if not silent:
+                            print(f"🔇 Silence detected after {silence_limit}s")
+                        break
+            except Exception as e:
+                if not silent:
+                    print(f"⚠️ VAD error: {e}")
+                continue
+        
+        # Phase 3: Transcribe if needed
+        if not recorded_audio:
             return ("", "") if do_transcription else (b"", "")
-
-        # Transcribe the recorded audio
-        if do_transcription:
-            if 'transcribing' in self.progress_callbacks:
-                progress = self.progress_callbacks['transcribing']()
-                with progress:
-                    task = progress.add_task("Transcribing...", total=None)
-                    audio_data = b"".join(voiced_frames)
-                    audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
-
-                    try:
-                        segments, info = self.whisper_model.transcribe(audio_np, language=None)
-                        transcription = " ".join(segment.text for segment in segments).strip()
-                        detected_language = info.language
-                        progress.update(task, completed=True, visible=False)
-                        return transcription, detected_language
-                    except Exception as e:
-                        progress.update(task, completed=True, visible=False)
-                        print(f"⚠️ Transcription failed: {e}")
-                        return "", ""
-            else:
-                audio_data = b"".join(voiced_frames)
-                audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
-
-                try:
-                    segments, info = self.whisper_model.transcribe(audio_np, language=None)
-                    transcription = " ".join(segment.text for segment in segments).strip()
-                    detected_language = info.language
-                    return transcription, detected_language
-                except Exception as e:
-                    print(f"⚠️ Transcription failed: {e}")
-                    return "", ""
-        else:
-            # Return audio data without transcription
-            audio_data = b"".join(voiced_frames)
-            return audio_data, ""
+        
+        combined_audio = b"".join(recorded_audio)
+        
+        if not do_transcription:
+            return combined_audio, ""
+        
+        # Prepare for Whisper
+        audio_float = np.frombuffer(combined_audio, dtype=np.int16).astype(np.float32) / 32768.0
+        
+        try:
+            result = self.whisper_model.transcribe(audio_float, language=None)
+            text = " ".join(seg.text for seg in result[0]).strip()
+            lang = result[1].language
+            return text, lang
+        except Exception as e:
+            if not silent:
+                print(f"⚠️ Transcription error: {e}")
+            return "", ""
 
     def process_query(self, transcription: str, detected_language: str) -> Dict[str, Any]:
         """Process transcription through RAG."""
@@ -512,7 +511,7 @@ class VoiceMode:
                 "Voice Query Mode Active. Ready to Listen.\n\n"
                 "• Speak your question naturally\n"
                 "• Languages Supported: English, Hindi (preview)\n"
-                "• The system will wait for 10 seconds for you to speak.\n"
+                "• The system will wait for 5 seconds for you to speak.\n"
                 "• Recording stops after a brief silence\n"
                 "• Press Ctrl+C to cancel and return to text mode",
                 title="Voice Conversation Started",
@@ -530,10 +529,10 @@ class VoiceMode:
                     progress = self.progress_callbacks['listening']()
                     with progress:
                         task = progress.add_task("Listening for speech...", total=None)
-                        audio_data, _ = self.listen_for_speech(timeout_seconds=10, silent=True, do_transcription=False)
+                        audio_data, _ = self.listen_for_speech(timeout_seconds=5, silent=True, do_transcription=False)
                         progress.update(task, completed=True, visible=False)
                 else:
-                    audio_data, _ = self.listen_for_speech(timeout_seconds=10, silent=True, do_transcription=False)
+                    audio_data, _ = self.listen_for_speech(timeout_seconds=5, silent=True, do_transcription=False)
                 
                 if audio_data:
                     # Transcribe the audio

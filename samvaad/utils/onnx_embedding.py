@@ -70,57 +70,52 @@ class ONNXEmbeddingModel:
 
         prompts = [f"title: none | text: {text}" for text in texts]
 
-        try:
-            preview_encoding = self.tokenizer(
-                prompts,
-                padding=False,
-                truncation=True,
-                max_length=2048,
-            )
-            token_lengths = [len(ids) for ids in preview_encoding["input_ids"]]
-        except Exception:
-            token_lengths = [0] * len(prompts)
+        # Tokenize all prompts at once
+        inputs = self.tokenizer(prompts, truncation=True, padding=True, max_length=2048, return_tensors="np")
+        input_ids_all = inputs['input_ids']
+        attention_mask_all = inputs['attention_mask']
 
-        batches: List[List[str]] = []
-        current_batch: List[str] = []
+        # Manual batching based on token count
+        batches: List[dict] = []
+        current_input_ids: List[np.ndarray] = []
+        current_attention_masks: List[np.ndarray] = []
         tokens_in_batch = 0
 
-        for prompt, length in zip(prompts, token_lengths):
-            token_count = max(1, length)
-            if current_batch and (
-                len(current_batch) >= self.MAX_BATCH_SIZE
+        for i, (input_id, attention_mask) in enumerate(zip(input_ids_all, attention_mask_all)):
+            token_count = np.sum(attention_mask)  # Number of non-padding tokens
+            if current_input_ids and (
+                len(current_input_ids) >= self.MAX_BATCH_SIZE
                 or tokens_in_batch + token_count > self.TARGET_TOKENS_PER_BATCH
             ):
-                batches.append(current_batch)
-                current_batch = []
+                # Stack current batch
+                batch_input_ids = np.stack(current_input_ids)
+                batch_attention_mask = np.stack(current_attention_masks)
+                batches.append({"input_ids": batch_input_ids, "attention_mask": batch_attention_mask})
+                current_input_ids = []
+                current_attention_masks = []
                 tokens_in_batch = 0
 
-            current_batch.append(prompt)
+            current_input_ids.append(input_id)
+            current_attention_masks.append(attention_mask)
             tokens_in_batch += token_count
 
-        if current_batch:
-            batches.append(current_batch)
+        if current_input_ids:
+            batch_input_ids = np.stack(current_input_ids)
+            batch_attention_mask = np.stack(current_attention_masks)
+            batches.append({"input_ids": batch_input_ids, "attention_mask": batch_attention_mask})
 
         all_embeddings = []
-        for batch_prompts in batches:
+        for batch in batches:
             try:
-                inputs = self.tokenizer(
-                    batch_prompts,
-                    return_tensors="np",
-                    padding=True,
-                    truncation=True,
-                    max_length=2048,
-                )
-
                 with contextlib.redirect_stderr(open(os.devnull, "w")):
-                    outputs = self.session.run(None, inputs.data)
+                    outputs = self.session.run(None, batch)
 
                 batch_embeddings = outputs[-1]
                 all_embeddings.extend(batch_embeddings)
             except Exception as exc:
                 print(f"Warning: Failed to embed batch: {exc}")
                 all_embeddings.extend(
-                    [np.zeros(768, dtype=np.float32)] * len(batch_prompts)
+                    [np.zeros(768, dtype=np.float32)] * len(batch["input_ids"])
                 )
 
         return np.asarray(all_embeddings, dtype=np.float32)
@@ -138,11 +133,25 @@ class ONNXEmbeddingModel:
         # Apply query prompt
         prompted_text = f"task: search result | query: {text}"
 
-        # Tokenize and run inference
-        inputs = self.tokenizer(prompted_text, return_tensors="np", padding=True, truncation=True, max_length=2048)
+        # Tokenize
+        inputs = self.tokenizer(
+            prompted_text, 
+            truncation=True,
+            max_length=2048,
+            add_special_tokens=True,
+            return_tensors="np"
+        )
+        
+        input_ids = inputs['input_ids'][0]  # Since single
+        attention_mask = inputs['attention_mask'][0]
+        
+        session_inputs = {
+            "input_ids": input_ids.reshape(1, -1),  # Add batch dim
+            "attention_mask": attention_mask.reshape(1, -1)
+        }
 
         with contextlib.redirect_stderr(open(os.devnull, "w")):
-            outputs = self.session.run(None, inputs.data)
+            outputs = self.session.run(None, session_inputs)
 
         # Extract sentence embedding
         embedding = outputs[-1][0]  # Shape: (768,)
