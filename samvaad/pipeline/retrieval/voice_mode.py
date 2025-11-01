@@ -21,6 +21,7 @@ import numpy as np
 from rich.console import Console
 from rich.panel import Panel
 from rich import box
+from rich.progress import Progress, SpinnerColumn, TextColumn
 
 # Suppress ALSA environment variables globally
 os.environ['ALSA_PCM_CARD'] = '0'
@@ -54,7 +55,7 @@ from samvaad.pipeline.generation.kokoro_tts import KokoroTTS
 from samvaad.utils.clean_markdown import strip_markdown
 from samvaad.utils.gpu_utils import get_device
 
-def play_audio_response(text: str = None, language: str | None = None, pcm: bytes = None, sample_rate: int = None, sample_width: int = None, channels: int = None, mode: str = 'both') -> Optional[Tuple[bytes, int, int, int, str]]:
+def play_audio_response(text: str = None, language: str | None = None, pcm: bytes = None, sample_rate: int = None, sample_width: int = None, channels: int = None, mode: str = 'both', tts_engine: Optional[KokoroTTS] = None) -> Optional[Tuple[bytes, int, int, int, str]]:
     """Generate and/or play an audio response for the provided text."""
     if mode not in ['generate', 'play', 'both']:
         raise ValueError("mode must be 'generate', 'play', or 'both'")
@@ -69,11 +70,18 @@ def play_audio_response(text: str = None, language: str | None = None, pcm: byte
             return None
 
         try:
-            tts_engine = KokoroTTS()
-            
-            pcm, sample_rate, sample_width, channels = tts_engine.synthesize(
-                text, language=language, speed=1.0
-            )
+
+            start_time = time.perf_counter()
+
+            if tts_engine:
+                pcm, sample_rate, sample_width, channels = tts_engine.synthesize(
+                    text, language=language, speed=1.0
+                )
+            else:
+                tts_engine = KokoroTTS()
+                pcm, sample_rate, sample_width, channels = tts_engine.synthesize(
+                    text, language=language, speed=1.0
+                )
 
             # Save audio to file
             os.makedirs("data/audio_responses", exist_ok=True)
@@ -84,7 +92,8 @@ def play_audio_response(text: str = None, language: str | None = None, pcm: byte
                 wav_file.setsampwidth(sample_width)
                 wav_file.setframerate(sample_rate)
                 wav_file.writeframes(pcm)
-            print(f"Audio response saved to: {filename}")
+            end_time = time.perf_counter() - start_time
+            print(f"Audio response generated in {end_time:.2f} seconds, saved to: {filename}")
 
             if mode == 'generate':
                 return pcm, sample_rate, sample_width, channels, filename
@@ -262,6 +271,7 @@ class VoiceMode:
     def __init__(self, progress_callbacks=None):
         self.conversation_manager = ConversationManager()
         self.whisper_model = None
+        self.tts_engine = None
         self.stream = None
         self.vad = None
         self.running = False
@@ -271,11 +281,22 @@ class VoiceMode:
         self.frame_duration_ms = 20
 
     def preload_models(self):
-        """Preload ML models."""
-        try:
-            self.initialize_whisper_only(silent=True)
-        except Exception as e:
-            print(f"⚠️ Whisper preload failed: {e}")
+        """Preload ML models using Progress with a SpinnerColumn."""
+        with Progress(
+            SpinnerColumn(style="cyan"),
+            TextColumn("[cyan]{task.description}"),
+            transient=True,
+        ) as progress:
+            task = progress.add_task("Loading models...", total=None)
+            try:
+                self.initialize_whisper_only(silent=True)
+            except Exception as e:
+                progress.console.print(f"⚠️ Whisper preload failed: {e}")
+            try:
+                self.tts_engine = KokoroTTS()
+            except Exception as e:
+                progress.console.print(f"⚠️ TTS preload failed: {e}")
+            # task will auto-clear because transient=True
         
 
     def initialize_whisper_only(self, silent: bool = False):
@@ -455,7 +476,7 @@ class VoiceMode:
     def speak_response(self, text: str, language: str):
         """Speak the response."""
         plain_text = strip_markdown(text)
-        play_audio_response(plain_text, language)
+        play_audio_response(plain_text, language, tts_engine=self.tts_engine)
 
     def handle_command(self, transcription: str) -> bool:
         """Handle voice commands."""
@@ -584,7 +605,7 @@ class VoiceMode:
                     with progress:
                         task = progress.add_task("Generating speech...", total=None)
                         plain_text = strip_markdown(response)
-                        audio_result = play_audio_response(plain_text, detected_language, mode='generate')
+                        audio_result = play_audio_response(plain_text, detected_language, mode='generate', tts_engine=self.tts_engine)
                         if audio_result:
                             pcm, sample_rate, sample_width, channels, filename = audio_result
                             progress.update(task, description="Speaking...")
@@ -594,7 +615,7 @@ class VoiceMode:
                     self.speak_response(response, detected_language)
                 
                 # Prepare for next query
-                print("\n🎯 Ready for your next question...")
+                print("\nReady for your next question...")
                 time.sleep(1)
                 
                 # Complete ASR-Generation-TTS cycle - continue to next iteration
