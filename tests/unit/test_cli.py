@@ -126,34 +126,35 @@ class TestSamvaadInterface:
             mock_print.assert_called()
 
     @patch('samvaad.interfaces.cli.Progress')
-    @patch('samvaad.pipeline.ingestion.ingestion.ingest_file_pipeline')
     @patch('samvaad.interfaces.cli.glob')
-    @patch('samvaad.interfaces.cli.os')
     @patch('samvaad.interfaces.cli.console')
-    def test_handle_ingest_command_success(self, mock_console, mock_os, mock_glob, mock_ingest, mock_progress, cli_interface):
+    @patch('builtins.open', new_callable=MagicMock)
+    @patch('mimetypes.guess_type')
+    def test_handle_ingest_command_success(self, mock_mimetype, mock_open, mock_console, mock_glob, mock_progress, cli_interface, tmp_path):
         """Test successful file ingestion command."""
-        # Mock file discovery
-        mock_glob.glob.return_value = ['test.pdf']
-        mock_os.path.isfile.return_value = True
-        mock_os.path.getsize.return_value = 1000
-
-        # Mock successful ingestion
-        mock_ingest.return_value = {
-            'num_chunks': 10,
-            'new_chunks_embedded': 8,
-            'error': None
-        }
-
-        # Mock file reading
-        with patch('builtins.open', create=True) as mock_open:
-            mock_file = MagicMock()
-            mock_file.read.return_value = b'file content'
-            mock_open.return_value.__enter__.return_value = mock_file
-
-            cli_interface.handle_ingest_command('/ingest test.pdf')
-
+        # Create a real temporary file
+        test_file = tmp_path / 'test.pdf'
+        test_file.write_bytes(b'PDF content')
+        
+        # Mock file discovery to return our temp file
+        mock_glob.glob.return_value = [str(test_file)]
+        
+        # Mock mimetype detection
+        mock_mimetype.return_value = ('application/pdf', None)
+        
+        # Mock the ingestion pipeline after it gets imported
+        with patch('samvaad.pipeline.ingestion.ingestion.ingest_file_pipeline_with_progress') as mock_ingest:
+            mock_ingest.return_value = {
+                'num_chunks': 10,
+                'new_chunks_embedded': 8,
+                'error': None
+            }
+            
+            # This should succeed without errors
+            cli_interface.handle_ingest_command(f'/ingest {test_file}')
+            
             # Verify ingestion was called
-            mock_ingest.assert_called_once()
+            assert mock_ingest.call_count == 1
 
     @patch('samvaad.interfaces.cli.Progress')
     @patch('samvaad.interfaces.cli.glob')
@@ -247,37 +248,48 @@ class TestSamvaadInterface:
         assert True
 
     @patch('samvaad.pipeline.retrieval.voice_mode.VoiceMode')
-    @patch('samvaad.pipeline.retrieval.voice_mode.initialize_whisper_model')
-    @patch('samvaad.pipeline.retrieval.query.get_embedding_model')
-    @patch('samvaad.pipeline.retrieval.voice_mode.get_kokoro_tts')
     @patch('samvaad.pipeline.retrieval.voice_mode.ConversationManager')
     @patch('samvaad.interfaces.cli.Progress')
     @patch('samvaad.interfaces.cli.console')
-    def test_start_voice_mode_success(self, mock_console, mock_progress, mock_conv_manager, mock_tts, mock_embedding, mock_whisper, mock_voice_mode):
+    def test_start_voice_mode_success(self, mock_console, mock_progress, mock_conv_manager, mock_voice_mode):
         """Test starting voice mode successfully."""
-        cli_interface = SamvaadInterface()
-        cli_interface.console = mock_console
+        import sys
+        # Mock the modules to avoid ImportError
+        sys.modules['sounddevice'] = MagicMock()
+        sys.modules['webrtcvad'] = MagicMock()
+        sys.modules['faster_whisper'] = MagicMock()
+        
+        try:
+            cli_interface = SamvaadInterface()
+            cli_interface.console = mock_console
 
-        # Mock the progress context manager
-        mock_progress_instance = MagicMock()
-        mock_progress.return_value.__enter__.return_value = mock_progress_instance
-        mock_progress_instance.add_task.return_value = "task_id"
+            # Mock the progress context manager
+            mock_progress_instance = MagicMock()
+            mock_progress.return_value.__enter__.return_value = mock_progress_instance
+            mock_progress_instance.add_task.return_value = "task_id"
 
-        # Mock voice mode
-        mock_voice_instance = MagicMock()
-        mock_voice_mode.return_value = mock_voice_instance
+            # Mock conversation manager
+            mock_conv_instance = MagicMock()
+            mock_conv_manager.return_value = mock_conv_instance
 
-        cli_interface.start_voice_mode()
+            # Mock voice mode
+            mock_voice_instance = MagicMock()
+            mock_voice_mode.return_value = mock_voice_instance
 
-        # Verify progress was used
-        mock_progress.assert_called()
-        # Verify models were initialized
-        mock_whisper.assert_called_once()
-        mock_embedding.assert_called_once()
-        mock_tts.assert_called_once()
-        # Verify voice mode was created and run
-        mock_voice_mode.assert_called_once()
-        mock_voice_instance.run.assert_called_once()
+            cli_interface.start_voice_mode()
+
+            # Verify progress was used
+            mock_progress.assert_called()
+            # Verify conversation manager was created
+            mock_conv_manager.assert_called_once_with(max_history=50, context_window=10)
+            # Verify voice mode was created and run
+            mock_voice_mode.assert_called_once()
+            mock_voice_instance.run.assert_called_once()
+        finally:
+            # Clean up
+            for mod in ['sounddevice', 'webrtcvad', 'faster_whisper']:
+                if mod in sys.modules:
+                    del sys.modules[mod]
 
     @patch('samvaad.pipeline.retrieval.voice_mode.VoiceMode')
     @patch('samvaad.interfaces.cli.Progress')

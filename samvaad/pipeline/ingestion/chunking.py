@@ -10,6 +10,7 @@ from docling.document_converter import DocumentConverter
 from docling.chunking import HybridChunker
 from docling_core.transforms.chunker.hierarchical_chunker import HierarchicalChunker
 from docling_core.transforms.chunker.tokenizer.huggingface import HuggingFaceTokenizer
+from tokenizers import Tokenizer
 from transformers import AutoTokenizer
 from typing import Tuple, List
 import tempfile
@@ -49,10 +50,9 @@ def get_docling_chunker():
     """Get a singleton Docling HierarchicalChunker instance configured for 200 tokens, no overlap."""
     global _chunker
     if _chunker is None:
-        # Use the same tokenizer as before for consistency
         tokenizer = HuggingFaceTokenizer(
-            tokenizer=AutoTokenizer.from_pretrained("google/embeddinggemma-300m", use_fast=True),
-            max_tokens=200,  # Set to 200 tokens as requested
+            tokenizer=AutoTokenizer.from_pretrained("onnx-community/embeddinggemma-300m-ONNX", use_fast=True),
+            max_tokens=200, 
         )
 
         # For pure hierarchical chunking without overlap, use HierarchicalChunker
@@ -213,7 +213,7 @@ def _fallback_chunk_text(text: str, chunk_size: int = 200) -> List[str]:
     """
     Fallback chunking method using the original token-based approach.
     """
-    from transformers import AutoTokenizer
+    from tokenizers import Tokenizer
     import threading
 
     # Use a singleton tokenizer to avoid repeated loading
@@ -226,13 +226,13 @@ def _fallback_chunk_text(text: str, chunk_size: int = 200) -> List[str]:
         with _tokenizer_lock:
             _tokenizer = getattr(_fallback_chunk_text, "_tokenizer", None)
             if _tokenizer is None:
-                _tokenizer = AutoTokenizer.from_pretrained("google/embeddinggemma-300m", use_fast=True)
+                _tokenizer = Tokenizer.from_pretrained("onnx-community/embeddinggemma-300m-ONNX")
                 setattr(_fallback_chunk_text, "_tokenizer", _tokenizer)
 
     separators = ["\n\n", "\n", ".", "?", "!", " ", ""]
 
     def num_tokens(text):
-        return len(_tokenizer.encode(text, add_special_tokens=False))
+        return len(_tokenizer.encode(text, add_special_tokens=False).ids)
 
     def split_text_recursive(text: str, separators: List[str]) -> List[str]:
         if not text.strip():
@@ -270,7 +270,8 @@ def _fallback_chunk_text(text: str, chunk_size: int = 200) -> List[str]:
                     result.append(current_chunk.strip())
                 return result
         # If no separators worked, force split at chunk_size tokens
-        tokens = _tokenizer.encode(text, add_special_tokens=False)
+        encoding = _tokenizer.encode(text, add_special_tokens=False)
+        tokens = encoding.ids
         chunks = []
         for i in range(0, len(tokens), chunk_size):
             chunk_tokens = tokens[i : i + chunk_size]

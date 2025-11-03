@@ -103,7 +103,7 @@ class TestFullPipeline:
 
         # Step 6: Embedding (mock the model)
         with patch('samvaad.pipeline.ingestion.embedding._model', MagicMock()) as mock_model, \
-             patch('samvaad.pipeline.ingestion.embedding.get_device', return_value='cpu'):
+             patch('samvaad.utils.gpu_utils.get_device', return_value='cpu'):
 
             mock_model.encode_document.return_value = np.array(
                 [[0.1] * 768 for _ in range(len(chunks))], dtype=np.float32
@@ -219,3 +219,79 @@ class TestFullPipeline:
         vm = VoiceMode()
         # Verify initialization works
         assert vm is not None
+
+
+class TestFullPipelineErrorRecovery:
+    """Test error recovery in pipeline integration."""
+
+    @patch('samvaad.pipeline.ingestion.embedding.get_collection')
+    @patch('samvaad.pipeline.ingestion.chunking.get_docling_converter')
+    def test_multi_file_ingestion_partial_failure(self, mock_converter, mock_collection):
+        """Test ingesting multiple files with some failures."""
+        mock_collection.return_value.get.return_value = {"ids": []}
+        
+        # First file succeeds
+        mock_doc1 = MagicMock()
+        mock_doc1.export_to_markdown.return_value = "Content 1"
+        
+        # Second file fails
+        mock_converter_instance = MagicMock()
+        mock_converter_instance.convert.side_effect = [
+            MagicMock(document=mock_doc1),  # First file succeeds
+            Exception("Conversion failed")  # Second file fails
+        ]
+        mock_converter.return_value = mock_converter_instance
+        
+        files = [
+            ("file1.txt", b"content1", "text/plain"),
+            ("file2.pdf", b"\x80\x81\x82\x83", "application/pdf")  # Invalid UTF-8
+        ]
+        
+        results = []
+        for filename, content, content_type in files:
+            try:
+                with patch('samvaad.pipeline.ingestion.chunking.tempfile.NamedTemporaryFile'), \
+                     patch('samvaad.pipeline.ingestion.chunking.os.unlink'):
+                    text, error = parse_file(filename, content_type, content)
+                    results.append((filename, text, error))
+            except Exception as e:
+                results.append((filename, None, str(e)))
+        
+        # First should succeed, second should fail
+        assert results[0][1] == "Content 1"
+        assert results[1][1] == ""
+        assert "failed" in results[1][2].lower()
+    
+    @patch('samvaad.pipeline.retrieval.query.get_embedding_model')
+    @patch('samvaad.pipeline.retrieval.query.search_similar_chunks')
+    @patch('samvaad.pipeline.retrieval.query.generate_answer_with_gemini')
+    def test_concurrent_ingest_and_query(self, mock_gemini, mock_search, mock_emb_model):
+        """Test querying while ingestion is happening."""
+        # Mock embedding model
+        mock_model = MagicMock()
+        mock_model.encode_query.return_value = np.array([0.1] * 768)
+        mock_emb_model.return_value = mock_model
+        
+        # Mock search results
+        mock_search.return_value = [{
+            'content': 'test chunk',
+            'filename': 'test.txt',
+            'distance': 0.1
+        }]
+        
+        # Mock Gemini response
+        mock_gemini.return_value = "Test answer"
+        
+        # Simulate concurrent queries
+        queries = ["Query 1", "Query 2", "Query 3"]
+        results = []
+        
+        for query in queries:
+            result = rag_query_pipeline(query)
+            results.append(result)
+        
+        # All queries should succeed
+        assert len(results) == 3
+        for result in results:
+            assert result['success'] is True
+            assert 'answer' in result

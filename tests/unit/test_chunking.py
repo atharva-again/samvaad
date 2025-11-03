@@ -361,13 +361,14 @@ class TestIngestion:
         assert kwargs['tokenizer'] is tokenizer_instance
         assert kwargs['merge_list_items'] is False
 
-    @patch('samvaad.pipeline.ingestion.chunking.AutoTokenizer.from_pretrained')
-    def test_fallback_chunk_text_caches_tokenizer(self, mock_auto_from_pretrained):
+    @patch('samvaad.pipeline.ingestion.chunking.Tokenizer.from_pretrained')
+    def test_fallback_chunk_text_caches_tokenizer(self, mock_tokenizer_from_pretrained):
         """The fallback tokenizer should be cached across calls."""
         mock_tokenizer = MagicMock()
-        mock_tokenizer.encode.return_value = [1, 2, 3, 4]
-        mock_tokenizer.decode.side_effect = lambda tokens: " ".join(f"tok{i}" for i in tokens)
-        mock_auto_from_pretrained.return_value = mock_tokenizer
+        mock_encode_result = MagicMock()
+        mock_encode_result.ids = [1, 2, 3, 4]
+        mock_tokenizer.encode.return_value = mock_encode_result
+        mock_tokenizer_from_pretrained.return_value = mock_tokenizer
 
         # Reset cached attributes if present
         for attr in ("_tokenizer", "_tokenizer_lock"):
@@ -377,4 +378,82 @@ class TestIngestion:
         _fallback_chunk_text("one two three four", chunk_size=2)
         _fallback_chunk_text("five six seven eight", chunk_size=2)
 
-        assert mock_auto_from_pretrained.call_count == 1
+        assert mock_tokenizer_from_pretrained.call_count == 1
+
+
+class TestChunkingErrorHandling:
+    """Test error handling in chunking functions."""
+
+    @patch('samvaad.pipeline.ingestion.chunking.get_docling_converter')
+    @patch('samvaad.pipeline.ingestion.chunking.tempfile.NamedTemporaryFile')
+    def test_parse_file_converter_failure(self, mock_temp_file, mock_converter):
+        """Test handling of Docling converter failure - falls back to UTF-8."""
+        mock_temp = MagicMock()
+        mock_temp.name = "/tmp/test.pdf"
+        mock_temp_file.return_value.__enter__.return_value = mock_temp
+        
+        mock_converter.side_effect = Exception("Docling initialization failed")
+        
+        filename = "test.txt"
+        content = b"Plain text content"
+        content_type = "text/plain"
+        
+        text, error = parse_file(filename, content_type, content)
+        
+        # Should fall back to UTF-8 decode and succeed
+        assert text == "Plain text content"
+        assert error is None
+    
+    @patch('samvaad.pipeline.ingestion.chunking.get_docling_converter')
+    @patch('samvaad.pipeline.ingestion.chunking.tempfile.NamedTemporaryFile')
+    @patch('samvaad.pipeline.ingestion.chunking._cleanup_temp_file')
+    def test_parse_file_conversion_error(self, mock_cleanup, mock_temp_file, mock_converter):
+        """Test handling of conversion errors with non-UTF8 content."""
+        mock_temp = MagicMock()
+        mock_temp.name = "/tmp/test.pdf"
+        mock_temp_file.return_value.__enter__.return_value = mock_temp
+        
+        mock_conv = MagicMock()
+        mock_conv.convert.side_effect = Exception("Conversion failed")
+        mock_converter.return_value = mock_conv
+        
+        filename = "corrupted.pdf"
+        # Use bytes that are NOT valid UTF-8 to trigger both failures
+        content = b"\xff\xfe\x00\x00"  # Invalid UTF-8
+        content_type = "application/pdf"
+        
+        text, error = parse_file(filename, content_type, content)
+        
+        # Both Docling and UTF-8 should fail, returning error
+        assert error is not None
+        assert "Docling and UTF-8 decoding both failed" in error
+    
+    def test_chunk_text_empty_string(self):
+        """Test chunking with empty string."""
+        result = chunk_text("", chunk_size=200)
+        
+        assert result == []
+    
+    @patch('samvaad.pipeline.ingestion.chunking.chunk_exists')
+    def test_find_new_chunks_db_error(self, mock_chunk_exists):
+        """Test that find_new_chunks propagates database errors."""
+        mock_chunk_exists.side_effect = Exception("Database locked")
+        
+        chunks = ["chunk1", "chunk2"]
+        file_id = "file123"
+        
+        with pytest.raises(Exception, match="Database locked"):
+            find_new_chunks(chunks, file_id)
+    
+    @patch('samvaad.pipeline.ingestion.chunking.os.unlink')
+    @patch('samvaad.pipeline.ingestion.chunking.os.path.exists')
+    def test_cleanup_temp_file_permission_error(self, mock_exists, mock_unlink):
+        """Test cleanup handling permission errors."""
+        mock_exists.return_value = True
+        mock_unlink.side_effect = PermissionError("Permission denied")
+        
+        # Should retry and eventually handle error
+        _cleanup_temp_file("/tmp/test_file.pdf")
+        
+        # Should have attempted multiple times
+        assert mock_unlink.call_count > 1

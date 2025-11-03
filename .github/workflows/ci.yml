@@ -30,6 +30,7 @@ jobs:
             ~/.cache/uv
             ~/.cache/pip
             ~/.cache/pip/wheels
+            ~/.cache/huggingface
           key: deps-cpu-${{ runner.os }}-py311-${{ hashFiles('pyproject.toml') }}
           restore-keys: |
             deps-cpu-${{ runner.os }}-py311-
@@ -50,15 +51,13 @@ jobs:
           uv venv venv
           source venv/bin/activate
           uv pip install torch torchvision --no-cache-dir --index-url https://download.pytorch.org/whl/cpu
+          uv pip install onnxruntime
           uv pip install -r requirements.txt
           uv pip install -e . --index-strategy unsafe-best-match
 
       - name: Hugging Face Auth
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           source venv/bin/activate
-          hf auth login --token "$HF_TOKEN"
 
       - name: Run tests
         env:
@@ -93,6 +92,7 @@ jobs:
             ~/.cache/uv
             ~/.cache/pip
             ~/.cache/pip/wheels
+            ~/.cache/huggingface
           key: deps-gpu-${{ runner.os }}-py311-${{ hashFiles('pyproject.toml') }}
           restore-keys: |
             deps-gpu-${{ runner.os }}-py311-
@@ -108,16 +108,13 @@ jobs:
           uv venv venv
           source venv/bin/activate
           uv pip install torch torchvision --no-cache-dir --index-url https://download.pytorch.org/whl/cu121
+          uv pip install onnxruntime-gpu
           uv pip install -r requirements.txt
           uv pip install -e . --index-strategy unsafe-best-match
 
       - name: Hugging Face Auth
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           source venv/bin/activate
-          hf auth login --token "$HF_TOKEN"
-
       - name: Run tests
         env:
           PYTHONWARNINGS: default

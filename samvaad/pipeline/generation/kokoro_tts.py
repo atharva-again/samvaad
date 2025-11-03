@@ -3,21 +3,20 @@ from __future__ import annotations
 import io
 import threading
 import wave
+import os
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Dict, Iterable, Optional, Tuple
 
-from kokoro import KPipeline
+from kokoro_onnx import Kokoro
+from kokoro_onnx.config import MAX_PHONEME_LENGTH, SAMPLE_RATE
+from huggingface_hub import hf_hub_download
 
 try:
     import numpy as np
 except ImportError:  # pragma: no cover - numpy is part of project deps
     np = None  # type: ignore
 
-try:
-    import torch
-except ImportError:  # pragma: no cover - torch is part of project deps
-    torch = None  # type: ignore
+from samvaad.utils.gpu_utils import get_device
 
 
 @dataclass(frozen=True)
@@ -25,7 +24,6 @@ class VoiceSettings:
     """Configuration describing a Kokoro voice."""
 
     language: str
-    lang_code: str
     voice_name: str
 
 
@@ -41,21 +39,82 @@ class TTSConfig:
         return self.voices.keys()
 
 
+class _SpeedAwareKokoro(Kokoro):
+    """Kokoro variant that adapts the speed tensor dtype for the active model."""
+
+    def __init__(
+        self,
+        model_path: str,
+        voices_path: str,
+        espeak_config=None,
+        vocab_config=None,
+    ) -> None:
+        super().__init__(
+            model_path,
+            voices_path,
+            espeak_config=espeak_config,
+            vocab_config=vocab_config,
+        )
+        self._speed_dtype = self._detect_speed_dtype()
+
+    def _detect_speed_dtype(self):
+        if np is None:
+            return None
+
+        for input_meta in self.sess.get_inputs():
+            if input_meta.name != "speed":
+                continue
+
+            ort_type = getattr(input_meta, "type", "")
+            if ort_type in {"tensor(float)", "tensor(float32)"}:
+                return np.float32
+            if ort_type in {"tensor(int32)"}:
+                return np.int32
+
+        return np.float32 if np is not None else None
+
+    def _create_audio(self, phonemes, voice, speed):  # type: ignore[override]
+        if np is None:
+            raise RuntimeError("numpy is required for KokoroTTS but is not available")
+
+        phonemes = phonemes[:MAX_PHONEME_LENGTH]
+        tokens = np.array(self.tokenizer.tokenize(phonemes), dtype=np.int64)
+        assert len(tokens) <= MAX_PHONEME_LENGTH, (
+            f"Context length is {MAX_PHONEME_LENGTH}, but leave room for the pad token 0 at the start & end"
+        )
+
+        voice = voice[len(tokens)]
+        tokens = [[0, *tokens, 0]]
+        if "input_ids" in [i.name for i in self.sess.get_inputs()]:
+            speed_dtype = self._speed_dtype or np.float32
+            inputs = {
+                "input_ids": tokens,
+                "style": np.array(voice, dtype=np.float32),
+                "speed": np.array([speed], dtype=speed_dtype),
+            }
+        else:
+            inputs = {
+                "tokens": tokens,
+                "style": voice,
+                "speed": np.ones(1, dtype=np.float32) * speed,
+            }
+
+        audio = np.asarray(self.sess.run(None, inputs)[0])
+        if audio.ndim > 1:
+            audio = audio.reshape(-1)
+        return audio, SAMPLE_RATE
+
+
 class KokoroTTS:
-    """Lightweight wrapper around Kokoro to simplify TTS usage in the pipeline."""
+    """Lightweight wrapper around Kokoro ONNX for TTS usage in the pipeline."""
 
     _LANGUAGE_ALIASES = {
-        "en": "en",
-        "en-us": "en",
-        "english": "en",
+        "en": "en-us",
+        "en-us": "en-us",
+        "english": "en-us",
         "hi": "hi",
         "hi-in": "hi",
         "hindi": "hi",
-    }
-
-    _LANG_CODE_MAPPING = {
-        "en": "a",  # American English
-        "hi": "h",  # Hindi
     }
 
     def __init__(
@@ -72,27 +131,47 @@ class KokoroTTS:
         self._prefer_gpu = (
             prefer_gpu
             if prefer_gpu is not None
-            else bool(torch and torch.cuda.is_available())
+            else get_device() == 'cuda'
         )
 
-        self._pipeline_cache: Dict[str, KPipeline] = {}
+        # Download ONNX model and voices
+        self._model_path = hf_hub_download(
+            repo_id="onnx-community/Kokoro-82M-v1.0-ONNX",
+            filename="onnx/model_fp16.onnx"
+        )
+        
+        # Download voices file from GitHub releases
+        import requests
+        
+        voices_url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
+        cache_dir = os.path.expanduser("~/.cache/samvaad")
+        os.makedirs(cache_dir, exist_ok=True)
+        self._voices_path = os.path.join(cache_dir, "kokoro_voices_v1.0.bin")
+        
+        if not os.path.exists(self._voices_path):
+            voices_response = requests.get(voices_url, timeout=120) 
+            voices_response.raise_for_status()
+            with open(self._voices_path, 'wb') as f:
+                f.write(voices_response.content)
+        
+        # Initialize Kokoro ONNX model
+        self._kokoro = _SpeedAwareKokoro(self._model_path, self._voices_path)
+        
         self._pipeline_lock = threading.Lock()
 
     def _build_default_config(self) -> TTSConfig:
         voices = {
-            "en": VoiceSettings(
-                language="en",
-                lang_code="a",  # American English
+            "en-us": VoiceSettings(
+                language="en-us",
                 voice_name="af_heart",  # American female heart
             ),
             "hi": VoiceSettings(
                 language="hi",
-                lang_code="h",  # Hindi
                 voice_name="hf_alpha",  # Hindi female alpha
             ),
         }
 
-        return TTSConfig(voices=voices, default_language="en")
+        return TTSConfig(voices=voices, default_language="en-us")
 
     def available_languages(self) -> Iterable[str]:
         return self._config.available_languages
@@ -103,19 +182,6 @@ class KokoroTTS:
 
         normalized = language.strip().lower().replace("_", "-")
         return self._LANGUAGE_ALIASES.get(normalized, normalized if normalized in self._config.voices else self._config.default_language)
-
-    def _load_pipeline(self, lang: str) -> KPipeline:
-        with self._pipeline_lock:
-            if lang in self._pipeline_cache:
-                return self._pipeline_cache[lang]
-
-            settings = self._config.voices.get(lang)
-            if not settings:
-                raise ValueError(f"Unsupported language '{lang}'. Available: {sorted(self._config.voices)}")
-
-            pipeline = KPipeline(repo_id='hexgrad/Kokoro-82M', lang_code=settings.lang_code)
-            self._pipeline_cache[lang] = pipeline
-            return pipeline
 
     def synthesize(
         self,
@@ -133,31 +199,29 @@ class KokoroTTS:
             raise ValueError("Cannot synthesize empty text.")
 
         lang = self._normalize_language(language)
-        pipeline = self._load_pipeline(lang)
         settings = self._config.voices[lang]
 
-        # Kokoro generates audio at 24kHz
-        sample_rate = 24000
+        # Generate audio using Kokoro ONNX
+        with self._pipeline_lock:
+            audio, sample_rate = self._kokoro.create(
+                text=text,
+                voice=settings.voice_name,
+                speed=speed,
+                lang=lang
+            )
+
+        # Audio properties
         sample_width = 2  # 16-bit
         sample_channels = 1
 
-        # Generate audio
-        generator = pipeline(
-            text,
-            voice=settings.voice_name,
-            speed=speed,
-        )
+        # Convert to 16-bit PCM bytes
+        if np is None:
+            raise RuntimeError("numpy is required for KokoroTTS synthesis but is not available")
 
-        pcm_buffer = bytearray()
-        for _, _, audio in generator:
-            # Convert to 16-bit PCM bytes
-            if np is None:
-                raise RuntimeError("numpy is required for KokoroTTS synthesis but is not available")
+        audio_int16 = (audio * 32767).astype(np.int16)
+        pcm_bytes = audio_int16.tobytes()
 
-            audio_int16 = (audio * 32767).numpy().astype(np.int16)
-            pcm_buffer.extend(audio_int16.tobytes())
-
-        return bytes(pcm_buffer), sample_rate, sample_width, sample_channels
+        return pcm_bytes, sample_rate, sample_width, sample_channels
 
     def synthesize_wav(
         self,

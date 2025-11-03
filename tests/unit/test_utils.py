@@ -249,22 +249,22 @@ class TestFileHashDB:
 class TestGPUUtils:
     """Test GPU utility functions."""
 
-    @patch('samvaad.utils.gpu_utils.torch.cuda.is_available')
-    def test_get_device_cuda_available(self, mock_cuda_available):
+    @patch('samvaad.utils.gpu_utils.ort.get_available_providers')
+    def test_get_device_cuda_available(self, mock_get_providers):
         """Test get_device returns 'cuda' when CUDA is available."""
-        mock_cuda_available.return_value = True
+        mock_get_providers.return_value = ['CUDAExecutionProvider', 'CPUExecutionProvider']
         assert get_device() == 'cuda'
 
-    @patch('samvaad.utils.gpu_utils.torch.cuda.is_available')
-    def test_get_device_cpu_fallback(self, mock_cuda_available):
+    @patch('samvaad.utils.gpu_utils.ort.get_available_providers')
+    def test_get_device_cpu_fallback(self, mock_get_providers):
         """Test get_device returns 'cpu' when CUDA is not available."""
-        mock_cuda_available.return_value = False
+        mock_get_providers.return_value = ['CPUExecutionProvider']
         assert get_device() == 'cpu'
 
-    @patch('samvaad.utils.gpu_utils.torch.cuda.is_available')
-    def test_get_device_handles_runtime_error(self, mock_cuda_available):
-        """Even if torch raises, we should conservatively fall back to CPU."""
-        mock_cuda_available.side_effect = RuntimeError("driver issue")
+    @patch('samvaad.utils.gpu_utils.ort.get_available_providers')
+    def test_get_device_handles_runtime_error(self, mock_get_providers):
+        """Even if onnxruntime raises, we should conservatively fall back to CPU."""
+        mock_get_providers.side_effect = RuntimeError("driver issue")
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
             assert get_device() == 'cpu'

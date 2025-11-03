@@ -11,12 +11,12 @@ chromadb==1.0.20
 
 # Embeddings and LLMs
 openai==1.106.0
-sentence-transformers==5.1.0
 tiktoken==0.11.0
 google-genai==1.36.0
 
 # Document loaders and parsing
 docling
+transformers
 
 # Environment variables
 python-dotenv==1.1.1
@@ -32,19 +32,13 @@ webrtcvad==2.0.10
 sounddevice==0.5.2
 
 # Text-to-Speech
-kokoro
-kokoro-onnx
+kokoro-onnx>=0.4.9
 
 # SpaCy models for text processing in TTS
 spacy
 
 # Lightweight text processing models
-transformers
 tokenizers
-
-# Usinf a fork of llama-cpp-python because the officially one doesn't 
-# support Gemma Models yet
-git+https://github.com/inference-sh/llama-cpp-python.git
 
 # Testing
 pytest==8.3.3

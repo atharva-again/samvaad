@@ -4,13 +4,14 @@ GPU utilities for device detection and management.
 
 import warnings
 
-import torch
+import onnxruntime as ort
 
 
 def get_device():
     """Detect and return the available device ('cuda' or 'cpu')."""
     try:
-        if torch.cuda.is_available():
+        providers = ort.get_available_providers()
+        if 'CUDAExecutionProvider' in providers:
             return 'cuda'
     except Exception as exc:
         warnings.warn(
@@ -18,3 +19,15 @@ def get_device():
             RuntimeWarning,
         )
     return 'cpu'
+
+
+def get_ort_provider():
+    """Return the preferred ONNX Runtime execution provider."""
+    device = get_device()
+    if device == 'cuda':
+        return 'CUDAExecutionProvider'
+    return 'CPUExecutionProvider'
+
+if __name__ == "__main__":
+    print(f"Detected device: {get_device()}")
+    print(f"Using ONNX Runtime provider: {get_ort_provider()}")

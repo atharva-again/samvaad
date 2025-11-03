@@ -84,9 +84,9 @@ class TestCleanTranscription:
 class TestInitializeWhisperModel:
     """Test cases for the initialize_whisper_model function."""
 
-    @patch('torch.cuda.is_available', return_value=True)
+    @patch('samvaad.pipeline.retrieval.voice_mode.get_device', return_value='cuda')
     @patch('faster_whisper.WhisperModel')
-    def test_initialize_whisper_model_gpu(self, mock_whisper_model, mock_cuda_available):
+    def test_initialize_whisper_model_gpu(self, mock_whisper_model, mock_get_device):
         """Test Whisper model initialization with GPU available."""
         mock_model_instance = Mock()
         mock_whisper_model.return_value = mock_model_instance
@@ -96,9 +96,9 @@ class TestInitializeWhisperModel:
         mock_whisper_model.assert_called_once_with("base", device="cuda", compute_type="float16")
         assert result == mock_model_instance
 
-    @patch('torch.cuda.is_available', return_value=False)
+    @patch('samvaad.pipeline.retrieval.voice_mode.get_device', return_value='cpu')
     @patch('faster_whisper.WhisperModel')
-    def test_initialize_whisper_model_cpu(self, mock_whisper_model, mock_cuda_available):
+    def test_initialize_whisper_model_cpu(self, mock_whisper_model, mock_get_device):
         """Test Whisper model initialization with CPU only."""
         mock_model_instance = Mock()
         mock_whisper_model.return_value = mock_model_instance
