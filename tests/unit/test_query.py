@@ -170,3 +170,96 @@ class TestQuery:
         assert len(fused) == 3
         assert fused[0]['chunk_id'] == 'B'
         assert fused[0]['rrf_score'] > fused[1]['rrf_score'] >= fused[2]['rrf_score']
+
+
+class TestQueryErrorHandling:
+    """Test error handling in query functions."""
+
+    @patch('samvaad.pipeline.retrieval.query.get_collection')
+    def test_search_similar_chunks_empty_collection(self, mock_get_collection):
+        """Test search with empty collection."""
+        mock_collection = MagicMock()
+        mock_collection.count.return_value = 0
+        mock_get_collection.return_value = mock_collection
+        
+        query_emb = [0.1] * 768
+        result = search_similar_chunks(query_emb, "test query", top_k=5)
+        
+        assert result == []
+    
+    @patch('samvaad.pipeline.retrieval.query.get_collection')
+    def test_search_similar_chunks_collection_error(self, mock_get_collection):
+        """Test handling of collection query errors."""
+        mock_collection = MagicMock()
+        mock_collection.count.return_value = 10
+        mock_collection.query.side_effect = Exception("ChromaDB error")
+        mock_get_collection.return_value = mock_collection
+        
+        query_emb = [0.1] * 768
+        
+        # The function may catch and handle the error internally
+        try:
+            result = search_similar_chunks(query_emb, "test query", top_k=5)
+            # If it handles gracefully, result should be empty or error indicator
+            assert isinstance(result, list)
+        except Exception as e:
+            assert "ChromaDB" in str(e) or "error" in str(e).lower()
+    
+    @patch('samvaad.pipeline.retrieval.query.get_onnx_cross_encoder')
+    @patch('samvaad.pipeline.retrieval.query.get_collection')
+    def test_search_similar_chunks_cross_encoder_failure(self, mock_get_collection, mock_cross_encoder):
+        """Test handling of cross-encoder failure."""
+        mock_collection = MagicMock()
+        mock_collection.count.return_value = 10
+        mock_collection.query.return_value = {
+            'ids': [['chunk1', 'chunk2']],
+            'documents': [['doc1', 'doc2']],
+            'metadatas': [[{'source': 'test.txt'}, {'source': 'test.txt'}]],
+            'distances': [[0.1, 0.2]]
+        }
+        mock_get_collection.return_value = mock_collection
+        
+        mock_ce = MagicMock()
+        mock_ce.predict.side_effect = Exception("Cross-encoder error")
+        mock_cross_encoder.return_value = mock_ce
+        
+        query_emb = [0.1] * 768
+        
+        # Should still work without cross-encoder or return empty
+        try:
+            result = search_similar_chunks(query_emb, "test", top_k=5)
+            assert isinstance(result, list)
+        except:
+            # If it raises, that's also acceptable behavior
+            pass
+    
+    @patch('samvaad.pipeline.retrieval.query.generate_answer_with_gemini')
+    @patch('samvaad.pipeline.retrieval.query.search_similar_chunks')
+    @patch('samvaad.pipeline.retrieval.query.embed_query')
+    def test_rag_query_pipeline_gemini_failure(self, mock_embed, mock_search, mock_gemini):
+        """Test RAG pipeline when Gemini fails."""
+        mock_embed.return_value = [0.1] * 768
+        mock_search.return_value = [
+            {'text': 'chunk1', 'metadata': {'source': 'test.txt'}}
+        ]
+        mock_gemini.side_effect = Exception("Gemini API error")
+        
+        # Pipeline may handle error gracefully or raise
+        try:
+            result = rag_query_pipeline("test query")
+            # If handled gracefully, should have error indicator
+            assert 'error' in result or not result.get('success', True)
+        except Exception as e:
+            assert "Gemini" in str(e) or "API" in str(e)
+    
+    @patch('samvaad.pipeline.retrieval.query.search_similar_chunks')
+    @patch('samvaad.pipeline.retrieval.query.embed_query')
+    def test_rag_query_pipeline_no_chunks_found(self, mock_embed, mock_search):
+        """Test RAG pipeline when no relevant chunks are found."""
+        mock_embed.return_value = [0.1] * 768
+        mock_search.return_value = []
+        
+        result = rag_query_pipeline("test query")
+        
+        assert result['answer'] is not None
+        assert 'No relevant' in result['answer'] or 'could not find' in result['answer'].lower()

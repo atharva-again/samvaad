@@ -40,9 +40,6 @@ spacy
 # Lightweight text processing models
 tokenizers
 
-# ONNX Runtime for optimized inference
-onnxruntime
-
 # Testing
 pytest==8.3.3
 pytest-mock==3.14.0

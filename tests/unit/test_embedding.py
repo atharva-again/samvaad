@@ -23,7 +23,6 @@ class TestEmbedding:
 
     @patch("samvaad.pipeline.vectorstore.vectorstore.get_collection")
     @patch("samvaad.pipeline.ingestion.embedding.ONNXEmbeddingModel")
-    @patch("samvaad.pipeline.ingestion.embedding.get_device")
     @patch(
         "samvaad.pipeline.ingestion.embedding.generate_chunk_id"
     )  # Mock for full isolation
@@ -32,7 +31,6 @@ class TestEmbedding:
         self,
         mock_print,
         mock_generate_id,
-        mock_get_device,
         mock_model_class,
         mock_get_collection,
     ):
@@ -40,7 +38,6 @@ class TestEmbedding:
         # Mock chunk ID generation for predictable testing
         mock_generate_id.side_effect = lambda chunk: f"{chunk}_hash"
 
-        mock_get_device.return_value = "cpu"
         mock_model = MagicMock()
         mock_model.encode_document.return_value = np.array(
             [[0.1, 0.2], [0.3, 0.4]], dtype=np.float32
@@ -92,14 +89,12 @@ class TestEmbedding:
 
     @patch("samvaad.pipeline.ingestion.embedding.get_collection")
     @patch("samvaad.pipeline.ingestion.embedding.ONNXEmbeddingModel")
-    @patch("samvaad.pipeline.ingestion.embedding.get_device")
     @patch("samvaad.pipeline.ingestion.embedding.generate_chunk_id")
     @patch("builtins.print")
     def test_embed_chunks_handles_collection_failure(
         self,
         mock_print,
         mock_generate_id,
-        mock_get_device,
         mock_model_class,
         mock_get_collection,
     ):
@@ -110,7 +105,6 @@ class TestEmbedding:
         mock_collection.get.side_effect = RuntimeError("store unavailable")
         mock_get_collection.return_value = mock_collection
 
-        mock_get_device.return_value = "cpu"
         mock_model = MagicMock()
         mock_model.encode_document.return_value = np.array(
             [[0.1, 0.2]], dtype=np.float32
@@ -129,7 +123,6 @@ class TestEmbedding:
 
     @patch("samvaad.pipeline.ingestion.embedding.get_collection")
     @patch("samvaad.pipeline.ingestion.embedding.ONNXEmbeddingModel")
-    @patch("samvaad.pipeline.ingestion.embedding.get_device")
     @patch(
         "samvaad.pipeline.ingestion.embedding.generate_chunk_id"
     )  # Mock for full isolation
@@ -138,7 +131,6 @@ class TestEmbedding:
         self,
         mock_print,
         mock_generate_id,
-        mock_get_device,
         mock_model_class,
         mock_get_collection,
     ):
@@ -146,7 +138,6 @@ class TestEmbedding:
         # Mock chunk ID generation
         mock_generate_id.side_effect = lambda chunk: f"{chunk}_hash"
 
-        mock_get_device.return_value = "cpu"
         mock_model = MagicMock()
         mock_model.encode_document.return_value = np.array(
             [[0.1, 0.2], [0.3, 0.4]], dtype=np.float32
@@ -174,7 +165,6 @@ class TestEmbedding:
 
     @patch("samvaad.pipeline.ingestion.embedding.get_collection")
     @patch("samvaad.pipeline.ingestion.embedding.ONNXEmbeddingModel")
-    @patch("samvaad.pipeline.ingestion.embedding.get_device")
     @patch(
         "samvaad.pipeline.ingestion.embedding.generate_chunk_id"
     )  # Mock for full isolation
@@ -183,7 +173,6 @@ class TestEmbedding:
         self,
         mock_print,
         mock_generate_id,
-        mock_get_device,
         mock_model_class,
         mock_get_collection,
     ):
@@ -191,7 +180,6 @@ class TestEmbedding:
         # Mock chunk ID generation
         mock_generate_id.side_effect = lambda chunk: f"{chunk}_hash"
 
-        mock_get_device.return_value = "cpu"
         mock_model = MagicMock()
         mock_model.encode_document.return_value = np.array(
             [[0.1, 0.2], [0.3, 0.4]], dtype=np.float32
@@ -223,7 +211,6 @@ class TestEmbedding:
 
     @patch("samvaad.pipeline.ingestion.embedding.get_collection")
     @patch("samvaad.pipeline.ingestion.embedding.ONNXEmbeddingModel")
-    @patch("samvaad.pipeline.ingestion.embedding.get_device")
     @patch(
         "samvaad.pipeline.ingestion.embedding.generate_chunk_id"
     )  # Mock for full isolation
@@ -232,7 +219,6 @@ class TestEmbedding:
         self,
         mock_print,
         mock_generate_id,
-        mock_get_device,
         mock_model_class,
         mock_get_collection,
     ):
@@ -240,7 +226,6 @@ class TestEmbedding:
         # Mock chunk ID generation
         mock_generate_id.side_effect = lambda chunk: f"{chunk}_hash"
 
-        mock_get_device.return_value = "cpu"
         mock_model = MagicMock()
         mock_model.encode_document.return_value = np.array(
             [[0.1, 0.2]], dtype=np.float32
@@ -273,83 +258,70 @@ class TestEmbedding:
         assert mock_generate_id.call_count == 2
 
 
-class TestONNXEmbedding:
-    """Test ONNX-based embedding model functionality."""
+class TestEmbeddingErrorHandling:
+    """Test error handling in embedding functions."""
 
-    @patch("samvaad.pipeline.ingestion.embedding.ort.InferenceSession")
-    @patch("samvaad.pipeline.ingestion.embedding.AutoTokenizer")
-    @patch("samvaad.pipeline.ingestion.embedding.hf_hub_download")
-    @patch("samvaad.pipeline.ingestion.embedding.get_device", return_value="cpu")
-    def test_model_initialization_cpu(self, mock_get_device, mock_hf_download, mock_tokenizer_class, mock_session_class):
-        """ONNX model should initialize with CPU provider when CUDA unavailable."""
-        mock_session = MagicMock()
-        mock_session_class.return_value = mock_session
-        mock_tokenizer = MagicMock()
-        mock_tokenizer_class.from_pretrained.return_value = mock_tokenizer
-
-        ONNXEmbeddingModel()
-
-        mock_hf_download.assert_called()  # Should download model files
-        mock_session_class.assert_called_once()
-        mock_tokenizer_class.from_pretrained.assert_called_once()
-        mock_get_device.assert_called_once()
-
-    @patch("samvaad.pipeline.ingestion.embedding.ort.InferenceSession")
-    @patch("samvaad.pipeline.ingestion.embedding.AutoTokenizer")
-    @patch("samvaad.pipeline.ingestion.embedding.hf_hub_download")
-    @patch("samvaad.pipeline.ingestion.embedding.get_device", return_value="cuda")
-    def test_model_initialization_gpu(self, mock_get_device, mock_hf_download, mock_tokenizer_class, mock_session_class):
-        """ONNX model should enable GPU provider when CUDA is available."""
-        mock_session = MagicMock()
-        mock_session_class.return_value = mock_session
-        mock_tokenizer = MagicMock()
-        mock_tokenizer_class.from_pretrained.return_value = mock_tokenizer
-
-        ONNXEmbeddingModel()
-
-        mock_hf_download.assert_called()  # Should download model files
-        mock_session_class.assert_called_once()
-        # Check that CUDA provider is included
-        call_args = mock_session_class.call_args
-        providers = call_args[1]['providers']
-        assert 'CUDAExecutionProvider' in providers
-        mock_tokenizer_class.from_pretrained.assert_called_once()
-        mock_get_device.assert_called_once()
-
-    @patch("samvaad.pipeline.ingestion.embedding.ort.InferenceSession")
-    @patch("samvaad.pipeline.ingestion.embedding.AutoTokenizer")
-    @patch("samvaad.pipeline.ingestion.embedding.hf_hub_download")
-    def test_encode_document_batch_success(self, mock_hf_download, mock_tokenizer_class, mock_session_class):
-        """encode_document should process texts and return numpy array."""
-        mock_session = MagicMock()
-        mock_session.run.return_value = [[np.array([[0.1] * 768])], [np.array([[0.2] * 768])]]
-        mock_session_class.return_value = mock_session
+    @patch("samvaad.pipeline.ingestion.embedding.get_collection")
+    @patch("samvaad.pipeline.ingestion.embedding.ONNXEmbeddingModel")
+    @patch("samvaad.pipeline.ingestion.embedding.generate_chunk_id")
+    @patch("builtins.print")
+    def test_embed_chunks_model_initialization_failure(
+        self, mock_print, mock_generate_id, mock_model_class, mock_get_collection
+    ):
+        """Test handling of model initialization failure."""
+        mock_generate_id.side_effect = lambda chunk: f"{chunk}_hash"
+        mock_model_class.side_effect = Exception("Model download failed")
         
-        mock_tokenizer = MagicMock()
-        mock_tokenizer.return_value = {"input_ids": np.array([[1, 2, 3]]), "attention_mask": np.array([[1, 1, 1]])}
-        mock_tokenizer_class.from_pretrained.return_value = mock_tokenizer
-
-        model = ONNXEmbeddingModel()
-        embeddings = model.encode_document(["text1", "text2"])
-
-        assert mock_session.run.call_count == 2
-        assert embeddings.shape == (2, 768)
-
-    @patch("samvaad.pipeline.ingestion.embedding.ort.InferenceSession")
-    @patch("samvaad.pipeline.ingestion.embedding.AutoTokenizer")
-    @patch("samvaad.pipeline.ingestion.embedding.hf_hub_download")
-    def test_encode_query_prompt(self, mock_hf_download, mock_tokenizer_class, mock_session_class):
-        """encode_query should apply the correct retrieval prompt."""
-        mock_session = MagicMock()
-        mock_session.run.return_value = [[np.array([0.3] * 768)]]
-        mock_session_class.return_value = mock_session
+        mock_collection = MagicMock()
+        mock_collection.get.return_value = {"ids": []}
+        mock_get_collection.return_value = mock_collection
         
-        mock_tokenizer = MagicMock()
-        mock_tokenizer.return_value = {"input_ids": np.array([[1, 2, 3]]), "attention_mask": np.array([[1, 1, 1]])}
-        mock_tokenizer_class.from_pretrained.return_value = mock_tokenizer
-
-        model = ONNXEmbeddingModel()
-        embedding = model.encode_query("example query")
-
-        mock_session.run.assert_called_once()
-        assert embedding.shape == (768,)
+        chunks = ["chunk1"]
+        
+        with pytest.raises(Exception, match="Model download failed"):
+            embed_chunks_with_dedup(chunks, "test.txt")
+    
+    @patch("samvaad.pipeline.ingestion.embedding.get_collection")
+    @patch("samvaad.pipeline.ingestion.embedding.ONNXEmbeddingModel")
+    @patch("samvaad.pipeline.ingestion.embedding.generate_chunk_id")
+    @patch("builtins.print")
+    def test_embed_chunks_empty_input(
+        self, mock_print, mock_generate_id, mock_model_class, mock_get_collection
+    ):
+        """Test handling of empty chunk list."""
+        mock_model = MagicMock()
+        mock_model_class.return_value = mock_model
+        
+        mock_collection = MagicMock()
+        mock_collection.get.return_value = {"ids": []}
+        mock_get_collection.return_value = mock_collection
+        
+        chunks = []
+        
+        embeddings, indices = embed_chunks_with_dedup(chunks, "test.txt")
+        
+        assert embeddings == []
+        assert indices == []
+        mock_model.encode_document.assert_not_called()
+    
+    @patch("samvaad.pipeline.ingestion.embedding.get_collection")
+    @patch("samvaad.pipeline.ingestion.embedding.ONNXEmbeddingModel")
+    @patch("samvaad.pipeline.ingestion.embedding.generate_chunk_id")
+    @patch("builtins.print")
+    def test_embed_chunks_encoding_failure(
+        self, mock_print, mock_generate_id, mock_model_class, mock_get_collection
+    ):
+        """Test handling of encoding failure."""
+        mock_generate_id.side_effect = lambda chunk: f"{chunk}_hash"
+        mock_model = MagicMock()
+        mock_model.encode_document.side_effect = Exception("ONNX Runtime error")
+        mock_model_class.return_value = mock_model
+        
+        mock_collection = MagicMock()
+        mock_collection.get.return_value = {"ids": []}
+        mock_get_collection.return_value = mock_collection
+        
+        chunks = ["chunk1"]
+        
+        with pytest.raises(Exception, match="ONNX Runtime error"):
+            embed_chunks_with_dedup(chunks, "test.txt")

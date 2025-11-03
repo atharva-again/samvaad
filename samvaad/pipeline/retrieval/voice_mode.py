@@ -260,6 +260,21 @@ class ConversationManager:
     def _trim_history(self) -> None:
         if len(self.messages) > self.max_history:
             self.messages = self.messages[-self.max_history:]
+    
+    def update_settings(self, **kwargs) -> None:
+        """Update conversation settings."""
+        for key, value in kwargs.items():
+            if key in self.settings:
+                self.settings[key] = value
+    
+    def get_conversation_summary(self) -> Dict[str, Any]:
+        """Get summary of conversation state."""
+        return {
+            'is_active': self.is_active,
+            'message_count': len(self.messages),
+            'conversation_id': self.conversation_id,
+            'settings': self.settings
+        }
 
 class VoiceMode:
     """Continuous voice conversation mode."""

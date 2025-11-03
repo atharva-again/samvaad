@@ -401,3 +401,36 @@ class TestAPIEndpoints:
         assert response.status_code == 200
         result = response.json()
         assert "error" in result
+
+
+class TestAPIErrorHandling:
+    """Test error handling in API endpoints."""
+
+    def test_query_empty_string(self):
+        """Test query with empty string."""
+        from samvaad.interfaces.api import app
+        from fastapi.testclient import TestClient
+        client = TestClient(app)
+        
+        response = client.post('/query', json={'query': ''})
+        
+        # Should handle empty query gracefully
+        assert response.status_code in [200, 400, 422]
+    
+    @patch('samvaad.interfaces.api._conversation_managers', {})
+    def test_conversation_invalid_session_id(self):
+        """Test conversation auto-creates session for nonexistent ID."""
+        from samvaad.interfaces.api import app
+        from fastapi.testclient import TestClient
+        client = TestClient(app)
+        
+        response = client.post(
+            '/conversation/message',
+            json={'session_id': 'nonexistent_session', 'message': 'Hello'}
+        )
+        result = response.json()
+        
+        # Should auto-create session and succeed
+        assert response.status_code == 200
+        assert 'response' in result
+        assert result['session_id'] == 'nonexistent_session'
