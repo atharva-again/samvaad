@@ -11,6 +11,7 @@ from docling.chunking import HybridChunker
 from docling_core.transforms.chunker.hierarchical_chunker import HierarchicalChunker
 from docling_core.transforms.chunker.tokenizer.huggingface import HuggingFaceTokenizer
 from tokenizers import Tokenizer
+from transformers import AutoTokenizer
 from typing import Tuple, List
 import tempfile
 import os
@@ -49,10 +50,9 @@ def get_docling_chunker():
     """Get a singleton Docling HierarchicalChunker instance configured for 200 tokens, no overlap."""
     global _chunker
     if _chunker is None:
-        # Use the same tokenizer as before for consistency
         tokenizer = HuggingFaceTokenizer(
-            tokenizer=AutoTokenizer.from_pretrained("google/embeddinggemma-300m", use_fast=True),
-            max_tokens=200,  # Set to 200 tokens as requested
+            tokenizer=AutoTokenizer.from_pretrained("onnx-community/embeddinggemma-300m-ONNX", use_fast=True),
+            max_tokens=200, 
         )
 
         # For pure hierarchical chunking without overlap, use HierarchicalChunker

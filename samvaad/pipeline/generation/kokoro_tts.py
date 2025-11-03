@@ -142,16 +142,17 @@ class KokoroTTS:
         
         # Download voices file from GitHub releases
         import requests
-        import tempfile
         
         voices_url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
-        voices_response = requests.get(voices_url)
-        voices_response.raise_for_status()
+        cache_dir = os.path.expanduser("~/.cache/samvaad")
+        os.makedirs(cache_dir, exist_ok=True)
+        self._voices_path = os.path.join(cache_dir, "kokoro_voices_v1.0.bin")
         
-        # Save voices file to temporary location
-        self._voices_path = os.path.join(tempfile.gettempdir(), "kokoro_voices_v1.0.bin")
-        with open(self._voices_path, 'wb') as f:
-            f.write(voices_response.content)
+        if not os.path.exists(self._voices_path):
+            voices_response = requests.get(voices_url, timeout=120) 
+            voices_response.raise_for_status()
+            with open(self._voices_path, 'wb') as f:
+                f.write(voices_response.content)
         
         # Initialize Kokoro ONNX model
         self._kokoro = _SpeedAwareKokoro(self._model_path, self._voices_path)

@@ -175,11 +175,7 @@ def initialize_whisper_model(model_size: str = "small", device: str = "auto", si
         if device == "auto":
             device = "cuda" if get_device() == 'cuda' else "cpu"
         compute_type = "float16" if device == "cuda" else "int8"
-        if not silent:
-            print(f"🔄 Loading Whisper ({model_size}) on {device}...")
         model = WhisperModel(model_size, device=device, compute_type=compute_type)
-        if not silent:
-            print("✅ Whisper ready.")
         return model
     except Exception as e:
         if not silent:
@@ -288,15 +284,17 @@ class VoiceMode:
             transient=True,
         ) as progress:
             task = progress.add_task("Loading models...", total=None)
+            progress.update(task, description="Loading Whisper model...")
             try:
-                self.initialize_whisper_only(silent=True)
+                self.initialize_whisper_only(silent=False)  # Changed to False for debugging
             except Exception as e:
                 progress.console.print(f"⚠️ Whisper preload failed: {e}")
+            progress.update(task, description="Loading TTS engine...")
             try:
                 self.tts_engine = KokoroTTS()
             except Exception as e:
                 progress.console.print(f"⚠️ TTS preload failed: {e}")
-            # task will auto-clear because transient=True
+            progress.update(task, completed=True, visible=False)
         
 
     def initialize_whisper_only(self, silent: bool = False):

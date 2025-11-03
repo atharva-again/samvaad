@@ -3,19 +3,17 @@
 ![Python](https://img.shields.io/badge/python-3.11-blue)
 
 ### Note
-- Voice queries are now fully supported with Kokoro TTS for high-quality speech synthesis in English and Hindi
-- Frontend/UI is under development - currently CLI-only
-- Voice chat feature includes automatic markdown processing for clean display and natural pronunciation
+- The software uses **fully open-source models** for all the stages, except final answer generation, for which it uses Gemini. Document parsing, ingestion, querying, automatic speech recognition (ASR), text to speech (TTTS), all are fully on-premise and optimized to be used even on **low-end devices with no GPU.**
+- Voice queries are now fully supported with Kokoro TTS for high-quality speech synthesis in English and Hindi is in preview
+- Frontend/UI is under development, currently CLI-only
 
-Please see the [issues](https://github.com/HapoSeiz/samvaad/issues) for ideas or to report bugs.
+Please see the [issues](https://github.com/atharva-again/samvaad/issues) for ideas or to report bugs.
 
 ### Recent Updates
+- **Moving to ONNXRuntime:** I am trying to move the project and models from PyTorch to ONNXRuntime to increase performance on low-end devices even more. You can check the status [here](https://github.com/atharva-again/samvaad/issues/20).
 - **Interactive CLI:** Improved user interface that can be called using the `samvaad` command
 - **Kokoro TTS:** Neural TTS engine with high-quality speech synthesis
 - **Voice Queries:** Ask questions or query documents in your preferred language (Hindi, English, etc.)
-
-
-The modular design makes it easy to add new features. The backend/ and frontend/ folders are separate, so you can build the UI and connect to the backend API.icense-MIT-green)
 
 ---
 
@@ -28,17 +26,25 @@ The modular design makes it easy to add new features. The backend/ and frontend/
 ## Getting Started
 
 ### Prerequisites
-- **Python 3.11**: This project is optimized for Python 3.11. Some dependencies (like sounddevice for voice features) provide wheels primarily for this version. Ensure you're using 3.11:
+
+**Python 3.11**: This project is optimized for Python 3.11. Some dependencies (like sounddevice for voice features) provide wheels primarily for this version. Ensure you're using 3.11:
   ```sh
   python --version  # Should show Python 3.11.x
   ```
+
+**PortAudio (for voice features)**: If you plan to use voice queries or TTS playback, install PortAudio, which is required by the `sounddevice` library:
+  - On Ubuntu/Debian: `sudo apt-get install portaudio19-dev`
+  - On macOS: `brew install portaudio`
+  - On Windows: PortAudio is usually included with `sounddevice`, but install it manually if needed.
+  
+  Without PortAudio, voice recording and playback will be skipped with a warning.
 
 Follow these steps to set up and run Samvaad locally:
 
 ### 1. Clone the Repository
 
 ```sh
-git clone https://github.com/HapoSeiz/samvaad.git
+git clone https://github.com/atharva-again/samvaad.git
 cd samvaad
 ```
 
@@ -70,25 +76,27 @@ source .venv/bin/activate
 
 ### 3. Install Samvaad
 
-#### ⚡️ Important: Install the Correct PyTorch Version
+#### ⚡️ Important: Install the Correct PyTorch and ONNX Runtime Versions
 
-Samvaad and its dependencies require PyTorch (`torch`), but the version you need depends on whether you want GPU acceleration or not:
+Samvaad and its dependencies require PyTorch (`torch`) and ONNX Runtime (`onnxruntime`), but the versions you need depend on whether you want GPU acceleration or not:
 
 - **For GPU support (NVIDIA CUDA):**
-  - Install the GPU-enabled version of torch (replace `cu121` with your CUDA version if needed):
+  - Install the GPU-enabled versions (replace `cu121` with your CUDA version if needed):
     ```sh
     uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+    uv pip install onnxruntime-gpu
     ```
   - See the [PyTorch Get Started](https://pytorch.org/get-started/locally/) page for other CUDA versions.
 
 - **For CPU-only (no GPU):**
-  - Install the CPU-only version of torch:
+  - Install the CPU-only versions:
     ```sh
     uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+    uv pip install onnxruntime
     ```
 
 **Why?**
-If you do not install torch first, the dependency resolver may download a large GPU version (with CUDA libraries) even if you only want CPU, or vice versa. Installing torch explicitly ensures you get the right version for your hardware.
+If you do not install these packages first, the dependency resolver may download large GPU versions (with CUDA libraries) even if you only want CPU, or vice versa. Installing them explicitly ensures you get the right versions for your hardware. ONNX Runtime is used for fast embedding inference and cross-encoder reranking.
 
 #### Install all other dependencies
 
@@ -138,8 +146,7 @@ samvaad
 ```
 
 Then use commands like:
-- `i document.pdf` to ingest a file
-- `q What is the main topic?` to query
+- `/ingest document.pdf` or `/i document.pdf` to ingest a file
 
 ### 7. Query Your Knowledge Base
 
@@ -150,77 +157,8 @@ samvaad
 ```
 
 Inside the CLI:
-- `q What are the main findings?` - Basic query
-
-
-### Voice Queries
-
-Samvaad supports multilingual voice queries, allowing you to ask questions in Hindi, English, Hinglish, or other languages. The system transcribes your speech and responds in the same language/style.
-
-```sh
-# Start interactive mode
-samvaad
-
-# Inside CLI:
-v
-# This starts voice recording mode. Speak your question in any supported language.
-# The system will transcribe, process, and respond accordingly.
-```
-
-**Supported Languages:** Hindi, Hinglish (code-mixed), English, and auto-detection for other languages.
-
-**TTS Engine Options:**
-- **Kokoro TTS:** Neural TTS engine with high-quality voices (English & Hindi)
-
-```sh
-# Voice query with Kokoro TTS
-v
-```
-
-**Features:**
-- Automatic silence detection (2 seconds of silence stops recording)
-- Markdown-aware responses (clean text for both display and speech)
-- Audio responses saved to `data/audio_responses/` with engine-specific filenames
-- Real-time language detection and appropriate voice selection
-
-### API Endpoints
-
-Samvaad provides a REST API for programmatic access:
-
-**TTS Endpoint:**
-```http
-POST /tts
-Content-Type: application/json
-
-{
-  "text": "Your text here",
-  "language": "en"
-}
-```
-
-**Supported TTS Engine:**
-- `kokoro` - Neural TTS (higher quality, English & Hindi)
-
-**Response:**
-```json
-{
-  "audio_base64": "base64_encoded_wav_data",
-  "sample_rate": 24000,
-  "format": "wav"
-}
-```
-
-### Direct Voice Query Usage
-
-For direct voice queries without the interactive CLI:
-
-```sh
-# Voice query with Kokoro TTS
-python -m backend.pipeline.retrieval.query_voice
-
-# Voice query with specific Gemini model
-python -m backend.pipeline.retrieval.query_voice --model gemini-2.5-flash
-```
+- Type your question directly, for example: `What are the main findings?` - Basic query
+- For voice query, type /voice or /v and the voice mode will get activated. You can follow the screen instructions from there.
 
 
 ## Usage Examples
@@ -233,89 +171,13 @@ Samvaad now uses an interactive command-line interface for all operations:
 samvaad
 ```
 
-Available commands:
-- `i <file>` or `ingest <file>` - Process and ingest a file
-- `q <text>` or `query <text>` - Query the knowledge base
-- `v` or `voice` - Start voice query mode (supports multiple languages like Hindi, English, Hinglish)
-- `r <file>` or `remove <file>` - Remove a file and its embeddings
-- `h` or `help` - Show help
-- `e` or `exit` - Exit the CLI
-
-### Document Processing
-
-```sh
-# Start interactive mode
-samvaad
-
-# Inside CLI:
-i documents/research_paper.pdf
-# Output includes timing: ⏱️ Parsing time: 0.1234 seconds, etc.
-
-# Remove a document
-r documents/old_file.pdf
-# Output: ⏱️ Deletion time: 0.0567 seconds
-```
-
-### Querying Your Knowledge Base
-
-```sh
-# Start interactive mode
-python -m backend.test
-
-# Inside CLI:
-q "What are the main findings?"
-# Output includes total query time and sources
-
-q "Explain the methodology" -k 8
-# Retrieve more context chunks
-
-q "What are the implications?" -m gemini-2.5-flash
-# Use Gemini model for answers
-```
-
-### Performance Monitoring
-
-The CLI now shows timing for each step:
-
-```
-⏱️ Parsing time: 0.1234 seconds
-⏱️ Chunking time: 0.0567 seconds
-⏱️ Embedding time: 1.2345 seconds
-⏱️ Storage time: 0.0890 seconds
-⏱️ Total query time: 2.3456 seconds
-⏱️ Deletion time: 0.0123 seconds
-```
-
-### GPU Acceleration
-
-If a CUDA-compatible GPU is detected, operations will automatically use GPU acceleration for:
-- Document parsing (Docling)
-- Text embeddings (SentenceTransformer)
-- Cross-encoder reranking
-- LLM inference (if supported)
-
-Check GPU usage with `nvidia-smi` during processing.
-
-### Example Output
-
-```
-🔍 Processing query: 'What is the theory of Ballism?'
-============================================================
-⏱️ Total query time: 2.3456 seconds
-
-📝 QUERY: What is the theory of Ballism?
-
-🤖 ANSWER:
-The theory of Ballism, formally known as the Principle of Spherical Convergence, posits that all matter and energy in the universe is subject to a fundamental force that compels it to assume a perfect spherical shape over infinitely long periods...
-
-📚 SOURCES (3 chunks retrieved):
-
-1. ballism.txt (Similarity: 0.847)
-   Preview: The theory of Ballism, formally known as the Principle of Spherical Convergence...
-
-2. ballism.txt (Similarity: 0.723)
-   Preview: Dr. Finch's initial "Finches' Folly" experiment...
-```
+Available commands (slash-prefixed):
+- `/ingest <file>` or `/i <file>` - Process and ingest a file
+- Type queries directly (no prefix) - just type your question and press Enter
+- `/voice` or `/v` - Start voice query mode (supports multiple languages like Hindi, English, Hinglish)
+- `/remove <file>` or `/rm <file>` - Remove a file and its embeddings
+- `/help` or `/h` - Show help
+- `/quit`, `/exit`, or `/q` - Exit the CLI
 
 ---
 
@@ -353,8 +215,7 @@ samvaad/
 ## Features
 
 - **Kokoro TTS:** Neural TTS engine with high-quality speech synthesis
-- **Smart Markdown Processing:** Automatic stripping of markdown formatting for clean terminal display and natural speech synthesis
-- **Multilingual Voice Support:** Voice queries and responses in Hindi, English, Hinglish, and auto-detection for other languages
+- **Multilingual Voice Support:** Voice queries and responses in Hindi, English, and auto-detection for other languages
 - **Retrieval-Augmented Generation (RAG):** Combines LLMs with your own documents for accurate, context-aware answers.
 - **Complete Query Pipeline:** Ask natural language questions and get AI-powered answers with source citations.
 - **GPU Acceleration:** Automatic GPU detection and usage for faster embeddings, parsing, and inference (when available).
@@ -367,7 +228,6 @@ samvaad/
 - **Easy Setup:** Simple installation with manual PyTorch selection for CPU or GPU.
 - **Private & Secure:** Your data stays on your machine.
 
----
 ---
 
 ## Testing
@@ -452,7 +312,7 @@ Contributions are welcome! To get started:
 4. Commit and push (`git commit -am 'Add new feature'`)
 5. Open a pull request
 
-Please see the [issues](https://github.com/HapoSeiz/samvaad/issues) page for ideas or to report bugs.
+Please see the [issues](https://github.com/atharva-again/samvaad/issues) page for ideas or to report bugs.
 
 Future Development
 The modular design of this project makes it easy to add new features. The backend/ and frontend/ folders are completely separate, so you can build out the user interface and connect it to the backend's API when you're ready.
