@@ -16,7 +16,8 @@ export function useFileProcessor() {
         setHasFetchedSources,
         setPendingDuplicates,
         setShowDuplicateModal,
-        pendingDuplicates
+        pendingDuplicates,
+        setSourcesPanelOpen
     } = useUIStore();
 
     // Reusing the fetch logic
@@ -67,6 +68,14 @@ export function useFileProcessor() {
             const result = await uploadFile(file);
             console.log("[useFileProcessor] uploadFile result:", result);
 
+            // Check for backend processing errors (e.g., LlamaParse failures)
+            if (result.error) {
+                console.error("[useFileProcessor] Backend processing error:", result.error);
+                updateSourceStatus(tempId, 'error');
+                toast.error(`Failed to process ${file.name}: ${result.error}`);
+                return;
+            }
+
             if (result.file_id) {
                 updateSource(tempId, {
                     id: result.file_id,
@@ -96,6 +105,9 @@ export function useFileProcessor() {
     const processFiles = async (files: File[]) => {
         console.log("[useFileProcessor] processFiles called with", files.length, "files");
         if (files.length > 0) {
+            // Auto-open the knowledge base panel to show upload progress
+            setSourcesPanelOpen(true);
+
             let currentSources = sources;
             if (!hasFetchedSources) {
                 currentSources = await refreshSources();

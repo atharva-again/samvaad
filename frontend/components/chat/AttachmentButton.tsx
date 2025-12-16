@@ -14,11 +14,13 @@ export const AttachmentButton: React.FC<AttachmentButtonProps> = ({
     onUploadClick,
     onViewFilesClick
 }) => {
+    const [showMobileMenu, setShowMobileMenu] = useState(false);
     const [isHovered, setIsHovered] = useState(false);
     const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
-    const { modifier } = usePlatform();
+    const { modifier, isMobile } = usePlatform();
 
     const handleMouseEnter = () => {
+        if (isMobile) return; // Disable hover on mobile
         if (timeoutRef.current) {
             clearTimeout(timeoutRef.current);
             timeoutRef.current = null;
@@ -27,10 +29,25 @@ export const AttachmentButton: React.FC<AttachmentButtonProps> = ({
     };
 
     const handleMouseLeave = () => {
+        if (isMobile) return;
         timeoutRef.current = setTimeout(() => {
             setIsHovered(false);
-        }, 100); // 100ms delay
+        }, 100);
     };
+
+    const handleClick = () => {
+        console.debug("Attachment button clicked. isMobile:", isMobile);
+        if (isMobile) {
+            setShowMobileMenu(!showMobileMenu);
+        } else {
+            onUploadClick();
+        }
+    };
+
+    // Close mobile menu when clicking outside - simple effect or rely on specific close actions
+    // For now, let's close it when an option is selected.
+
+    const shouldShowMenu = (isHovered && !isMobile) || (showMobileMenu && isMobile);
 
     return (
         <div
@@ -41,15 +58,23 @@ export const AttachmentButton: React.FC<AttachmentButtonProps> = ({
             <Button
                 type="button"
                 size="icon"
-                className="h-16 w-16 rounded-full bg-black/40 backdrop-blur-2xl border border-white/10 hover:bg-white/10 text-white shadow-2xl shrink-0 transition-all z-20 relative"
-                onClick={onUploadClick}
-                title={`Attach File (${modifier}+A)`}
+                className="h-14 w-14 md:h-16 md:w-16 rounded-full bg-black/40 backdrop-blur-2xl border border-white/10 hover:bg-white/10 text-white shadow-2xl shrink-0 transition-all z-20 relative"
+                onClick={handleClick}
+                title={isMobile ? "Sources" : `Attach File (${modifier}+A)`}
             >
                 <Paperclip className="w-6 h-6" />
             </Button>
 
+            {/* Mobile Backdrop to close menu */}
+            {showMobileMenu && isMobile && (
+                <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setShowMobileMenu(false)}
+                />
+            )}
+
             <AnimatePresence>
-                {isHovered && (
+                {shouldShowMenu && (
                     <motion.div
                         initial={{ opacity: 0, y: 10, scale: 0.95 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -61,6 +86,7 @@ export const AttachmentButton: React.FC<AttachmentButtonProps> = ({
                             onClick={(e) => {
                                 e.stopPropagation();
                                 onViewFilesClick();
+                                setShowMobileMenu(false);
                             }}
                             className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white/10 transition-colors w-full text-left group cursor-pointer relative"
                         >
@@ -70,13 +96,13 @@ export const AttachmentButton: React.FC<AttachmentButtonProps> = ({
                             <span className="text-sm font-medium text-white/90">
                                 View Sources
                             </span>
-                            <ActionTooltip label="View Sources" shortcut={`${modifier}+S`} side="right" />
                         </button>
 
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
                                 onUploadClick();
+                                setShowMobileMenu(false);
                             }}
                             className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white/10 transition-colors w-full text-left group cursor-pointer relative"
                         >
@@ -86,7 +112,6 @@ export const AttachmentButton: React.FC<AttachmentButtonProps> = ({
                             <span className="text-sm font-medium text-white/90">
                                 Add Sources
                             </span>
-                            <ActionTooltip label="Add Sources" shortcut={`${modifier}+A`} side="right" />
                         </button>
 
                         {/* Arrow */}

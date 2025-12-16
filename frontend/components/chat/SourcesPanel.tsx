@@ -59,7 +59,7 @@ const getTimeAgo = (dateString: string) => {
 };
 
 export function SourcesPanel() {
-    const { modifier } = usePlatform();
+    const { modifier, isMobile } = usePlatform();
     const {
         isSourcesPanelOpen,
         toggleSourcesPanel,
@@ -327,21 +327,21 @@ export function SourcesPanel() {
                 )}
             </AnimatePresence>
 
-            {/* Persistent Toggle (Visible when closed) */}
+            {/* Persistent Toggle (Visible when closed) - Responsive Position */}
             <AnimatePresence>
                 {!isSourcesPanelOpen && (
                     <motion.div
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: 20 }}
-                        className="fixed right-0 top-1/2 -translate-y-1/2 z-30"
+                        className="fixed right-0 top-[60px] md:top-1/2 md:-translate-y-1/2 z-30"
                     >
                         <div
                             onClick={toggleSourcesPanel}
-                            className="h-16 w-1.5 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-l-full cursor-pointer transition-all duration-300 hover:w-6 flex items-center justify-center group overflow-visible relative"
+                            className="h-12 w-1.5 md:h-16 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-l-full cursor-pointer transition-all duration-300 hover:w-6 flex items-center justify-center group overflow-visible relative"
                         >
-                            <ChevronLeft className="w-4 h-4 text-white/50 group-hover:text-white opacity-0 group-hover:opacity-100 transition-all duration-300 relative z-10" />
-                            <ActionTooltip label="Open Sources" shortcut="Alt+S" side="left" />
+                            <ChevronLeft className="w-3 h-3 md:w-4 md:h-4 text-white/50 group-hover:text-white opacity-0 group-hover:opacity-100 transition-all duration-300 relative z-10" />
+                            {!isMobile && <ActionTooltip label="Open Sources" shortcut="Alt+S" side="left" />}
                         </div>
                     </motion.div>
                 )}
@@ -351,13 +351,13 @@ export function SourcesPanel() {
                 {isSourcesPanelOpen && (
                     <motion.div
                         initial={{ width: 0, opacity: 0 }}
-                        animate={{ width: 420, opacity: 1 }}
+                        animate={{ width: isMobile ? "100%" : 420, opacity: 1 }}
                         exit={{ width: 0, opacity: 0 }}
                         transition={{ type: "spring", stiffness: 350, damping: 35, mass: 0.8 }}
-                        className="h-full border-l border-white/5 bg-[#050505]/80 backdrop-blur-3xl flex flex-col shrink-0 overflow-hidden relative z-40 shadow-2xl"
+                        className="fixed inset-0 top-[60px] md:static h-[calc(100vh-60px)] md:h-full border-l border-white/5 bg-[#050505]/95 md:bg-[#050505]/80 backdrop-blur-3xl flex flex-col shrink-0 overflow-hidden relative z-40 shadow-2xl"
                     >
                         <div
-                            className={`w-[420px] flex flex-col h-full bg-gradient-to-b from-white/[0.02] to-transparent transition-colors duration-300`}
+                            className={`w-full md:w-[420px] flex flex-col h-full bg-gradient-to-b from-white/[0.02] to-transparent transition-colors duration-300`}
                         >
 
                             {/* Hidden Input */}
@@ -370,7 +370,7 @@ export function SourcesPanel() {
                             />
 
                             {/* Header */}
-                            <div className="flex items-center justify-between px-8 py-8">
+                            <div className="flex items-center justify-between px-6 md:px-8 py-6 md:py-8">
                                 <div>
                                     <h2 className="text-xl font-medium text-white tracking-tight flex items-center gap-2">
                                         Knowledge Base
@@ -390,7 +390,7 @@ export function SourcesPanel() {
                             </div>
 
                             {/* Search */}
-                            <div className="px-8 pb-6">
+                            <div className="px-6 md:px-8 pb-6">
                                 <div className="relative group">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-secondary/50 group-focus-within:text-white transition-colors" />
                                     <input
@@ -405,7 +405,7 @@ export function SourcesPanel() {
                             </div>
 
                             {/* List */}
-                            <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-2 custom-scrollbar">
+                            <div className="flex-1 overflow-y-auto px-4 md:px-6 pb-6 space-y-2 custom-scrollbar">
                                 <div className="flex items-center justify-between px-2 pb-2">
                                     <span className="text-xs font-medium text-text-secondary/60 uppercase tracking-widest">Active Sources</span>
                                     <span className="text-xs font-mono text-text-secondary/40">{filteredSources.length} items</span>
@@ -497,7 +497,7 @@ export function SourcesPanel() {
                                                         });
                                                     }
                                                 }}
-                                                className="h-9 w-9 opacity-0 group-hover:opacity-100 text-text-secondary hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all duration-300 transform translate-x-2 group-hover:translate-x-0"
+                                                className="h-9 w-9 opacity-100 md:opacity-0 group-hover:opacity-100 text-text-secondary hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all duration-300 transform md:translate-x-2 group-hover:translate-x-0"
                                             >
                                                 {deletingIds.has(String(file.id)) ? (
                                                     <Loader2 className="w-4 h-4 animate-spin" />

@@ -5,18 +5,43 @@ import { Header } from "@/components/shared/Header";
 import { MessageList } from "@/components/chat/MessageList";
 import { InputBar } from "@/components/chat/InputBar";
 import { SourcesPanel } from "@/components/chat/SourcesPanel";
+import { WelcomeScreen } from "@/components/chat/WelcomeScreen";
 
 import { ChatMessage, sendMessage } from "@/lib/api";
 import { toast } from "sonner";
 
+import { useUIStore } from "@/lib/stores/useUIStore";
+
 export default function Home() {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      role: "assistant",
-      content: "Systems online. I am Samvaad. How can I assist you today?",
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Swipe Detection
+  const touchStart = React.useRef<number | null>(null);
+  const touchEnd = React.useRef<number | null>(null);
+  const { setSourcesPanelOpen } = useUIStore();
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchEnd.current = null;
+    touchStart.current = e.targetTouches[0].clientX;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    touchEnd.current = e.targetTouches[0].clientX;
+  };
+
+  const handleTouchEnd = () => {
+    if (!touchStart.current || !touchEnd.current) return;
+    const distance = touchStart.current - touchEnd.current;
+    const isLeftSwipe = distance > 50; // Threshold
+    // const isRightSwipe = distance < -50; 
+
+    // Swipe Left -> Open Panel (since panel is on the right)
+    if (isLeftSwipe) {
+      setSourcesPanelOpen(true);
+    }
+    // We could implement Swipe Right to close, but Sources Panel likely handles its own overlay click/close
+  };
 
   const abortControllerRef = React.useRef<AbortController | null>(null);
 
@@ -81,7 +106,12 @@ export default function Home() {
   };
 
   return (
-    <main className="flex flex-col h-screen bg-void text-text-primary overflow-hidden relative">
+    <main
+      className="flex flex-col h-screen bg-void text-text-primary overflow-hidden relative"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
       <Header />
 
       {/* Content Container (Below Header) */}
@@ -89,11 +119,15 @@ export default function Home() {
 
         {/* Main Chat Area */}
         <div className="flex-1 flex flex-col relative min-w-0 transition-all duration-300">
-          <MessageList
-            messages={messages}
-            isLoading={isLoading}
-            onEdit={handleEditMessage}
-          />
+          {messages.length === 0 ? (
+            <WelcomeScreen />
+          ) : (
+            <MessageList
+              messages={messages}
+              isLoading={isLoading}
+              onEdit={handleEditMessage}
+            />
+          )}
           <InputBar
             onSendMessage={handleSendMessage}
             isLoading={isLoading}

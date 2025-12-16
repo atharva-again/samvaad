@@ -25,7 +25,7 @@ export function Header() {
   };
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-4 bg-void/80 backdrop-blur-md border-b border-white/5">
+    <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 md:px-6 py-4 bg-void/80 backdrop-blur-md border-b border-white/5">
       <div className="flex items-center gap-2">
         <div className="w-2 h-2 rounded-full bg-signal animate-pulse" />
         <h1 className="text-lg font-medium tracking-tight text-text-primary">
@@ -35,7 +35,7 @@ export function Header() {
 
       <div className="flex items-center gap-4 text-xs font-mono text-text-secondary">
         {email && (
-          <span className="text-text-tertiary hidden sm:inline-block">
+          <span className="text-text-tertiary hidden md:inline-block">
             {email}
           </span>
         )}
