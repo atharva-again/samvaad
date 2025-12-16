@@ -15,6 +15,8 @@ import { PersonaSelector } from "@/components/chat/PersonaSelector";
 import { TTSToggle } from "@/components/chat/TTSToggle";
 import { LatencyIndicator } from "@/components/chat/LatencyIndicator";
 import { VoiceSettings } from "@/components/chat/VoiceSettings";
+import { MobileVoiceControls } from "@/components/chat/MobileVoiceControls";
+import { MobileTextControls } from "@/components/chat/MobileTextControls";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   usePipecatClient,
@@ -46,8 +48,17 @@ interface InputBarProps {
 
 export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onMessageConsumed, onVoiceMessage }: InputBarProps) {
   const USE_MOCK_BACKEND = false; // Toggle this to true for mock backend
-  const { mode, setMode, toggleSourcesPanel, setSourcesPanelOpen, addSource, updateSourceStatus } = useUIStore();
-  const [hasInteracted, setHasInteracted] = useState(false);
+  const {
+    mode,
+    setMode,
+    toggleSourcesPanel,
+    setSourcesPanelOpen,
+    addSource,
+    updateSourceStatus,
+    hasInteracted,
+    setHasInteracted
+  } = useUIStore();
+
   const [message, setMessage] = useState("");
   const [isSessionActive, setIsSessionActive] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -87,6 +98,18 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
       if (e.altKey && (e.code === 'KeyA')) {
         e.preventDefault();
         fileInputRef.current?.click();
+      }
+
+      // Sources Panel (Alt + S)
+      if (e.altKey && (e.code === 'KeyS')) {
+        e.preventDefault();
+        toggleSourcesPanel();
+      }
+
+      // Sources Panel (Alt + S)
+      if (e.altKey && (e.code === 'KeyS')) {
+        e.preventDefault();
+        toggleSourcesPanel();
       }
 
 
@@ -659,17 +682,13 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
 
 
 
-  const { modifier } = usePlatform();
+  const { modifier, isMobile } = usePlatform();
 
   // 1. Main / Initial Bar / Mode Switcher
   if (!hasInteracted) {
     return (
-      <div className="w-full max-w-3xl mx-auto p-4 mb-6">
+      <div className="w-full max-w-3xl mx-auto p-4 mb-6 md:mb-10 mt-auto">
         <div className="flex items-center justify-center gap-3">
-          <AttachmentButton
-            onUploadClick={triggerFileInput}
-            onViewFilesClick={toggleSourcesPanel}
-          />
           <input
             type="file"
             multiple
@@ -710,13 +729,15 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
   // 2. Text Mode Bar
   if (mode === "text") {
     return (
-      <div className="w-full max-w-3xl mx-auto p-4 mb-6">
+      <div className="w-full max-w-3xl mx-auto p-4 mb-6 md:mb-10 mt-auto">
         <div className="flex items-end gap-3">
-          {/* Attachment Button */}
-          <AttachmentButton
-            onUploadClick={triggerFileInput}
-            onViewFilesClick={toggleSourcesPanel}
-          />
+          {/* Attachment Button - Hidden on mobile */}
+          <div className="hidden md:block">
+            <AttachmentButton
+              onUploadClick={triggerFileInput}
+              onViewFilesClick={toggleSourcesPanel}
+            />
+          </div>
           <input
             type="file"
             multiple
@@ -729,7 +750,7 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
 
           <form
             onSubmit={handleSubmit}
-            className="flex-1 bg-surface/80 backdrop-blur-md border border-white/10 rounded-[32px] shadow-lg transition-all focus-within:ring-1 focus-within:ring-white/20 flex flex-row items-end min-h-[4rem]"
+            className="flex-1 bg-surface/80 backdrop-blur-md border border-white/10 rounded-[32px] shadow-lg transition-all focus-within:ring-1 focus-within:ring-white/20 flex flex-row items-end min-h-[3.5rem] md:min-h-[4rem] overflow-hidden"
           >
             <textarea
               ref={(el) => {
@@ -755,13 +776,12 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
                   handleSubmit(e);
                 }
               }}
-              placeholder="Find answers to your curiosity"
+              placeholder={isMobile ? "Ask anything..." : "Find answers to your curiosity"}
               rows={1}
-              className="flex-1 bg-transparent border-none py-4 pl-6 pr-2 text-lg focus:outline-none placeholder:text-text-secondary/50 resize-none overflow-hidden max-h-[200px] overflow-y-auto"
-              style={{ minHeight: "64px" }}
+              className="flex-1 bg-transparent border-none py-3 md:py-4 pl-4 md:pl-6 pr-2 text-lg focus:outline-none placeholder:text-text-secondary/50 resize-none overflow-hidden max-h-[200px] overflow-y-auto min-h-[3.5rem] md:min-h-[4rem]"
             />
 
-            <div className="flex items-center gap-1 pr-3 pb-2 shrink-0">
+            <div className="flex items-center gap-0.5 md:gap-1 pr-2 md:pr-3 pb-1 md:pb-2 shrink-0">
               <Button
                 type={isLoading ? "button" : "submit"}
                 size="icon"
@@ -812,15 +832,28 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
 
               <div className="w-px h-6 bg-white/10 mx-1" />
 
-              <StrictModeToggle strictMode={strictMode} setStrictMode={setStrictMode} />
-              <PersonaSelector persona={persona} setPersona={setPersona} />
+              {/* Desktop Controls */}
+              <div className="hidden md:flex items-center gap-1">
+                <StrictModeToggle strictMode={strictMode} setStrictMode={setStrictMode} />
+                <PersonaSelector persona={persona} setPersona={setPersona} />
+              </div>
+
+              {/* Mobile Controls */}
+              <div className="flex md:hidden">
+                <MobileTextControls
+                  strictMode={strictMode}
+                  setStrictMode={setStrictMode}
+                  persona={persona}
+                  setPersona={setPersona}
+                />
+              </div>
             </div>
           </form>
 
           <Button
             type="button"
             size="icon"
-            className="relative group h-16 w-16 rounded-full bg-black/40 backdrop-blur-2xl border border-white/10 hover:bg-white/10 text-text-primary shadow-lg shrink-0"
+            className="relative group h-14 w-14 md:h-16 md:w-16 rounded-full bg-black/40 backdrop-blur-2xl border border-white/10 hover:bg-white/10 text-text-primary shadow-lg shrink-0"
             onClick={() => setMode("voice")}
           >
             <Mic className="w-6 h-6" />
@@ -834,13 +867,15 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
 
   // 3. Voice Mode Bar (Listening & Answering)
   return (
-    <div className="w-full max-w-3xl mx-auto p-4 mb-6">
+    <div className="w-full max-w-3xl mx-auto p-4 mb-6 md:mb-10 mt-auto">
       <div className="flex items-center gap-3">
-        {/* Attachment Button */}
-        <AttachmentButton
-          onUploadClick={triggerFileInput}
-          onViewFilesClick={toggleSourcesPanel}
-        />
+        {/* Attachment Button - Hidden on mobile */}
+        <div className="hidden md:block">
+          <AttachmentButton
+            onUploadClick={triggerFileInput}
+            onViewFilesClick={toggleSourcesPanel}
+          />
+        </div>
         <input
           type="file"
           multiple
@@ -850,7 +885,7 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
         />
 
         {/* Main Voice Control Bar */}
-        <div className="flex-1 h-16 bg-surface/80 backdrop-blur-md border border-white/10 rounded-full shadow-2xl flex items-center p-1.5 gap-4 relative ring-1 ring-white/5">
+        <div className="flex-1 h-14 md:h-16 bg-surface/80 backdrop-blur-md border border-white/10 rounded-full shadow-2xl flex items-center p-1.5 gap-4 relative ring-1 ring-white/5">
           {/* Dynamic Background Glow */}
           <div
             className={cn(
@@ -966,25 +1001,36 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
           {/* Spacer - Removed because flex-1 wrapper on Status handles centering/pushing */}
 
           {/* Controls */}
-          <div className="flex items-center gap-2 pr-2 relative z-10">
+          <div className="flex items-center gap-1 md:gap-2 pr-2 relative z-10 max-w-full justify-end">
             <div className="w-px h-4 bg-white/10 mx-1" />
-            {/* Latency Indicator - show during connecting and active session */}
-            {(isConnecting || isSessionActive) && <LatencyIndicator latencyMs={latencyMs} />}
+            {/* Latency Indicator - show during connecting and active session, hide on mobile */}
+            {(isConnecting || isSessionActive) && (
+              <div className="hidden md:block">
+                <LatencyIndicator latencyMs={latencyMs} />
+              </div>
+            )}
 
-            {/* V2T Toggle */}
-            <TTSToggle enableTTS={enableTTS} setEnableTTS={setEnableTTS} />
+            {/* Desktop Controls */}
+            <div className="hidden md:flex items-center gap-2">
+              <TTSToggle enableTTS={enableTTS} setEnableTTS={setEnableTTS} />
+              <StrictModeToggle strictMode={strictMode} setStrictMode={setStrictMode} />
+              <PersonaSelector persona={persona} setPersona={setPersona} />
+              <VoiceSettings outputVolume={outputVolume} onVolumeChange={setOutputVolume} />
+            </div>
 
-            {/* Strict Mode Toggle */}
-            <StrictModeToggle strictMode={strictMode} setStrictMode={setStrictMode} />
-
-            {/* Persona Switcher */}
-            <PersonaSelector persona={persona} setPersona={setPersona} />
-
-            {/* Device Selector */}
-            <VoiceSettings
-              outputVolume={outputVolume}
-              onVolumeChange={setOutputVolume}
-            />
+            {/* Mobile Controls (Menu) */}
+            <div className="flex md:hidden">
+              <MobileVoiceControls
+                enableTTS={enableTTS}
+                setEnableTTS={setEnableTTS}
+                strictMode={strictMode}
+                setStrictMode={setStrictMode}
+                persona={persona}
+                setPersona={setPersona}
+                outputVolume={outputVolume}
+                onVolumeChange={setOutputVolume}
+              />
+            </div>
 
 
 
@@ -1006,7 +1052,7 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
         <Button
           type="button"
           size="icon"
-          className="relative group h-16 w-16 rounded-full bg-black/40 backdrop-blur-2xl border border-white/10 hover:bg-white/10 text-text-primary shadow-lg shrink-0"
+          className="relative group h-14 w-14 md:h-16 md:w-16 rounded-full bg-black/40 backdrop-blur-2xl border border-white/10 hover:bg-white/10 text-text-primary shadow-lg shrink-0"
           onClick={() => setMode("text")}
         >
           <MessageSquare className="w-6 h-6" />

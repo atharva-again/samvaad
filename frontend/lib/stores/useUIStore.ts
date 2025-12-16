@@ -21,7 +21,9 @@ export interface DuplicateItem {
 interface UIState {
   mode: 'text' | 'voice'
   isSidebarOpen: boolean
+  hasInteracted: boolean
   setMode: (mode: 'text' | 'voice') => void
+  setHasInteracted: (hasInteracted: boolean) => void
   toggleSidebar: () => void
 
   // Sources Panel
@@ -51,7 +53,9 @@ interface UIState {
 export const useUIStore = create<UIState>((set) => ({
   mode: 'text',
   isSidebarOpen: false,
+  hasInteracted: false,
   setMode: (mode) => set({ mode }),
+  setHasInteracted: (hasInteracted) => set({ hasInteracted }),
   toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
 
   // Sources Panel
