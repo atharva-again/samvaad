@@ -1,3 +1,8 @@
+# CPU-only PyTorch (MUST be installed first to avoid CUDA deps)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+torchvision
+
 # Core web framework
 fastapi>=0.116.1
 uvicorn>=0.35.0
@@ -10,7 +15,7 @@ pgvector
 supabase>=2.0.0
 pyjwt>=2.8.0
 
-# Document parsing
+# Document parsing (requires torch, but we use CPU version above)
 docling
 
 # Voice and AI services
@@ -25,9 +30,3 @@ tenacity
 grpcio>=1.60.0
 websockets>=15.0.1
 httpx
-
-# CLI (optional - not needed in Docker)
-# rich>=13.0.0
-# click>=8.0.4
-# prompt-toolkit>=3.0.0
-# psutil>=6.1.0
