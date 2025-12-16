@@ -8,7 +8,7 @@ dockerfilePath = "Dockerfile"
 [deploy]
 # Health check endpoint
 healthcheckPath = "/health"
-healthcheckTimeout = 30
+healthcheckTimeout = 300
 
 # Restart policy
 restartPolicyType = "ON_FAILURE"

@@ -48,13 +48,15 @@ RUN . /app/.venv/bin/activate && pip install -e . --no-deps
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+ENV PORT=8000
 
-# Expose the API port
+# Expose the API port (Railway will override with its own PORT)
 EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+# Health check - Railway handles this via healthcheckPath in railway.toml
+# This Docker healthcheck is for local development
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python -c "import os; import urllib.request; urllib.request.urlopen(f'http://localhost:{os.getenv(\"PORT\", 8000)}/health')" || exit 1
 
-# Run the FastAPI server
-CMD ["uvicorn", "samvaad.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the FastAPI server - use shell form for variable expansion
+CMD uvicorn samvaad.api.main:app --host 0.0.0.0 --port $PORT
