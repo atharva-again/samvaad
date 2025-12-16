@@ -4,63 +4,79 @@ This module encapsulates the common ingestion logic used by test.py and main.py.
 """
 
 import os
-from samvaad.pipeline.ingestion.chunking import parse_file, chunk_text, find_new_chunks, update_chunk_file_db
-from samvaad.pipeline.ingestion.embedding import embed_chunks_with_dedup
-from samvaad.pipeline.vectorstore.vectorstore import add_embeddings
-from samvaad.pipeline.ingestion.preprocessing import preprocess_file
+import time
+
+from samvaad.pipeline.ingestion.chunking import (
+    chunk_text,
+    parse_file,
+)
+from samvaad.pipeline.ingestion.embedding import generate_embeddings
+from samvaad.db.service import DBService
 from samvaad.utils.hashing import generate_file_id
-from samvaad.utils.filehash_db import add_file
 
 
-def ingest_file_pipeline(filename, content_type, contents):
+def ingest_file_pipeline(filename, content_type, contents, user_id: str = None):
     """
     Process a file: parse, chunk, embed, and store in the database.
-    
+
     Args:
         filename (str): Name of the file.
         content_type (str): MIME type of the file.
         contents (bytes): Raw file contents.
-    
+
     Returns:
         dict: Result containing processing details and any errors.
     """
-    return ingest_file_pipeline_with_progress(filename, content_type, contents)
+    return ingest_file_pipeline_with_progress(filename, content_type, contents, user_id=user_id)
 
 
-def ingest_file_pipeline_with_progress(filename, content_type, contents, progress_callback=None):
+def ingest_file_pipeline_with_progress(
+    filename, content_type, contents, progress_callback=None, user_id: str = None
+):
     """
     Process a file: parse, chunk, embed, and store in the database with progress reporting.
-    
+
     Args:
         filename (str): Name of the file.
         content_type (str): MIME type of the file.
         contents (bytes): Raw file contents.
         progress_callback (callable): Optional callback for progress updates.
-    
+
     Returns:
         dict: Result containing processing details and any errors.
     """
+
     def progress(step: str, current: int = None, total: int = None):
         if progress_callback:
             progress_callback(step, current, total)
-    
-    # Generate file ID
-    progress("Generating file ID...")
-    file_id = generate_file_id(contents)
-    
-    # Preprocessing: check for duplicates
+
+    # Generate file ID / Hash
     progress("Checking for duplicates...")
-    if preprocess_file(contents, filename):
+    content_hash = generate_file_id(contents)
+    
+    # 1. Check if content exists globally
+    if DBService.check_content_exists(content_hash):
+        print(f"Content hash {content_hash} exists globally. Linking to user {user_id}.")
+        result = DBService.link_existing_content(user_id, filename, content_hash)
+        
+        progress("File linked successfully!", 100, 100)
         return {
+            "file_id": result.get("file_id"), # Critical for Frontend
             "filename": filename,
             "content_type": content_type,
             "size_bytes": len(contents),
             "num_chunks": 0,
             "new_chunks_embedded": 0,
             "chunk_preview": [],
-            "error": "File already processed",
+            "error": None,
+            "status": "linked"
         }
-    
+
+    # 2. Check if user already has this specific file (Wait, logic in UI handles this, but backend safety ok)
+    # The global check above handles the 'content' check. 
+    # If user uploads same content with diff name -> linked.
+    # If user uploads same content same name -> linked (and duplication in UI sources list? Allowed).
+
     # Parse the file
     progress("Parsing file...")
     text, error = parse_file(filename, content_type, contents)
@@ -74,74 +90,94 @@ def ingest_file_pipeline_with_progress(filename, content_type, contents, progres
             "chunk_preview": [],
             "error": error,
         }
+
+    from samvaad.utils.hashing import generate_chunk_id
     
     # Chunk the text
     progress("Chunking text...")
     chunks = chunk_text(text)
     
-    # Find new chunks after deduplication
-    progress("Finding new chunks...")
-    new_chunks = find_new_chunks(chunks, file_id)
-    
-    if not new_chunks:
-        return {
+    if not chunks:
+         return {
             "filename": filename,
             "content_type": content_type,
             "size_bytes": len(contents),
-            "num_chunks": len(chunks),
+            "num_chunks": 0,
             "new_chunks_embedded": 0,
-            "chunk_preview": chunks[:3],
-            "error": "No new chunks to process",
+            "chunk_preview": [],
+            "error": "No text extracted",
         }
-    
-    # Extract chunk texts for embedding
-    chunks_to_embed = [chunk for chunk, chunk_id in new_chunks]
-    
-    # Embed chunks with deduplication
-    progress("Embedding chunks...", 0, len(chunks_to_embed))
-    embeddings, embed_indices = embed_chunks_with_dedup(chunks_to_embed, filename=filename)
-    
-    # Update progress during embedding if we have many chunks
-    if len(chunks_to_embed) > 10:
-        # Simulate progress updates during embedding
-        step = max(1, len(chunks_to_embed) // 5)
-        for i in range(0, len(chunks_to_embed), step):
-            progress("Embedding chunks...", min(i + step, len(chunks_to_embed)), len(chunks_to_embed))
 
-    # Ensure we mark embedding as complete
-    progress("Embedding chunks...", len(chunks_to_embed), len(chunks_to_embed))
+    # Smart Deduplication Logic
+    progress("Checking chunk duplicates...")
     
-    if not embeddings:
-        return {
-            "filename": filename,
-            "content_type": content_type,
-            "size_bytes": len(contents),
-            "num_chunks": len(chunks),
-            "new_chunks_embedded": 0,
-            "chunk_preview": chunks[:3],
-            "error": "No new embeddings",
-        }
+    # 1. Calculate hashes for all chunks
+    chunk_hashes = [generate_chunk_id(c) for c in chunks]
     
-    # Store embeddings in ChromaDB (store only basename in metadata)
-    progress("Storing embeddings...")
-    new_chunks_to_store = [chunks_to_embed[i] for i in embed_indices]
-    new_metadatas = [{"filename": os.path.basename(filename), "chunk_id": chunk_id, "file_id": file_id} for chunk, chunk_id in new_chunks]
-    add_embeddings(new_chunks_to_store, embeddings, new_metadatas, filename=os.path.basename(filename))
+    # 2. Check which exist in DB
+    existing_hashes = DBService.get_existing_chunk_hashes(chunk_hashes)
     
-    # Update file metadata (store only basename, not full path)
-    progress("Updating metadata...")
-    add_file(file_id, os.path.basename(filename))
+    # 3. Identify chunks that need embedding
+    chunks_to_embed = [] # List of text
+    chunks_to_embed_indices = [] # Indices to map back
     
-    # Update chunk-file mapping
-    progress("Finalizing...")
-    update_chunk_file_db(chunks, file_id)
+    for i, h in enumerate(chunk_hashes):
+        if h not in existing_hashes:
+            chunks_to_embed.append(chunks[i])
+            chunks_to_embed_indices.append(i)
+            
+    num_new = len(chunks_to_embed)
+    num_skipped = len(chunks) - num_new
+    print(f"Deduplication: {num_skipped} existing, {num_new} new chunks.")
+
+    # 4. Embed only new chunks
+    new_embeddings_map = {} # Hash -> Vector
     
+    if num_new > 0:
+        progress(f"Embedding {num_new} new chunks...", 0, num_new)
+        embed_start_time = time.time()
+        
+        new_embeddings = generate_embeddings(chunks_to_embed)
+        
+        # Map back to hashes
+        for idx_in_subset, embedding in enumerate(new_embeddings):
+            original_idx = chunks_to_embed_indices[idx_in_subset]
+            h = chunk_hashes[original_idx]
+            new_embeddings_map[h] = embedding
+            
+        embed_end_time = time.time()
+        print(
+            f"Finished embedding {num_new} chunks in {embed_end_time - embed_start_time:.2f} sec."
+        )
+    else:
+        progress("All chunks reused!", 100, 100)
+
+    # Store in Postgres
+    progress("Storing in database...")
+    store_start_time = time.time()
+    
+    # Use the SMART method
+    result = DBService.add_smart_dedup_content(
+        filename=os.path.basename(filename),
+        content=contents,
+        chunks=chunks,
+        chunk_hashes=chunk_hashes,
+        new_embeddings_map=new_embeddings_map,
+        user_id=user_id
+    )
+    
+    store_end_time = time.time()
+    print(
+        f"Finished storing in Postgres in {store_end_time - store_start_time:.2f} sec."
+    )
+
     return {
+        "file_id": result.get("file_id"), # Critical for Frontend
         "filename": filename,
         "content_type": content_type,
         "size_bytes": len(contents),
         "num_chunks": len(chunks),
-        "new_chunks_embedded": len(embeddings),
+        "new_chunks_embedded": num_new,
         "chunk_preview": chunks[:3],
         "error": None,
     }

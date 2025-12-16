@@ -1,0 +1,51 @@
+# Git
+.git
+.gitignore
+.github
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv
+venv
+.pytest_cache
+*.egg-info
+.coverage
+htmlcov
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Frontend (not needed in backend Docker image)
+frontend/
+node_modules/
+
+# Development files
+*.md
+!README.md
+PLANS/
+tests/
+data/
+*.log
+*.sqlite3
+
+# Environment
+.env
+.env.local
+*.env
+
+# Build artifacts
+dist/
+build/
+*.egg
+
+# Misc
+.DS_Store
+Thumbs.db
+uv.lock

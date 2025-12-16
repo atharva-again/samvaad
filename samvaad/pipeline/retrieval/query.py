@@ -1,36 +1,31 @@
-import pathlib
-from typing import List, Dict, Any
-from rank_bm25 import BM25Okapi
-import numpy as np
-from samvaad.pipeline.vectorstore.vectorstore import get_collection
-from samvaad.utils.gpu_utils import get_device
-from samvaad.pipeline.generation.generation import generate_answer_with_gemini
-from samvaad.utils.onnx_embedding import ONNXEmbeddingModel
-from samvaad.utils.onnx_cross_encoder import get_onnx_cross_encoder
+import os
+from typing import Any, Dict, List
 
-# Global model instances to avoid reloading
-_embedding_model = None
-_cross_encoder = None
+from samvaad.db.service import DBService
 
-def get_embedding_model():
-    """Get or create the ONNX embedding model instance."""
-    global _embedding_model
-    if _embedding_model is None:
-        _embedding_model = ONNXEmbeddingModel()
-    return _embedding_model
+import voyageai
+from tenacity import retry, stop_after_attempt, wait_random_exponential
 
-def get_cross_encoder(model_file: str = "onnx/model.onnx"):
-    """Get or create the ONNX cross-encoder model instance."""
-    global _cross_encoder
-    if _cross_encoder is None:
-        _cross_encoder = get_onnx_cross_encoder(model_file=model_file)
-    return _cross_encoder
+from samvaad.pipeline.generation.generation import generate_answer_with_groq
+
+
+@retry(wait=wait_random_exponential(multiplier=1, max=60), stop=stop_after_attempt(6))
+def _embed_query_with_backoff(query: str) -> List[float]:
+    vo = voyageai.Client(api_key=os.getenv("VOYAGE_API_KEY"))
+    return vo.embed(
+        texts=[query], model="voyage-3.5-lite", input_type="query"
+    ).embeddings[0]
+
+
+@retry(wait=wait_random_exponential(multiplier=1, max=60), stop=stop_after_attempt(6))
+def _rerank_with_backoff(query_text: str, documents: List[str]):
+    vo = voyageai.Client(api_key=os.getenv("VOYAGE_API_KEY"))
+    return vo.rerank(query=query_text, documents=documents, model="rerank-2.5")
+
 
 def embed_query(query: str) -> List[float]:
-    """Embed a query using the same ONNX model as documents."""
-    model = get_embedding_model()
-    embedding = model.encode_query(query)
-    return embedding.tolist()
+    """Embed a query using Voyage AI."""
+    return _embed_query_with_backoff(query)
 
 
 def summarize_chunk(text: str, max_chars: int = 200) -> str:
@@ -45,130 +40,75 @@ def summarize_chunk(text: str, max_chars: int = 200) -> str:
     if len(text) <= max_chars:
         return text
     # Try to break at the last sentence-ending punctuation before max_chars
-    cutoff = text.rfind('.', 0, max_chars)
+    cutoff = text.rfind(".", 0, max_chars)
     if cutoff == -1:
-        cutoff = text.rfind('\n', 0, max_chars)
+        cutoff = text.rfind("\n", 0, max_chars)
     if cutoff == -1:
         # fallback hard cut but avoid cutting mid-word
         snippet = text[:max_chars]
-        if ' ' in snippet:
-            snippet = snippet.rsplit(' ', 1)[0]
-        return snippet + '...'
-    return text[: cutoff + 1].strip() + '...'
+        if " " in snippet:
+            snippet = snippet.rsplit(" ", 1)[0]
+        return snippet + "..."
+    return text[: cutoff + 1].strip() + "..."
 
-def reciprocal_rank_fusion(ranks1: List[Dict], ranks2: List[Dict], k: int = 60) -> List[Dict]:
-    """Fuse two ranked lists using Reciprocal Rank Fusion."""
-    scores = {}
-    
-    # Process first list
-    for rank, item in enumerate(ranks1, 1):
-        key = item.get('chunk_id', item.get('content', str(item)))
-        scores[key] = scores.get(key, 0) + 1.0 / (k + rank)
-    
-    # Process second list
-    for rank, item in enumerate(ranks2, 1):
-        key = item.get('chunk_id', item.get('content', str(item)))
-        scores[key] = scores.get(key, 0) + 1.0 / (k + rank)
-    
-    # Sort by fused score
-    fused = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-    
-    # Return top items with their scores
-    result = []
-    for key, score in fused:
-        # Find the original item (prefer from ranks1, then ranks2)
-        item = next((item for item in ranks1 if item.get('chunk_id', item.get('content', str(item))) == key), None)
-        if not item:
-            item = next((item for item in ranks2 if item.get('chunk_id', item.get('content', str(item))) == key), None)
-        if item:
-            item_copy = item.copy()
-            item_copy['rrf_score'] = float(score)  # Convert numpy to float
-            result.append(item_copy)
-    
-    return result
 
-def search_similar_chunks(query_embedding: List[float], query_text: str, top_k: int = 3) -> List[Dict]:
-    """Search for similar chunks using hybrid BM25 + Embedding + Cross-Encoder reranking."""
-    
-    # Get ChromaDB collection (lazy initialization)
-    collection = get_collection()
-    
-    # Get all chunks from ChromaDB (for BM25 indexing)
-    all_results = collection.get(include=['documents', 'metadatas'])
-    all_chunks = []
-    for doc, meta in zip(all_results['documents'], all_results['metadatas']):
-        all_chunks.append({
-            "content": doc,
-            "metadata": meta,
-            "filename": meta.get("filename", "unknown") if meta else "unknown",
-            "chunk_id": meta.get("chunk_id") if meta else None
-        })
-    
-    if not all_chunks:
+def search_similar_chunks(
+    query_emb: List[float], query_text: str, top_k: int = 3, user_id: str = None
+) -> List[Dict]:
+    """Search for similar chunks using dense semantic search with reranking."""
+
+    # Fetch top 6 from Postgres for reranking
+    fetch_k = 6
+    try:
+        results = DBService.search_similar_chunks(query_emb, top_k=fetch_k, user_id=user_id)
+    except Exception as e:
+        print(f"Warning: DB search failed: {e}")
         return []
-    
-    # BM25 Search
-    corpus = [chunk['content'] for chunk in all_chunks]
-    tokenized_corpus = [doc.split() for doc in corpus]
-    bm25 = BM25Okapi(tokenized_corpus)
-    tokenized_query = query_text.split()
-    bm25_scores = bm25.get_scores(tokenized_query)
-    
-    # Get top 5 from BM25
-    bm25_top_indices = np.argsort(bm25_scores)[::-1][:5]
-    bm25_chunks = []
-    for idx in bm25_top_indices:
-        chunk = all_chunks[idx].copy()
-        chunk['bm25_score'] = float(bm25_scores[idx])  # Convert numpy to float
-        chunk['distance'] = 1.0  # High distance for BM25 chunks (low similarity)
-        bm25_chunks.append(chunk)
-    
-    # Embedding Search - top 5
-    embedding_results = collection.query(
-        query_embeddings=[query_embedding],
-        n_results=5,
-        include=['documents', 'metadatas', 'distances']
-    )
-    
-    embedding_chunks = []
-    for doc, meta, dist in zip(
-        embedding_results["documents"][0],
-        embedding_results["metadatas"][0],
-        embedding_results["distances"][0]
-    ):
-        chunk = {
-            "content": doc,
-            "metadata": meta,
-            "distance": float(dist),  # Convert numpy to float
-            "filename": meta.get("filename", "unknown") if meta else "unknown",
-            "chunk_id": meta.get("chunk_id") if meta else None
-        }
-        embedding_chunks.append(chunk)
-    
-    # Fuse using RRF
-    fused_chunks = reciprocal_rank_fusion(bm25_chunks, embedding_chunks)
-    
-    # Take top 10 from fused for reranking (or all if less)
-    candidates = fused_chunks[:10]
-    
-    if not candidates:
-        return []
-    
-    # Cross-Encoder Reranking
-    cross_encoder = get_cross_encoder(model_file="onnx/model_qint8_avx512.onnx")  # Use quantized model
-    query_chunk_pairs = [[query_text, chunk['content']] for chunk in candidates]
-    rerank_scores = cross_encoder.predict(query_chunk_pairs)
-    
-    # Add scores and sort
-    for i, chunk in enumerate(candidates):
-        chunk['rerank_score'] = float(rerank_scores[i])  # Convert numpy to float
-    
-    reranked = sorted(candidates, key=lambda x: x['rerank_score'], reverse=True)
-    
-    # Return top 3
-    return reranked[:top_k]
 
-def rag_query_pipeline(query_text: str, top_k: int = 3, model: str = "gemini-2.5-flash", conversation_manager=None) -> Dict[str, Any]:
+    chunks = []
+    for res in results:
+        chunks.append(
+            {
+                "content": res["document"],
+                "metadata": res["metadata"],
+                "distance": res["distance"],
+                "filename": res["metadata"].get("filename", "unknown"),
+                "chunk_id": res["id"],
+            }
+        )
+
+    if not chunks:
+        return []
+
+    # Rerank using Voyage AI rerank-2.5
+    documents = [chunk["content"] for chunk in chunks]
+    rerank_results = _rerank_with_backoff(query_text, documents)
+
+    # Sort chunks by rerank score descending
+    reranked_chunks = []
+    for rerank_res in rerank_results.results:
+        idx = rerank_res.index
+        score = rerank_res.relevance_score
+        chunk = chunks[idx].copy()
+        chunk["rerank_score"] = score
+        reranked_chunks.append(chunk)
+
+    # Sort by rerank score descending and take top_k
+    reranked_chunks.sort(key=lambda x: x["rerank_score"], reverse=True)
+    return reranked_chunks[:top_k]
+
+
+def rag_query_pipeline(
+    query_text: str,
+    top_k: int = 3,
+    model: str = "llama-3.3-70b-versatile",
+    conversation_manager=None, # Deprecated in favor of direct history_str
+    history_str: str = "",
+    generate_answer: bool = True,
+    user_id: str = None,
+    persona: str = "default",
+    strict_mode: bool = False,
+) -> Dict[str, Any]:
     """
     Complete RAG pipeline: embed query, search, generate answer.
 
@@ -184,70 +124,95 @@ def rag_query_pipeline(query_text: str, top_k: int = 3, model: str = "gemini-2.5
     """
     try:
         # Step 1: Embed the query
-        query_embedding = embed_query(query_text)
+        query_emb = embed_query(query_text)
 
-        # Step 2: Search for similar chunks (hybrid retrieval with reranking)
-        chunks = search_similar_chunks(query_embedding, query_text, top_k)
+        # Step 2: Search for similar chunks (dense semantic search)
+        chunks = search_similar_chunks(query_emb, query_text, top_k, user_id=user_id)
 
         if not chunks:
-            return {
-                'query': query_text,
-                'answer': "No relevant documents found in the knowledge base.",
-                'sources': [],
-                'success': False,
-                'retrieval_count': 0,
-                'rag_prompt': ""
+            if strict_mode and generate_answer:
+                return {
+                    "query": query_text,
+                    "answer": "I don't know the answer as there is no relevant information in your documents.",
+                    "sources": [],
+                    "success": True, # It's a successful "I don't know"
+                    "retrieval_count": 0,
+                }
+            elif not generate_answer: # Fetching context only
+                 return {
+                    "query": query_text,
+                    "answer": "No relevant documents found.",
+                    "sources": [],
+                    "success": False,
+                    "retrieval_count": 0,
+                }
+            # Else fall through to regular logic (which might just return empty sources or handle it in generation)
+            # Actually, existing logic returns early. Let's keep it but modify for strict.
+            # If strict mode and no chunks, we MUST fail early or say I don't know.
+            
+        if not chunks and not strict_mode: 
+             return {
+                "query": query_text,
+                "answer": "No relevant documents found in the knowledge base.",
+                "sources": [],
+                "success": False,
+                "retrieval_count": 0,
             }
 
-        # Step 3: Generate answer with an LLM
-    
-        conversation_context = ""
-        if conversation_manager:
-            conversation_context = conversation_manager.get_context()
-        
-        answer = generate_answer_with_gemini(query_text, chunks, model, conversation_context)
-        from samvaad.utils.clean_markdown import strip_markdown
-        answer = strip_markdown(answer)
+        # Step 3: Build context and generate answer if needed
+        context_parts = []
+        for i, chunk in enumerate(chunks, 1):
+            context_parts.append(
+                f"Document {i} ({chunk['filename']}):\n{chunk.get('content', '')}\n"
+            )
+        context = "\n".join(context_parts)
+
+        if generate_answer:
+            conversation_context = history_str
+            if conversation_manager and not conversation_context:
+                conversation_context = conversation_manager.get_context()
+
+            answer = generate_answer_with_groq(
+                query_text, 
+                chunks, 
+                model, 
+                conversation_context,
+                persona=persona,
+                strict_mode=strict_mode
+            )
+        else:
+            answer = context
 
         # Step 4: Format sources for display
         sources = []
         for chunk in chunks:
-            sources.append({
-                'filename': chunk['filename'],
-                'content_preview': chunk.get('content', ''),
-                'distance': float(chunk.get('distance')) if chunk.get('distance') is not None else None,  # Ensure float
-                'rerank_score': float(chunk.get('rerank_score')) if chunk.get('rerank_score') is not None else None  # Ensure float
-            })
-
-        # Build the RAG prompt for debugging (use full content)
-        context_parts = []
-        for i, chunk in enumerate(chunks, 1):
-            context_parts.append(f"Document {i} ({chunk['filename']}):\n{chunk.get('content', '')}\n")
-        context = "\n".join(context_parts)
-        rag_prompt = f"""Context:
-{context}
-
-Question: {query_text}
-
-Answer:"""
+            sources.append(
+                {
+                    "filename": chunk["filename"],
+                    "content_preview": chunk.get("content", ""),
+                    "rerank_score": float(chunk.get("rerank_score"))
+                    if chunk.get("rerank_score") is not None
+                    else None,  # Ensure float
+                }
+            )
 
         return {
-            'query': query_text,
-            'answer': answer,
-            'sources': sources,
-            'success': True,
-            'retrieval_count': len(chunks),
-            'rag_prompt': rag_prompt
+            "query": query_text,
+            "answer": answer,
+            "sources": sources,
+            "success": True,
+            "retrieval_count": len(chunks),
         }
 
     except Exception as e:
-        print(f"❌ Error in RAG pipeline: {str(e)}")
-        return {
-            'query': query_text,
-            'answer': f"Error processing query: {str(e)}",
-            'sources': [],
-            'success': False,
-            'retrieval_count': 0,
-            'rag_prompt': ""
-        }
+        import traceback
 
+        print(f"❌ Error in RAG pipeline: {str(e)}")
+        print(traceback.format_exc())
+        return {
+            "query": query_text,
+            "answer": f"Error processing query: {str(e)}",
+            "sources": [],
+            "success": False,
+            "retrieval_count": 0,
+        }
