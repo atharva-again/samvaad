@@ -62,13 +62,15 @@ More content in section 2. This section discusses different aspects of the syste
 
 
 @pytest.fixture
-def mock_gemini_api():
-    """Mock Gemini API for testing."""
-    with patch('google.genai.Client') as mock_client:
+def mock_groq_api():
+    """Mock Groq API for testing."""
+    with patch('groq.Groq') as mock_client:
         mock_instance = MagicMock()
         mock_response = MagicMock()
-        mock_response.text = "This is a test response from Gemini."
-        mock_instance.models.generate_content.return_value = mock_response
+        mock_choice = MagicMock()
+        mock_choice.message.content = "This is a test response from Groq."
+        mock_response.choices = [mock_choice]
+        mock_instance.chat.completions.create.return_value = mock_response
         mock_client.return_value = mock_instance
         yield mock_instance
 
@@ -79,7 +81,7 @@ def mock_env_vars():
     original_env = os.environ.copy()
     
     # Set test environment variables
-    os.environ['GEMINI_API_KEY'] = 'test_api_key'
+    os.environ['GROQ_API_KEY'] = 'test_api_key'
     os.environ['HF_TOKEN'] = 'test_hf_token'
     
     yield

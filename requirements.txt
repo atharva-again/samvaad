@@ -1,54 +1,33 @@
-# System utilities
-psutil==6.1.0
-
 # Core web framework
-fastapi==0.116.1
-uvicorn==0.35.0
-python-multipart==0.0.20
+fastapi>=0.116.1
+uvicorn>=0.35.0
+python-multipart>=0.0.20
 
-# Vector database
-chromadb==1.0.20
+# Database
+psycopg2-binary
+sqlalchemy>=2.0.45
+pgvector
+supabase>=2.0.0
+pyjwt>=2.8.0
 
-# Embeddings and LLMs
-openai==1.106.0
-tiktoken==0.11.0
-google-genai==1.36.0
-
-# Document loaders and parsing
+# Document parsing
 docling
-transformers
 
-# Environment variables
-python-dotenv==1.1.1
+# Voice and AI services
+pipecat-ai[deepgram,daily,groq,silero]>=0.0.97
+groq>=0.11.0
+voyageai>=0.3.6
+deepgram-sdk>=4.7.0,<5.0.0
 
-# Additional dependencies for enhanced RAG
-rank-bm25==0.2.2
+# Utilities
+python-dotenv>=1.1.1
+tenacity
+grpcio>=1.60.0
+websockets>=15.0.1
+httpx
 
-# Lightweight ASR (updated to latest available version)
-faster-whisper==1.2.0
-webrtcvad==2.0.10
-
-#For audio processing
-sounddevice==0.5.2
-
-# Text-to-Speech
-kokoro-onnx>=0.4.9
-
-# SpaCy models for text processing in TTS
-spacy
-
-# Lightweight text processing models
-tokenizers
-
-# Testing
-pytest==8.3.3
-pytest-mock==3.14.0
-
-# CLI and UI dependencies
-click==8.0.4
-rich>=13.0.0
-prompt-toolkit>=3.0.0
-
-#hf cli for setting token to excess embedding gemma
-huggingface_hub[cli]==0.36.0
-
+# CLI (optional - not needed in Docker)
+# rich>=13.0.0
+# click>=8.0.4
+# prompt-toolkit>=3.0.0
+# psutil>=6.1.0

@@ -4,22 +4,23 @@
 
 ### Note
 - The software uses **fully open-source models** for all the stages, except final answer generation, for which it uses Gemini. Document parsing, ingestion, querying, automatic speech recognition (ASR), text to speech (TTTS), all are fully on-premise and optimized to be used even on **low-end devices with no GPU.**
-- Voice queries are now fully supported with Kokoro TTS for high-quality speech synthesis in English and Hindi is in preview
+- Real-time voice conversations via WebRTC using Daily and Pipecat framework
+- Cloud-based embeddings with Voyage AI for improved performance
 - Frontend/UI is under development, currently CLI-only
 
 Please see the [issues](https://github.com/atharva-again/samvaad/issues) for ideas or to report bugs.
 
 ### Recent Updates
-- **Moving to ONNXRuntime:** I am trying to move the project and models from PyTorch to ONNXRuntime to increase performance on low-end devices even more. You can check the status [here](https://github.com/atharva-again/samvaad/issues/20).
+- **Cloud Migration:** Migrated to cloud APIs (Voyage AI embeddings, Deepgram STT/TTS, Daily WebRTC) for better performance and scalability.
 - **Interactive CLI:** Improved user interface that can be called using the `samvaad` command
 - **Kokoro TTS:** Neural TTS engine with high-quality speech synthesis
-- **Voice Queries:** Ask questions or query documents in your preferred language (Hindi, English, etc.)
+- **WebRTC Voice:** Real-time voice conversations with ultra-low latency
 
 ---
 
 ## About The Project
 
-**Samvaad** (Sanskrit for "dialogue") is an open-source software that combines Retrieval-Augmented Generation (RAG) capabilities with end-to-end voice capabilities. Users can add their documents, Samvaad will index and store them, and then users can have a text or voice conversation with those documents that delivers accurate, context-aware answers. Built with a modular backend and a modern frontend (in the works), Samvaad makes it easy to learn new topics, get ahead of confusions, and stay learning - all while feeling like a friend.
+**Samvaad** (Sanskrit for "dialogue") is an open-source software that combines Retrieval-Augmented Generation (RAG) capabilities with real-time voice interactions via WebRTC. Users can add their documents, Samvaad will index and store them using cloud embeddings, and then users can have text conversations or WebRTC-based voice calls with those documents that deliver accurate, context-aware answers. Built with a modular backend using cloud APIs, Samvaad makes it easy to learn new topics, get ahead of confusions, and stay learning - all while feeling like a friend.
 
 ---
 
@@ -27,17 +28,10 @@ Please see the [issues](https://github.com/atharva-again/samvaad/issues) for ide
 
 ### Prerequisites
 
-**Python 3.11**: This project is optimized for Python 3.11. Some dependencies (like sounddevice for voice features) provide wheels primarily for this version. Ensure you're using 3.11:
+**Python 3.11**: This project is optimized for Python 3.11. Ensure you're using 3.11:
   ```sh
-  python --version  # Should show Python 3.11.x
-  ```
-
-**PortAudio (for voice features)**: If you plan to use voice queries or TTS playback, install PortAudio, which is required by the `sounddevice` library:
-  - On Ubuntu/Debian: `sudo apt-get install portaudio19-dev`
-  - On macOS: `brew install portaudio`
-  - On Windows: PortAudio is usually included with `sounddevice`, but install it manually if needed.
-  
-  Without PortAudio, voice recording and playback will be skipped with a warning.
+pip install python==3.11
+```
 
 Follow these steps to set up and run Samvaad locally:
 
@@ -132,8 +126,13 @@ Create a `.env` file in the root directory and add your API keys:
 ```sh
 # Copy and edit the following into .env
 GEMINI_API_KEY=your_gemini_api_key_here
+PINECONE_API_KEY=your_pinecone_api_key_here
 ```
 You can get your `Gemini_API_Key` [here](https://aistudio.google.com/api-keys).
+
+For Pinecone setup:
+- Sign up at [pinecone.io](https://pinecone.io) and create a serverless index named "samvaad-documents" with dimension 1024, metric "cosine", cloud "aws", region "us-east-1".
+- Get your API key from the Pinecone console.
 
 **Note:** The system works without API keys but will only show retrieved context without AI-generated answers.
 
@@ -174,7 +173,6 @@ samvaad
 Available commands (slash-prefixed):
 - `/ingest <file>` or `/i <file>` - Process and ingest a file
 - Type queries directly (no prefix) - just type your question and press Enter
-- `/voice` or `/v` - Start voice query mode (supports multiple languages like Hindi, English, Hinglish)
 - `/remove <file>` or `/rm <file>` - Remove a file and its embeddings
 - `/help` or `/h` - Show help
 - `/quit`, `/exit`, or `/q` - Exit the CLI
@@ -187,14 +185,15 @@ Available commands (slash-prefixed):
 samvaad/
 ├── samvaad/          # Python code for the RAG pipeline and API
 │   ├── pipeline/     # Core RAG components
-│   │   ├── generation/    # LLM integration and TTS engine (Kokoro)
+│   │   ├── generation/    # LLM integration
 │   │   ├── ingestion/     # Document processing and chunking
-│   │   ├── retrieval/     # Query processing and voice recognition
+│   │   ├── retrieval/     # Query processing
 │   │   ├── vectorstore/   # Vector database operations
 │   │   └── deletion/      # Document removal utilities
-│   ├── utils/        # Utilities (hashing, DB, GPU detection)
+│   ├── utils/        # Utilities (hashing, DB)
 │   ├── interfaces/   # CLI and API interfaces
-│   │   ├── api.py    # FastAPI server with TTS API
+│   │   ├── api.py    # FastAPI server
+│   │   ├── voice_agent.py # Pipecat voice agent (future)
 │   │   └── cli.py    # Interactive CLI for testing and usage
 ├── data/             # Raw documents and audio responses
 │   ├── documents/    # Source documents for knowledge base
@@ -207,15 +206,15 @@ samvaad/
 **Directory Overview:**
 - **samvaad/**: Modular RAG pipeline, dual TTS engines, API, and CLI (Python)
 - **samvaad/pipeline/generation/**: LLM integration (Gemini) and TTS engine (Kokoro)
-- **samvaad/pipeline/retrieval/**: Query processing, voice recognition, and markdown handling
+- **samvaad/pipeline/retrieval/**: Query processing and markdown handling
 - **data/documents/**: Your source documents (PDFs, Office docs, text, images, etc.)
 - **data/audio_responses/**: Automatically saved TTS audio files with engine-specific names
 - **tests/**: Comprehensive test suite for reliability
 
 ## Features
 
-- **Kokoro TTS:** Neural TTS engine with high-quality speech synthesis
-- **Multilingual Voice Support:** Voice queries and responses in Hindi, English, and auto-detection for other languages
+- **WebRTC Voice:** Real-time voice conversations with ultra-low latency using Daily and Pipecat
+- **Cloud Embeddings:** High-quality embeddings from Voyage AI for improved retrieval
 - **Retrieval-Augmented Generation (RAG):** Combines LLMs with your own documents for accurate, context-aware answers.
 - **Complete Query Pipeline:** Ask natural language questions and get AI-powered answers with source citations.
 - **GPU Acceleration:** Automatic GPU detection and usage for faster embeddings, parsing, and inference (when available).

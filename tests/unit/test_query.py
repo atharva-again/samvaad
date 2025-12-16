@@ -6,7 +6,7 @@ import numpy as np
 from samvaad.pipeline.retrieval.query import (
     embed_query,
     search_similar_chunks,
-    generate_answer_with_gemini,
+    generate_answer_with_groq,
     rag_query_pipeline,
     summarize_chunk,
     reciprocal_rank_fusion,
@@ -96,7 +96,7 @@ class TestQuery:
 
     @patch('samvaad.pipeline.retrieval.query.embed_query')
     @patch('samvaad.pipeline.retrieval.query.search_similar_chunks')
-    @patch('samvaad.pipeline.retrieval.query.generate_answer_with_gemini')
+    @patch('samvaad.pipeline.retrieval.query.generate_answer_with_groq')
     def test_rag_query_pipeline_success_full_flow(self, mock_generate_answer, mock_search_chunks, mock_embed_query):
         """Test a successful full RAG pipeline run."""
         mock_embed_query.return_value = [0.1] * 768
@@ -124,7 +124,7 @@ class TestQuery:
         # Verify sub-functions were called
         mock_embed_query.assert_called_once_with(query_text)
         mock_search_chunks.assert_called_once()  # Details of call checked implicitly by mock_generate_answer
-        mock_generate_answer.assert_called_once_with(query_text, mock_chunks, "gemini-2.5-flash", "")
+        mock_generate_answer.assert_called_once_with(query_text, mock_chunks, "llama-3.3-70b-versatile", "")
 
         # Verify RAG prompt structure
         assert 'Context:' in result['rag_prompt']
@@ -233,16 +233,16 @@ class TestQueryErrorHandling:
             # If it raises, that's also acceptable behavior
             pass
     
-    @patch('samvaad.pipeline.retrieval.query.generate_answer_with_gemini')
+    @patch('samvaad.pipeline.retrieval.query.generate_answer_with_groq')
     @patch('samvaad.pipeline.retrieval.query.search_similar_chunks')
     @patch('samvaad.pipeline.retrieval.query.embed_query')
-    def test_rag_query_pipeline_gemini_failure(self, mock_embed, mock_search, mock_gemini):
-        """Test RAG pipeline when Gemini fails."""
+    def test_rag_query_pipeline_groq_failure(self, mock_embed, mock_search, mock_groq):
+        """Test RAG pipeline when Groq fails."""
         mock_embed.return_value = [0.1] * 768
         mock_search.return_value = [
             {'text': 'chunk1', 'metadata': {'source': 'test.txt'}}
         ]
-        mock_gemini.side_effect = Exception("Gemini API error")
+        mock_groq.side_effect = Exception("Groq API error")
         
         # Pipeline may handle error gracefully or raise
         try:
@@ -250,7 +250,7 @@ class TestQueryErrorHandling:
             # If handled gracefully, should have error indicator
             assert 'error' in result or not result.get('success', True)
         except Exception as e:
-            assert "Gemini" in str(e) or "API" in str(e)
+            assert "Groq" in str(e) or "API" in str(e)
     
     @patch('samvaad.pipeline.retrieval.query.search_similar_chunks')
     @patch('samvaad.pipeline.retrieval.query.embed_query')
