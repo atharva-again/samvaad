@@ -1,8 +1,3 @@
-# CPU-only PyTorch (MUST be installed first to avoid CUDA deps)
---extra-index-url https://download.pytorch.org/whl/cpu
-torch
-torchvision
-
 # Core web framework
 fastapi>=0.116.1
 uvicorn>=0.35.0
@@ -15,8 +10,8 @@ pgvector
 supabase>=2.0.0
 pyjwt>=2.8.0
 
-# Document parsing (requires torch, but we use CPU version above)
-docling
+# Document parsing (hosted API - no torch/CUDA needed)
+llama-cloud-services
 
 # Voice and AI services
 pipecat-ai[deepgram,daily,groq,silero]>=0.0.97
