@@ -115,7 +115,8 @@ export function MobileVoiceControls({
                 side="top"
                 align="end"
                 sideOffset={sideOffset}
-                className="w-[90vw] max-w-[320px] bg-black/95 backdrop-blur-xl border-white/10 text-white p-5 rounded-2xl"
+                alignOffset={-12}
+                className="w-[90vw] max-w-[320px] bg-black/95 backdrop-blur-xl border-white/10 text-white p-5 rounded-2xl shadow-2xl shadow-black/50"
             >
                 <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-1">
                     <div className="flex items-center justify-between border-b border-white/10 pb-3">

@@ -104,6 +104,27 @@ export function SourcesPanel() {
         init();
     }, [isSourcesPanelOpen, hasFetchedSources, refreshSources]);
 
+    // Back button handling for mobile
+    React.useEffect(() => {
+        if (!isMobile || !isSourcesPanelOpen) return;
+
+        // Push a state so back button doesn't leave the page
+        window.history.pushState({ panel: "sources" }, "");
+
+        const handlePopState = () => {
+            // If user presses back, close the panel
+            setSourcesPanelOpen(false);
+        };
+
+        window.addEventListener("popstate", handlePopState);
+
+        return () => {
+            window.removeEventListener("popstate", handlePopState);
+            // If we're closing manually (not via popstate), we might want to revert the history?
+            // Checking this reliably is tricky, so we'll leave the history entry for now safety.
+        };
+    }, [isSourcesPanelOpen, isMobile, setSourcesPanelOpen]);
+
 
     const handleUploadClick = () => {
         fileInputRef.current?.click();
@@ -334,7 +355,7 @@ export function SourcesPanel() {
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: 20 }}
-                        className="fixed right-0 top-[60px] md:top-1/2 md:-translate-y-1/2 z-30"
+                        className="fixed right-0 top-1/2 -translate-y-1/2 z-30"
                     >
                         <div
                             onClick={toggleSourcesPanel}
@@ -350,11 +371,11 @@ export function SourcesPanel() {
             <AnimatePresence mode="wait">
                 {isSourcesPanelOpen && (
                     <motion.div
-                        initial={{ width: 0, opacity: 0 }}
-                        animate={{ width: isMobile ? "100%" : 420, opacity: 1 }}
-                        exit={{ width: 0, opacity: 0 }}
-                        transition={{ type: "spring", stiffness: 350, damping: 35, mass: 0.8 }}
-                        className="fixed inset-0 top-[60px] md:static h-[calc(100vh-60px)] md:h-full border-l border-white/5 bg-[#050505]/95 md:bg-[#050505]/80 backdrop-blur-3xl flex flex-col shrink-0 overflow-hidden relative z-40 shadow-2xl"
+                        initial={isMobile ? { x: "100%", opacity: 1 } : { width: 0, opacity: 0 }}
+                        animate={isMobile ? { x: 0, opacity: 1 } : { width: 420, opacity: 1 }}
+                        exit={isMobile ? { x: "100%", opacity: 1 } : { width: 0, opacity: 0 }}
+                        transition={{ type: "spring", stiffness: 300, damping: 30, mass: 0.8 }}
+                        className="fixed top-[60px] left-0 bottom-0 w-full md:static md:h-full border-l border-white/5 bg-[#050505] md:bg-[#050505]/80 backdrop-blur-3xl flex flex-col shrink-0 overflow-hidden z-50 md:z-40 shadow-2xl"
                     >
                         <div
                             className={`w-full md:w-[420px] flex flex-col h-full bg-gradient-to-b from-white/[0.02] to-transparent transition-colors duration-300`}
@@ -513,7 +534,7 @@ export function SourcesPanel() {
                             </div>
 
                             {/* Footer */}
-                            <div className="px-6 pt-6 pb-11 relative">
+                            <div className={`px-6 pt-6 relative ${isMobile ? 'pb-[150px] pb-safe' : 'pb-11'}`}>
                                 {/* Gradient Fade */}
                                 <div className="absolute top-0 left-0 right-0 h-12 -mt-12 bg-gradient-to-t from-[#050505] to-transparent pointer-events-none" />
 

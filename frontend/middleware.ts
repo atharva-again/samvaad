@@ -34,17 +34,17 @@ export async function middleware(request: NextRequest) {
     } = await supabase.auth.getUser()
 
     // Protect all routes except public ones
-    if (
-        !user &&
-        !request.nextUrl.pathname.startsWith('/login') &&
-        !request.nextUrl.pathname.startsWith('/auth') &&
-        !request.nextUrl.pathname.startsWith('/_next') &&
-        !request.nextUrl.pathname.includes('.') // Static files
-    ) {
-        const url = request.nextUrl.clone()
-        url.pathname = '/login'
-        return NextResponse.redirect(url)
-    }
+    // if (
+    //     !user &&
+    //     !request.nextUrl.pathname.startsWith('/login') &&
+    //     !request.nextUrl.pathname.startsWith('/auth') &&
+    //     !request.nextUrl.pathname.startsWith('/_next') &&
+    //     !request.nextUrl.pathname.includes('.') // Static files
+    // ) {
+    //     const url = request.nextUrl.clone()
+    //     url.pathname = '/login'
+    //     return NextResponse.redirect(url)
+    // }
 
     // Redirect to home if logged in and trying to access login
     if (user && request.nextUrl.pathname.startsWith('/login')) {
