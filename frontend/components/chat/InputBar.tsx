@@ -687,7 +687,7 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
   // 1. Main / Initial Bar / Mode Switcher
   if (!hasInteracted) {
     return (
-      <div className="w-full max-w-3xl mx-auto p-4 mb-6 md:mb-10 mt-auto">
+      <div className="w-full max-w-3xl mx-auto p-4 mb-20 md:mb-10 mt-auto pb-safe">
         <div className="flex items-center justify-center gap-3">
           <input
             type="file"
@@ -729,7 +729,7 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
   // 2. Text Mode Bar
   if (mode === "text") {
     return (
-      <div className="w-full max-w-3xl mx-auto p-4 mb-6 md:mb-10 mt-auto">
+      <div className="w-full max-w-3xl mx-auto p-4 mb-20 md:mb-10 mt-auto pb-safe">
         <div className="flex items-end gap-3">
           {/* Attachment Button - Hidden on mobile */}
           <div className="hidden md:block">
@@ -750,7 +750,7 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
 
           <form
             onSubmit={handleSubmit}
-            className="flex-1 bg-surface/80 backdrop-blur-md border border-white/10 rounded-[32px] shadow-lg transition-all focus-within:ring-1 focus-within:ring-white/20 flex flex-row items-end min-h-[3.5rem] md:min-h-[4rem] overflow-hidden"
+            className="flex-1 bg-surface/80 backdrop-blur-md border border-white/10 rounded-[32px] shadow-lg transition-all focus-within:ring-1 focus-within:ring-white/20 flex flex-row items-end min-h-[3.5rem] md:min-h-[4rem] overflow-hidden md:overflow-visible"
           >
             <textarea
               ref={(el) => {
@@ -867,7 +867,7 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
 
   // 3. Voice Mode Bar (Listening & Answering)
   return (
-    <div className="w-full max-w-3xl mx-auto p-4 mb-6 md:mb-10 mt-auto">
+    <div className="w-full max-w-3xl mx-auto p-4 mb-20 md:mb-10 mt-auto pb-safe">
       <div className="flex items-center gap-3">
         {/* Attachment Button - Hidden on mobile */}
         <div className="hidden md:block">
