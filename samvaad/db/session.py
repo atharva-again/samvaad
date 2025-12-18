@@ -11,12 +11,12 @@ from dotenv import load_dotenv
 # Load environment variables from .env
 load_dotenv()
 
-# Fetch variables
-USER = os.getenv("user")
-PASSWORD = os.getenv("password")
-HOST = os.getenv("host")
-PORT = os.getenv("port")
-DBNAME = os.getenv("dbname")
+# Fetch variables with defaults to prevent URL construction errors if env is missing
+USER = os.getenv("user", "postgres")
+PASSWORD = os.getenv("password", "")
+HOST = os.getenv("host", "localhost")
+PORT = os.getenv("port", "5432")
+DBNAME = os.getenv("dbname", "postgres")
 
 # Construct the SQLAlchemy connection string
 DATABASE_URL = f"postgresql+psycopg2://{USER}:{PASSWORD}@{HOST}:{PORT}/{DBNAME}?sslmode=require"

@@ -25,3 +25,10 @@ tenacity
 grpcio>=1.60.0
 websockets>=15.0.1
 httpx
+
+# Testing
+pytest>=8.3.3
+pytest-mock>=3.15.1
+pytest-asyncio>=0.23.0
+pytest-cov>=4.1.0
+

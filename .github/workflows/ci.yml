@@ -53,6 +53,14 @@ jobs:
           DEEPGRAM_API_KEY: "test-key"
           DAILY_API_KEY: "test-key"
           SUPABASE_URL: "https://test.supabase.co"
+          # Mock DB vars for URL parsing
+          user: "mock_user"
+          password: "mock_password"
+          host: "localhost"
+          port: "5432"
+          dbname: "mock_db"
+          # Pytest-asyncio settings
+          PYTEST_ASYNCIO_MODE: "auto"
           PYTHONWARNINGS: default
         run: |
           source venv/bin/activate
