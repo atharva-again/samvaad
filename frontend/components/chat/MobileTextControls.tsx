@@ -9,6 +9,7 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from "@/components/ui/popover";
+import { PERSONAS, capitalize } from "@/lib/constants";
 
 interface MobileTextControlsProps {
     className?: string;
@@ -27,8 +28,6 @@ export function MobileTextControls({
     persona,
     setPersona,
 }: MobileTextControlsProps) {
-    const personas = ["default", "tutor", "coder", "friend", "expert"];
-
     return (
         <Popover>
             <PopoverTrigger asChild>
@@ -90,7 +89,7 @@ export function MobileTextControls({
                             <User className="w-3.5 h-3.5" /> Persona
                         </label>
                         <div className="flex flex-wrap gap-2">
-                            {personas.map((p) => (
+                            {PERSONAS.map((p) => (
                                 <button
                                     key={p}
                                     onClick={() => setPersona(p)}
@@ -101,7 +100,7 @@ export function MobileTextControls({
                                             : "bg-transparent text-text-secondary border-white/10 hover:border-white/20"
                                     )}
                                 >
-                                    {p.charAt(0).toUpperCase() + p.slice(1)}
+                                    {capitalize(p)}
                                 </button>
                             ))}
                         </div>

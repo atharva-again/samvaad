@@ -1,55 +1,12 @@
-import os
+"""
+RAG query pipeline module.
+"""
+
 from typing import Any, Dict, List
 
 from samvaad.db.service import DBService
-
-import voyageai
-from tenacity import retry, stop_after_attempt, wait_random_exponential
-
+from samvaad.core.voyage import embed_query, rerank_documents
 from samvaad.pipeline.generation.generation import generate_answer_with_groq
-
-
-@retry(wait=wait_random_exponential(multiplier=1, max=60), stop=stop_after_attempt(6))
-def _embed_query_with_backoff(query: str) -> List[float]:
-    vo = voyageai.Client(api_key=os.getenv("VOYAGE_API_KEY"))
-    return vo.embed(
-        texts=[query], model="voyage-3.5-lite", input_type="query"
-    ).embeddings[0]
-
-
-@retry(wait=wait_random_exponential(multiplier=1, max=60), stop=stop_after_attempt(6))
-def _rerank_with_backoff(query_text: str, documents: List[str]):
-    vo = voyageai.Client(api_key=os.getenv("VOYAGE_API_KEY"))
-    return vo.rerank(query=query_text, documents=documents, model="rerank-2.5")
-
-
-def embed_query(query: str) -> List[float]:
-    """Embed a query using Voyage AI."""
-    return _embed_query_with_backoff(query)
-
-
-def summarize_chunk(text: str, max_chars: int = 200) -> str:
-    """Return a short summary/truncation of `text` up to `max_chars` characters.
-
-    This is a lightweight helper to reduce token usage by trimming to a
-    sentence boundary when possible, otherwise returning a hard truncation.
-    """
-    if not text:
-        return ""
-    text = text.strip()
-    if len(text) <= max_chars:
-        return text
-    # Try to break at the last sentence-ending punctuation before max_chars
-    cutoff = text.rfind(".", 0, max_chars)
-    if cutoff == -1:
-        cutoff = text.rfind("\n", 0, max_chars)
-    if cutoff == -1:
-        # fallback hard cut but avoid cutting mid-word
-        snippet = text[:max_chars]
-        if " " in snippet:
-            snippet = snippet.rsplit(" ", 1)[0]
-        return snippet + "..."
-    return text[: cutoff + 1].strip() + "..."
 
 
 def search_similar_chunks(
@@ -82,7 +39,7 @@ def search_similar_chunks(
 
     # Rerank using Voyage AI rerank-2.5
     documents = [chunk["content"] for chunk in chunks]
-    rerank_results = _rerank_with_backoff(query_text, documents)
+    rerank_results = rerank_documents(query_text, documents)
 
     # Sort chunks by rerank score descending
     reranked_chunks = []
@@ -102,7 +59,6 @@ def rag_query_pipeline(
     query_text: str,
     top_k: int = 3,
     model: str = "llama-3.3-70b-versatile",
-    conversation_manager=None, # Deprecated in favor of direct history_str
     history_str: str = "",
     generate_answer: bool = True,
     user_id: str = None,
@@ -119,7 +75,6 @@ def rag_query_pipeline(
             'sources': List[Dict],
             'success': bool,
             'retrieval_count': int,
-            'rag_prompt': str
         }
     """
     try:
@@ -135,23 +90,20 @@ def rag_query_pipeline(
                     "query": query_text,
                     "answer": "I don't know the answer as there is no relevant information in your documents.",
                     "sources": [],
-                    "success": True, # It's a successful "I don't know"
+                    "success": True,
                     "retrieval_count": 0,
                 }
-            elif not generate_answer: # Fetching context only
-                 return {
+            elif not generate_answer:
+                return {
                     "query": query_text,
                     "answer": "No relevant documents found.",
                     "sources": [],
                     "success": False,
                     "retrieval_count": 0,
                 }
-            # Else fall through to regular logic (which might just return empty sources or handle it in generation)
-            # Actually, existing logic returns early. Let's keep it but modify for strict.
-            # If strict mode and no chunks, we MUST fail early or say I don't know.
             
         if not chunks and not strict_mode: 
-             return {
+            return {
                 "query": query_text,
                 "answer": "No relevant documents found in the knowledge base.",
                 "sources": [],
@@ -168,15 +120,11 @@ def rag_query_pipeline(
         context = "\n".join(context_parts)
 
         if generate_answer:
-            conversation_context = history_str
-            if conversation_manager and not conversation_context:
-                conversation_context = conversation_manager.get_context()
-
             answer = generate_answer_with_groq(
                 query_text, 
                 chunks, 
                 model, 
-                conversation_context,
+                history_str,
                 persona=persona,
                 strict_mode=strict_mode
             )
@@ -192,7 +140,7 @@ def rag_query_pipeline(
                     "content_preview": chunk.get("content", ""),
                     "rerank_score": float(chunk.get("rerank_score"))
                     if chunk.get("rerank_score") is not None
-                    else None,  # Ensure float
+                    else None,
                 }
             )
 

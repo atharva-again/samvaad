@@ -9,7 +9,7 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from "@/components/ui/popover";
-import { usePipecatClientMediaDevices } from "@pipecat-ai/client-react";
+import { useAudioDevices } from "@/hooks/useAudioDevices";
 
 interface VoiceSettingsProps {
     className?: string;
@@ -24,57 +24,16 @@ export function VoiceSettings({
     outputVolume = 1.0,
     onVolumeChange,
 }: VoiceSettingsProps) {
-    // Use SDK hook for device management (mic selection)
     const {
-        availableCams: _availableCams,
+        mics,
+        speakers,
         selectedMic,
+        selectedSpeakerId,
         updateMic,
-    } = usePipecatClientMediaDevices();
+        setSelectedSpeakerId,
+    } = useAudioDevices();
 
-    // Local state for speaker (SDK doesn't manage this directly)
-    const [speakers, setSpeakers] = useState<MediaDeviceInfo[]>([]);
-    const [mics, setMics] = useState<MediaDeviceInfo[]>([]);
-    const [selectedSpeakerId, setSelectedSpeakerId] = useState<string>("");
     const [localVolume, setLocalVolume] = useState(outputVolume);
-
-    // Enumerate devices - labels are only available after permission is granted
-    React.useEffect(() => {
-        const enumerateDevices = async () => {
-            try {
-                // First, try to get permission (this may already be granted)
-                // This ensures we get device labels
-                try {
-                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    // Stop the stream immediately - we just needed permission
-                    stream.getTracks().forEach(track => track.stop());
-                } catch (permErr) {
-                    console.debug("Mic permission not yet granted:", permErr);
-                }
-
-                const devices = await navigator.mediaDevices.enumerateDevices();
-
-                // Filter by kind
-                const audioInputs = devices.filter(d => d.kind === "audioinput");
-                const audioOutputs = devices.filter(d => d.kind === "audiooutput");
-
-                console.debug("[VoiceSettings] Audio inputs:", audioInputs);
-                console.debug("[VoiceSettings] Audio outputs:", audioOutputs);
-
-                setMics(audioInputs);
-                setSpeakers(audioOutputs);
-
-                if (!selectedSpeakerId && audioOutputs.length > 0) {
-                    setSelectedSpeakerId(audioOutputs[0].deviceId);
-                }
-            } catch (err) {
-                console.error("Failed to enumerate devices:", err);
-            }
-        };
-
-        enumerateDevices();
-        navigator.mediaDevices.addEventListener("devicechange", enumerateDevices);
-        return () => navigator.mediaDevices.removeEventListener("devicechange", enumerateDevices);
-    }, []);
 
     const handleMicChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         updateMic(e.target.value);
@@ -82,7 +41,6 @@ export function VoiceSettings({
 
     const handleSpeakerChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         setSelectedSpeakerId(e.target.value);
-        // Note: Speaker selection typically requires setSinkId on audio elements
     };
 
     const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -119,7 +77,7 @@ export function VoiceSettings({
                         Voice Settings
                     </div>
 
-                    {/* Microphone Selector - Using local enumeration for better labels */}
+                    {/* Microphone Selector */}
                     <div className="space-y-2">
                         <label className="text-xs font-medium text-text-secondary flex items-center gap-2">
                             <Mic className="w-3.5 h-3.5" /> Microphone
@@ -179,16 +137,12 @@ export function VoiceSettings({
 
                         {/* Custom Slider Container */}
                         <div className="relative group">
-                            {/* Track Background */}
                             <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-                                {/* Filled Track */}
                                 <div
                                     className="h-full bg-gradient-to-r from-accent/80 to-accent rounded-full transition-all duration-150"
                                     style={{ width: `${getVolumePercentage()}%` }}
                                 />
                             </div>
-
-                            {/* Invisible Range Input */}
                             <input
                                 type="range"
                                 min="0"
@@ -198,8 +152,6 @@ export function VoiceSettings({
                                 onChange={handleVolumeChange}
                                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                             />
-
-                            {/* Thumb Indicator */}
                             <div
                                 className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-lg border-2 border-accent pointer-events-none transition-all duration-150 group-hover:scale-110"
                                 style={{ left: `calc(${getVolumePercentage()}% - 8px)` }}

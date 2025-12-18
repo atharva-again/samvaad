@@ -9,8 +9,6 @@ import tempfile
 import time
 from typing import Tuple, List
 
-from samvaad.utils.filehash_db import chunk_exists, add_chunk
-from samvaad.utils.hashing import generate_file_id, generate_chunk_id
 
 # Singleton parser instance
 _parser = None
@@ -32,46 +30,6 @@ def get_llama_parser():
             verbose=False,
         )
     return _parser
-
-
-def find_new_chunks(chunks, file_id):
-    """
-    For each chunk, check deduplication.
-    Returns a list of (chunk, chunk_id) that are new for this file.
-    """
-    new_chunks = []
-    seen_in_batch = set()  # Track IDs already seen in this batch
-
-    for chunk in chunks:
-        chunk_id = generate_chunk_id(chunk)
-
-        # Skip if we've already seen this chunk_id in this batch
-        if chunk_id in seen_in_batch:
-            continue
-
-        # Check if chunk exists globally (not per file)
-        if not chunk_exists(chunk_id):
-            new_chunks.append((chunk, chunk_id))
-            seen_in_batch.add(chunk_id)
-    return new_chunks
-
-
-def update_chunk_file_db(new_chunks, file_id):
-    """
-    Add new (chunk_id, file_id) pairs to the DB.
-    Returns a list of (chunk, chunk_id) that were newly added.
-    """
-
-    for chunk in new_chunks:
-        # chunk may be a string or a tuple (chunk, chunk_id)
-        if isinstance(chunk, tuple):
-            chunk_id = chunk[1]
-        else:
-            chunk_id = generate_chunk_id(chunk)
-        # Only add the (chunk_id, file_id) mapping if it doesn't exist
-        if not chunk_exists(chunk_id, file_id):
-            add_chunk(chunk_id, file_id)
-    return new_chunks
 
 
 def parse_file(filename: str, content_type: str, contents: bytes) -> Tuple[str, str]:

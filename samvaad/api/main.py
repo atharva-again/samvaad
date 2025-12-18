@@ -51,31 +51,7 @@ app.add_middleware(
 # Simple in-memory session storage (use database for production)
 sessions: Dict[str, Dict] = {}
 
-def synthesize_audio(text: str, model="aura-2-asteria-en"):
-    """
-    Synthesize text to audio using Deepgram API via HTTP request.
-    Returns: (audio_bytes, sample_rate)
-    """
-    api_key = os.getenv("DEEPGRAM_API_KEY")
-    if not api_key:
-        raise RuntimeError("DEEPGRAM_API_KEY environment variable not set")
 
-    url = f"https://api.deepgram.com/v1/speak?model={model}&encoding=mp3"
-    headers = {
-        "Authorization": f"Token {api_key}",
-        "Content-Type": "application/json"
-    }
-    payload = {"text": text}
-
-    try:
-        with httpx.Client(timeout=30.0) as client:
-            response = client.post(url, headers=headers, json=payload)
-            response.raise_for_status()
-            return response.content, 24000  # MP3 default sample rate
-    except httpx.HTTPStatusError as e:
-        raise RuntimeError(f"Deepgram API error: {e.response.text}") from e
-    except Exception as e:
-        raise RuntimeError(f"Failed to synthesize audio: {e}") from e
 
 
 @app.get("/health")
