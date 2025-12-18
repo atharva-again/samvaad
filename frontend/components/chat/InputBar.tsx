@@ -522,6 +522,31 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
     currentUserTranscriptRef.current = "";
   });
 
+  // Send user message when they stop speaking - ensures transcript is captured
+  // even during interruptions (where BotLlmStarted might fire before UserTranscript)
+  useRTVIClientEvent(RTVIEvent.UserStoppedSpeaking, () => {
+    console.debug("[InputBar] RTVIEvent.UserStoppedSpeaking");
+
+    // Helper to send message if transcript exists
+    const trySendMessage = (attempt: number) => {
+      const fullUserMessage = currentUserTranscriptRef.current.trim();
+      if (fullUserMessage) {
+        console.debug(`[InputBar] Sending user message (attempt ${attempt}):`, fullUserMessage);
+        onVoiceMessage?.({ role: "user", content: fullUserMessage });
+        currentUserTranscriptRef.current = "";
+      } else if (attempt < 3) {
+        // Retry - transcript events may still be arriving
+        console.debug(`[InputBar] No transcript yet, retry ${attempt + 1}/3`);
+        setTimeout(() => trySendMessage(attempt + 1), 200);
+      } else {
+        console.debug("[InputBar] No transcript captured after retries");
+      }
+    };
+
+    // Initial delay to let transcript events arrive
+    setTimeout(() => trySendMessage(1), 200);
+  });
+
   useRTVIClientEvent(RTVIEvent.BotStartedSpeaking, (evt?: any) => {
     console.debug("[InputBar] RTVIEvent.BotStartedSpeaking", evt);
     setVoiceState("answering");
@@ -557,18 +582,12 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
     }
   });
 
-  // When bot starts its LLM processing, send the aggregated user message
-  // This ensures we capture all user speech segments before displaying
+  // When bot starts its LLM processing, update UI state
+  // Note: User message is sent via UserStoppedSpeaking handler to avoid race conditions
   useRTVIClientEvent(RTVIEvent.BotLlmStarted, () => {
     console.debug("[InputBar] RTVIEvent.BotLlmStarted");
     // Set processing state - shows in UI while LLM/RAG is running
     setVoiceState("processing");
-    const fullUserMessage = currentUserTranscriptRef.current.trim();
-    if (fullUserMessage) {
-      console.debug("[InputBar] Sending aggregated user message:", fullUserMessage);
-      onVoiceMessage?.({ role: "user", content: fullUserMessage });
-      currentUserTranscriptRef.current = "";
-    }
   });
 
   // Capture bot's spoken output - aggregate sentences and send when bot stops speaking

@@ -139,15 +139,27 @@ async def start_voice_agent(
     )
 
     # 2. Define Tools (The RAG Integration)
+    RAG_TIMEOUT_SECONDS = 10.0
+
     async def fetch_context(function_call_params):
         query = function_call_params.arguments["query"]
         print(f"RAG Tool Triggered: {query} (user_id: {user_id})")
 
-        # Run blocking RAG code in a separate thread to avoid freezing audio
-        result = await asyncio.to_thread(
-            rag_query_pipeline, query, generate_answer=False, user_id=user_id
-        )
-        rag_text = result.get("answer", "No information found.")
+        try:
+            # Run blocking RAG code with timeout to avoid hanging
+            result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    rag_query_pipeline, query, generate_answer=False, user_id=user_id
+                ),
+                timeout=RAG_TIMEOUT_SECONDS
+            )
+            rag_text = result.get("answer", "No information found.")
+        except asyncio.TimeoutError:
+            print(f"[voice_agent] RAG timeout after {RAG_TIMEOUT_SECONDS}s for query: {query}")
+            rag_text = "Search timed out. Please try your question again."
+        except Exception as e:
+            print(f"[voice_agent] RAG error: {e}")
+            rag_text = "An error occurred while searching. Please try again."
 
         await function_call_params.result_callback(rag_text)
 
@@ -157,7 +169,7 @@ async def start_voice_agent(
             "type": "function",
             "function": {
                 "name": "fetch_context",
-                "description": "Search the knowledge base for information on ANY topic the user asks about. Use this tool whenever the user asks about specific facts, concepts, terms, constants, theories, or topics you are not certain about. Always try this first for factual questions.",
+                "description": "Search the knowledge base for information. IMPORTANT: Call this tool ONLY ONCE per user question. If the search does not return relevant information, answer based on your own knowledge instead of searching again. Do NOT retry with a modified query.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -175,7 +187,7 @@ async def start_voice_agent(
     # 3. Define Services (using EU endpoint for better connectivity from India)
     stt = DeepgramSTTService(
         api_key=deepgram_api_key,
-        url="wss://api.eu.deepgram.com/v1/listen"
+        base_url="wss://api.eu.deepgram.com/v1/listen"
     )
     md_filter = MarkdownTextFilter()
     
@@ -243,7 +255,7 @@ You are in a real-time voice conversation. Follow these rules:
             base_url="wss://api.eu.deepgram.com",  # EU endpoint for better connectivity
             voice="aura-2-asteria-en",
             encoding="linear16",
-            text_filter=md_filter,
+            text_filters=[md_filter],
         )
         processors.append(tts)
     
@@ -253,8 +265,31 @@ You are in a real-time voice conversation. Follow these rules:
     pipeline = Pipeline(processors)
 
     # 6. RTVI Event Handler - Send bot-ready when client is ready
+    # Track if transport has joined to avoid timing race
+    transport_joined = False
+    
+    @transport.event_handler("on_joined")
+    async def on_joined(transport_obj, participant):
+        nonlocal transport_joined
+        transport_joined = True
+        # Safe access - participant may be dict without 'id' or a different type
+        if isinstance(participant, dict):
+            participant_id = participant.get('id', participant.get('session_id', 'unknown'))
+        else:
+            participant_id = str(participant)
+        print(f"[voice_agent] Successfully joined room as: {participant_id}")
+    
     @rtvi.event_handler("on_client_ready")
     async def on_client_ready(rtvi_processor):
+        nonlocal transport_joined
+        # Wait for transport to join before sending bot-ready
+        if not transport_joined:
+            print("[voice_agent] Client ready but transport not joined yet, waiting...")
+            # Wait up to 5 seconds for transport to join
+            for _ in range(50):
+                await asyncio.sleep(0.1)
+                if transport_joined:
+                    break
         print("[voice_agent] Client ready - sending bot-ready")
         await rtvi_processor.set_bot_ready()
 
@@ -291,11 +326,6 @@ You are in a real-time voice conversation. Follow these rules:
         print(f"[voice_agent] Transport error: {error}")
         # Trigger cleanup to allow frontend timeout to detect failure
         await do_cleanup("transport_error")
-
-    # 10. Confirm successful join
-    @transport.event_handler("on_joined")
-    async def on_joined(transport_obj, participant):
-        print(f"[voice_agent] Successfully joined room as: {participant['id']}")
 
     # 9. Run the pipeline with 60-second idle timeout
     pipeline_params = PipelineParams(
