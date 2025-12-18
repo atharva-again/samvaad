@@ -1,25 +1,49 @@
 "use client";
 
-import React, { useState } from "react";
-import { Header } from "@/components/shared/Header";
+import React, { useState, useEffect, useRef } from "react";
 import { MessageList } from "@/components/chat/MessageList";
 import { InputBar } from "@/components/chat/InputBar";
 import { SourcesPanel } from "@/components/chat/SourcesPanel";
 import { WelcomeScreen } from "@/components/chat/WelcomeScreen";
+import { IconNavRail } from "@/components/navigation/IconNavRail";
 
 import { ChatMessage, sendMessage } from "@/lib/api";
 import { toast } from "sonner";
 
 import { useUIStore } from "@/lib/stores/useUIStore";
+import { useConversationStore } from "@/lib/stores/useConversationStore";
 
 export default function Home() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Swipe Detection
-  const touchStart = React.useRef<number | null>(null);
-  const touchEnd = React.useRef<number | null>(null);
+  // Conversation store
+  const {
+    currentConversationId,
+    messages: storeMessages,
+    addMessage,
+    setCurrentConversation,
+    addConversationOptimistic,
+    updateConversationId,
+    loadConversation,
+  } = useConversationStore();
+
+  // Convert store messages to ChatMessage format
+  const messages: ChatMessage[] = storeMessages.map((m) => ({
+    role: m.role,
+    content: m.content,
+  }));
+
+  // Swipe Detection for Sources Panel
+  const touchStart = useRef<number | null>(null);
+  const touchEnd = useRef<number | null>(null);
   const { setSourcesPanelOpen } = useUIStore();
+
+  // Load conversation if ID is persisted
+  useEffect(() => {
+    if (currentConversationId && storeMessages.length === 0) {
+      loadConversation(currentConversationId);
+    }
+  }, [currentConversationId, storeMessages.length, loadConversation]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     touchEnd.current = null;
@@ -33,46 +57,75 @@ export default function Home() {
   const handleTouchEnd = () => {
     if (!touchStart.current || !touchEnd.current) return;
     const distance = touchStart.current - touchEnd.current;
-    const isLeftSwipe = distance > 50; // Threshold
-    // const isRightSwipe = distance < -50; 
+    const isLeftSwipe = distance > 50;
 
-    // Swipe Left -> Open Panel (since panel is on the right)
     if (isLeftSwipe) {
       setSourcesPanelOpen(true);
     }
-    // We could implement Swipe Right to close, but Sources Panel likely handles its own overlay click/close
   };
 
-  const abortControllerRef = React.useRef<AbortController | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  const handleSendMessage = async (text: string, persona: string = "default", strictMode: boolean = false) => {
-    // Optimistic update
-    const userMsg: ChatMessage = { role: "user", content: text };
-    setMessages((prev) => [...prev, userMsg]);
+  const handleSendMessage = async (
+    text: string,
+    persona: string = "default",
+    strictMode: boolean = false
+  ) => {
+    // Generate temp ID for new conversation if this is the first message
+    const isNewConversation = !currentConversationId;
+    const tempConversationId = isNewConversation ? `temp-${Date.now()}` : null;
+
+    // If new conversation, immediately add to sidebar (optimistic update)
+    if (isNewConversation && tempConversationId) {
+      addConversationOptimistic(tempConversationId, text.slice(0, 50) + (text.length > 50 ? '...' : ''));
+      setCurrentConversation(tempConversationId);
+    }
+
+    // Optimistic update - add user message to store
+    const tempId = `temp-msg-${Date.now()}`;
+    addMessage({
+      id: tempId,
+      role: "user",
+      content: text,
+      createdAt: new Date().toISOString(),
+    });
     setIsLoading(true);
 
-    // Create new abort controller
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
 
     try {
-      const data = await sendMessage(text, "default", abortController.signal, persona, strictMode);
+      const data = await sendMessage(
+        text,
+        currentConversationId,
+        abortController.signal,
+        persona,
+        strictMode
+      );
+
       if (data.success) {
-        const botMsg: ChatMessage = {
+        // Update temp conversation ID with real ID from backend
+        if (data.conversation_id && tempConversationId) {
+          updateConversationId(tempConversationId, data.conversation_id);
+        }
+
+        // Add assistant response
+        addMessage({
+          id: `resp-${Date.now()}`,
           role: "assistant",
           content: data.response,
-        };
-        setMessages((prev) => [...prev, botMsg]);
+          sources: data.sources,
+          createdAt: new Date().toISOString(),
+        });
       } else {
-        toast.error("Failed to get response");
+        toast.error(data.error || "Failed to get response");
       }
     } catch (error: any) {
       if (error.name === "CanceledError" || error.code === "ERR_CANCELED") {
         console.debug("Request canceled via stop button");
-        // Optional: Add a "Stopped" message or just leave as is
       } else {
-        console.error(error);
-        toast.error("Connection error");
+        console.error("Error calling text-mode:", error);
+        toast.error("Something went wrong. Please try again.");
       }
     } finally {
       setIsLoading(false);
@@ -84,41 +137,40 @@ export default function Home() {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       setIsLoading(false);
-      toast.info("Generation stopped");
     }
   };
 
-  // Handle voice transcripts from voice mode
-  const handleVoiceMessage = (message: ChatMessage) => {
-    setMessages((prev) => [...prev, message]);
+  const handleVoiceMessage = (message: { role: "user" | "assistant" | "system"; content: string }) => {
+    addMessage({
+      id: `voice-${Date.now()}`,
+      role: message.role,
+      content: message.content,
+      createdAt: new Date().toISOString(),
+    });
   };
 
-  /* State for editing a previous message */
   const [editMessageContent, setEditMessageContent] = useState<string | null>(null);
 
   const handleEditMessage = (index: number, content: string) => {
-    // 1. Remove all messages from this index onwards (including the one being edited)
-    //    so the user can "rewrite" history from that point.
-    setMessages((prev) => prev.slice(0, index));
-
-    // 2. Populate the input bar with the content so they can edit it
     setEditMessageContent(content);
   };
 
   return (
     <main
-      className="flex flex-col h-screen bg-void text-text-primary overflow-hidden relative"
+      className="flex h-screen bg-[#0a0a0a] text-white overflow-hidden"
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      <Header />
+      {/* Grok-style Icon Navigation Rail - Always visible on desktop */}
+      <div className="hidden md:flex h-full shrink-0">
+        <IconNavRail />
+      </div>
 
-      {/* Content Container (Below Header) */}
-      <div className="flex-1 flex overflow-hidden pt-16">
-
-        {/* Main Chat Area */}
-        <div className="flex-1 flex flex-col relative min-w-0 transition-all duration-300">
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col relative min-w-0 overflow-hidden">
+        {/* Chat Area */}
+        <div className="flex-1 flex flex-col overflow-hidden">
           {messages.length === 0 ? (
             <WelcomeScreen />
           ) : (
@@ -137,10 +189,10 @@ export default function Home() {
             onVoiceMessage={handleVoiceMessage}
           />
         </div>
-
-        {/* Sources Panel (Side Column) */}
-        <SourcesPanel />
       </div>
+
+      {/* Sources Panel - Untouched */}
+      <SourcesPanel />
     </main>
   );
 }

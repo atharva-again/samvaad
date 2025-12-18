@@ -24,11 +24,12 @@ from samvaad.db.models import User
 
 load_dotenv()
 
-from samvaad.api.routers import files
+from samvaad.api.routers import files, conversations
 
 app = FastAPI(title="Samvaad RAG Backend")
 
 app.include_router(files.router)
+app.include_router(conversations.router)
 
 # CORS configuration - support both local and production frontend URLs
 frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
@@ -48,7 +49,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Simple in-memory session storage (use database for production)
+# Legacy in-memory session storage (kept for backward compatibility)
+# New conversations use database via ConversationService
 sessions: Dict[str, Dict] = {}
 
 
@@ -62,7 +64,8 @@ def health_check():
 
 class TextMessageRequest(BaseModel):
     message: str
-    session_id: str = "default"
+    conversation_id: Optional[str] = None  # UUID string, if None creates new conversation
+    session_id: str = "default"  # Legacy, kept for backward compatibility
     persona: str = "default"
     strict_mode: bool = False
 
@@ -111,50 +114,106 @@ async def text_mode(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Handle text messages in conversation mode with session management.
+    Handle text messages with persistent conversation storage.
+    Uses database for conversations and context manager for token budgeting.
     """
-    session_id = request.session_id
-    # Use user-specific session keys if needed, for now simplistic
-    if session_id not in sessions:
-        sessions[session_id] = {"messages": []}
-
-    # Add user message to session
-    sessions[session_id]["messages"].append(
-        {"role": "user", "content": request.message}
-    )
-
-    # Build history string from previous messages (excluding current user msg)
-    history_msgs = sessions[session_id]["messages"][:-1]
-    history_str = ""
-    for msg in history_msgs:
-        role = "User" if msg["role"] == "user" else "Assistant"
-        history_str += f"{role}: {msg['content']}\n"
-
+    from uuid import UUID as UUIDType
+    from samvaad.db.conversation_service import ConversationService
+    from samvaad.core.context_manager import ConversationContextManager
+    
+    conversation_service = ConversationService()
+    context_manager = ConversationContextManager()
+    
     try:
-        # Process through RAG pipeline, passing user_id for filtering
+        # 1. Get or create conversation
+        conversation_id = None
+        if request.conversation_id:
+            try:
+                conversation_id = UUIDType(request.conversation_id)
+            except ValueError:
+                pass
+        
+        conversation = conversation_service.get_or_create_conversation(
+            conversation_id=conversation_id,
+            user_id=current_user.id,
+            mode="text"
+        )
+        
+        # 2. Load existing messages
+        db_messages = conversation_service.get_messages(conversation.id)
+        messages = [{"role": m.role, "content": m.content} for m in db_messages]
+        
+        # 3. Process through RAG pipeline
         result = rag_query_pipeline(
             request.message, 
             model="llama-3.3-70b-versatile",
             user_id=current_user.id,
             persona=request.persona,
             strict_mode=request.strict_mode,
-            history_str=history_str
+            generate_answer=False  # Just get chunks first
         )
-        response = result.get("answer", "No response generated.")
-
-        # Add assistant response to session
-        sessions[session_id]["messages"].append(
-            {"role": "assistant", "content": response}
+        
+        # 4. Build context using context manager
+        context = context_manager.build_context(
+            messages=messages,
+            rag_chunks=result.get("chunks", []),
+            conversation_summary=conversation.summary
         )
-
+        
+        # 5. Generate answer with optimized context
+        from samvaad.pipeline.generation.generation import generate_answer_with_groq
+        response = generate_answer_with_groq(
+            query=request.message,
+            chunks=result.get("chunks", []),
+            conversation_context=context["recent_history"],
+            persona=request.persona,
+            strict_mode=request.strict_mode
+        )
+        
+        # 6. Save messages to database
+        user_tokens = context_manager.count_tokens(request.message)
+        assistant_tokens = context_manager.count_tokens(response)
+        
+        conversation_service.add_message(
+            conversation_id=conversation.id,
+            role="user",
+            content=request.message,
+            token_count=user_tokens
+        )
+        conversation_service.add_message(
+            conversation_id=conversation.id,
+            role="assistant",
+            content=response,
+            sources=result.get("sources", []),
+            token_count=assistant_tokens
+        )
+        
+        # 7. Check if summarization is needed (async, don't block response)
+        total_messages = len(messages) + 2  # +2 for new user and assistant messages
+        if context_manager.should_trigger_summarization([{"role": "user", "content": ""} for _ in range(total_messages)]):
+            # TODO: Queue async summarization task
+            pass
+        
+        # 8. Auto-generate title for new conversations
+        if len(messages) == 0:
+            # First message - use truncated user message as title
+            title = request.message[:50] + ("..." if len(request.message) > 50 else "")
+            conversation_service.update_conversation(
+                conversation_id=conversation.id,
+                user_id=current_user.id,
+                title=title
+            )
+        
         return {
-            "session_id": session_id,
+            "conversation_id": str(conversation.id),
             "response": response,
             "success": True,
             "sources": result.get("sources", []),
         }
     except Exception as e:
         print(f"Error in text mode: {e}")
+        import traceback
+        traceback.print_exc()
         return {"error": str(e), "success": False}
 
 

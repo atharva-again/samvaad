@@ -30,10 +30,11 @@ export interface ChatMessage {
 }
 
 export interface ChatResponse {
-  session_id: string;
+  conversation_id: string;
   response: string;
   success: boolean;
   sources?: any[];
+  error?: string;
 }
 
 export interface VoiceModeResponse {
@@ -47,17 +48,17 @@ export interface VoiceModeResponse {
 
 export const sendMessage = async (
   message: string,
-  sessionId: string = "default",
+  conversationId: string | null = null,
   signal?: AbortSignal,
   persona: string = "default",
   strictMode: boolean = false,
 ) => {
   const response = await api.post<ChatResponse>("/text-mode", {
     message,
-    session_id: sessionId,
+    conversation_id: conversationId,
     persona,
     strict_mode: strictMode,
-  }, { signal }); // Pass signal here
+  }, { signal });
   return response.data;
 };
 
