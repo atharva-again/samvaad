@@ -43,10 +43,7 @@ export interface VoiceModeResponse {
   success: boolean;
 }
 
-export const startConversation = async (sessionId: string = "default") => {
-  // No-op for now, sessions are managed in text-mode
-  return { session_id: sessionId };
-};
+
 
 export const sendMessage = async (
   message: string,

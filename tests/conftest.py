@@ -91,50 +91,6 @@ def mock_env_vars():
     os.environ.update(original_env)
 
 
-@pytest.fixture
-def mock_sounddevice():
-    """Mock sounddevice module for audio testing."""
-    from tests.utils.mock_audio import create_mock_sounddevice
-    
-    mock_sd, mock_stream = create_mock_sounddevice()
-    
-    with patch.dict('sys.modules', {'sounddevice': mock_sd}):
-        yield mock_sd, mock_stream
-
-
-@pytest.fixture
-def mock_webrtcvad():
-    """Mock webrtcvad module for VAD testing."""
-    from tests.utils.mock_audio import create_mock_webrtcvad
-    
-    mock_vad_module, mock_vad_instance = create_mock_webrtcvad()
-    
-    with patch.dict('sys.modules', {'webrtcvad': mock_vad_module}):
-        yield mock_vad_module, mock_vad_instance
-
-
-@pytest.fixture
-def mock_whisper_model():
-    """Mock Whisper model for transcription testing."""
-    mock_model = MagicMock()
-    mock_segment = MagicMock()
-    mock_segment.text = "This is a transcribed text."
-    mock_model.transcribe.return_value = ([mock_segment], None)
-    return mock_model
-
-
-@pytest.fixture
-def mock_tts_engine():
-    """Mock TTS engine for audio generation testing."""
-    from tests.utils.mock_audio import generate_fake_audio_data
-    
-    mock_engine = MagicMock()
-    pcm_data = generate_fake_audio_data(duration_seconds=1.0)
-    mock_engine.synthesize.return_value = (pcm_data, 16000, 2, 1)
-    mock_engine.available_languages.return_value = ['en', 'es', 'fr']
-    return mock_engine
-
-
 @pytest.fixture(autouse=True)
 def setup_test_environment():
     """Set up test environment before each test."""

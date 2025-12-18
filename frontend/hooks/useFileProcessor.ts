@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { useUIStore } from '@/lib/stores/useUIStore';
+import { useUIStore, type SourceItem, type DuplicateItem } from '@/lib/stores/useUIStore';
 import { listFiles, uploadFile, deleteFile } from '@/lib/api';
 import { toast } from 'sonner';
 
@@ -29,12 +29,7 @@ export function useFileProcessor() {
                 id: f.id,
                 name: f.filename,
                 type: f.filename.split('.').pop()?.toUpperCase() || "FILE",
-                size: "Unknown", // API returns bytes but we formatting later? Oh wait, API has size_bytes but store has size string?
-                // The API actually returns size_bytes, let's format it or keep it unknown until update?
-                // The current code ignores size_bytes from listFiles? 
-                // Let's use it if available.
-                // But listFiles mapper was: size: "Unknown".
-                // Let's stick to minimal change to avoid breaking diff.
+                size: f.size_bytes ? (f.size_bytes / 1024).toFixed(1) + " KB" : "Unknown",
                 uploadedAt: f.created_at,
                 status: 'synced' as const,
                 contentHash: f.content_hash
@@ -60,7 +55,6 @@ export function useFileProcessor() {
             status: 'uploading' as const
         };
 
-        // @ts-ignore - TS might complain about 'status' if defined narrowly, but useUIStore defines it correctly
         addSource(newSource);
 
         try {
@@ -113,24 +107,22 @@ export function useFileProcessor() {
                 currentSources = await refreshSources();
             }
 
-            const duplicates: any[] = [];
+            const duplicates: DuplicateItem[] = [];
             const uniqueFiles: File[] = [];
 
             // We need to check async hashes
             await Promise.all(files.map(async (file) => {
-                let duplicateMatch: any = null; // SourceItem
+                let duplicateMatch: SourceItem | null = null; // SourceItem
 
                 // 1. Check Filename Collision
-                // @ts-ignore
-                const nameMatch = currentSources.find((s: any) => s.name === file.name);
+                const nameMatch = currentSources.find((s) => s.name === file.name);
                 if (nameMatch) {
                     duplicateMatch = nameMatch;
                 } else {
                     // 2. Check Content Collision (Local Scope)
                     try {
                         const fileHash = await calculateSHA256(file);
-                        // @ts-ignore
-                        const contentMatch = currentSources.find((s: any) => s.contentHash === fileHash);
+                        const contentMatch = currentSources.find((s) => s.contentHash === fileHash);
                         if (contentMatch) {
                             console.log(`[useFileProcessor] Content duplicate found: ${file.name} matches ${contentMatch.name}`);
                             duplicateMatch = contentMatch;
@@ -141,8 +133,7 @@ export function useFileProcessor() {
                 }
 
                 if (duplicateMatch) {
-                    // @ts-ignore
-                    duplicates.push({ file, match: duplicateMatch });
+                    duplicates.push({ file, match: { name: duplicateMatch.name, id: duplicateMatch.id } });
                 } else {
                     uniqueFiles.push(file);
                 }
@@ -153,7 +144,6 @@ export function useFileProcessor() {
             }
 
             if (duplicates.length > 0) {
-                // @ts-ignore
                 setPendingDuplicates(duplicates);
                 setShowDuplicateModal(true);
             }

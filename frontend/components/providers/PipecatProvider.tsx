@@ -4,7 +4,7 @@ import React, { ReactNode, useEffect, useState } from "react";
 import { PipecatClient } from "@pipecat-ai/client-js";
 import { DailyTransport } from "@pipecat-ai/daily-transport";
 import { PipecatClientProvider } from "@pipecat-ai/client-react";
-import { AudioHandler } from "@/components/voice/AudioHandler";
+import { PipecatClientAudio } from "@pipecat-ai/client-react";
 
 /**
  * PipecatProvider
@@ -95,7 +95,7 @@ export function PipecatProvider({ children }: PipecatProviderProps) {
   return (
     <PipecatClientProvider client={client}>
       {/* AudioHandler relies on Pipecat context; include it when client is ready */}
-      <AudioHandler />
+      <PipecatClientAudio />
       {children}
     </PipecatClientProvider>
   );

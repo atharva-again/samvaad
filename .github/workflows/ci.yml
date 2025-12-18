@@ -9,8 +9,8 @@ permissions:
   contents: read
 
 jobs:
-  tests-cpu:
-    name: Tests (cpu)
+  tests:
+    name: Tests
     runs-on: ubuntu-latest
 
     steps:
@@ -22,102 +22,46 @@ jobs:
         with:
           python-version: '3.11'
 
-
-      - name: Cache uv, pip, and wheels
+      - name: Cache uv and pip
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/uv
             ~/.cache/pip
-            ~/.cache/pip/wheels
-            ~/.cache/huggingface
-          key: deps-cpu-${{ runner.os }}-py311-${{ hashFiles('pyproject.toml') }}
+          key: deps-${{ runner.os }}-py311-${{ hashFiles('pyproject.toml') }}
           restore-keys: |
-            deps-cpu-${{ runner.os }}-py311-
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: "latest"
-        
-      # Install PortAudio (required by sounddevice)
-      - name: Install PortAudio dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y portaudio19-dev
-
-      - name: Install dependencies
-        run: |
-          uv venv venv
-          source venv/bin/activate
-          uv pip install torch torchvision --no-cache-dir --index-url https://download.pytorch.org/whl/cpu
-          uv pip install onnxruntime
-          uv pip install -r requirements.txt
-          uv pip install -e . --index-strategy unsafe-best-match
-
-      - name: Hugging Face Auth
-        run: |
-          source venv/bin/activate
-
-      - name: Run tests
-        env:
-          PYTHONWARNINGS: default
-        run: |
-          source venv/bin/activate
-          pytest
-
-  tests-gpu:
-    name: Tests (gpu)
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+            deps-${{ runner.os }}-py311-
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
         with:
           version: "latest"
 
-
-      - name: Cache uv, pip, and wheels
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/uv
-            ~/.cache/pip
-            ~/.cache/pip/wheels
-            ~/.cache/huggingface
-          key: deps-gpu-${{ runner.os }}-py311-${{ hashFiles('pyproject.toml') }}
-          restore-keys: |
-            deps-gpu-${{ runner.os }}-py311-
-
-  # Install PortAudio (required by sounddevice)
-      - name: Install PortAudio dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y portaudio19-dev
-          
       - name: Install dependencies
         run: |
           uv venv venv
           source venv/bin/activate
-          uv pip install torch torchvision --no-cache-dir --index-url https://download.pytorch.org/whl/cu121
-          uv pip install onnxruntime-gpu
           uv pip install -r requirements.txt
           uv pip install -e . --index-strategy unsafe-best-match
 
-      - name: Hugging Face Auth
-        run: |
-          source venv/bin/activate
       - name: Run tests
         env:
+          # Mock API keys for tests (tests mock the actual API calls)
+          VOYAGE_API_KEY: "test-key"
+          GROQ_API_KEY: "test-key"
+          LLAMA_CLOUD_API_KEY: "test-key"
+          DEEPGRAM_API_KEY: "test-key"
+          DAILY_API_KEY: "test-key"
+          SUPABASE_URL: "https://test.supabase.co"
+          # Mock DB vars for URL parsing
+          user: "mock_user"
+          password: "mock_password"
+          host: "localhost"
+          port: "5432"
+          dbname: "mock_db"
+          # Pytest-asyncio settings
+          PYTEST_ASYNCIO_MODE: "auto"
           PYTHONWARNINGS: default
         run: |
           source venv/bin/activate
-          pytest
+          pytest tests/ -v

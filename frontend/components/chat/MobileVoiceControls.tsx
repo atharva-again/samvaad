@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Settings, Mic, Speaker, Volume2, AudioLines, Slash, Brain, User, Check } from "lucide-react";
+import { Settings, Mic, Speaker, Volume2, AudioLines, Slash, Brain, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -9,12 +9,12 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from "@/components/ui/popover";
-import { usePipecatClientMediaDevices } from "@pipecat-ai/client-react";
+import { useAudioDevices } from "@/hooks/useAudioDevices";
+import { PERSONAS, capitalize } from "@/lib/constants";
 
 interface MobileVoiceControlsProps {
     className?: string;
     sideOffset?: number;
-    // Props from consumers
     enableTTS: boolean;
     setEnableTTS: (value: boolean) => void;
     strictMode: boolean;
@@ -37,48 +37,16 @@ export function MobileVoiceControls({
     outputVolume = 1.0,
     onVolumeChange,
 }: MobileVoiceControlsProps) {
-    // --- Device Management Logic (Replicated from VoiceSettings) ---
     const {
+        mics,
+        speakers,
         selectedMic,
+        selectedSpeakerId,
         updateMic,
-    } = usePipecatClientMediaDevices();
+        setSelectedSpeakerId,
+    } = useAudioDevices();
 
-    const [speakers, setSpeakers] = useState<MediaDeviceInfo[]>([]);
-    const [mics, setMics] = useState<MediaDeviceInfo[]>([]);
-    const [selectedSpeakerId, setSelectedSpeakerId] = useState<string>("");
     const [localVolume, setLocalVolume] = useState(outputVolume);
-    const personas = ["default", "tutor", "coder", "friend", "expert"];
-
-    React.useEffect(() => {
-        const enumerateDevices = async () => {
-            try {
-                try {
-                    // Try to get permission for labels
-                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    stream.getTracks().forEach(track => track.stop());
-                } catch (permErr) {
-                    console.debug("Mic permission not yet granted:", permErr);
-                }
-
-                const devices = await navigator.mediaDevices.enumerateDevices();
-                const audioInputs = devices.filter(d => d.kind === "audioinput");
-                const audioOutputs = devices.filter(d => d.kind === "audiooutput");
-
-                setMics(audioInputs);
-                setSpeakers(audioOutputs);
-
-                if (!selectedSpeakerId && audioOutputs.length > 0) {
-                    setSelectedSpeakerId(audioOutputs[0].deviceId);
-                }
-            } catch (err) {
-                console.error("Failed to enumerate devices:", err);
-            }
-        };
-
-        enumerateDevices();
-        navigator.mediaDevices.addEventListener("devicechange", enumerateDevices);
-        return () => navigator.mediaDevices.removeEventListener("devicechange", enumerateDevices);
-    }, []);
 
     const handleMicChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         updateMic(e.target.value);
@@ -95,7 +63,6 @@ export function MobileVoiceControls({
     };
 
     const getVolumePercentage = () => Math.round(localVolume * 100);
-
 
     return (
         <Popover>
@@ -182,7 +149,7 @@ export function MobileVoiceControls({
                             <User className="w-3.5 h-3.5" /> Persona
                         </label>
                         <div className="flex flex-wrap gap-2">
-                            {personas.map((p) => (
+                            {PERSONAS.map((p) => (
                                 <button
                                     key={p}
                                     onClick={() => setPersona(p)}
@@ -193,7 +160,7 @@ export function MobileVoiceControls({
                                             : "bg-transparent text-text-secondary border-white/10 hover:border-white/20"
                                     )}
                                 >
-                                    {p.charAt(0).toUpperCase() + p.slice(1)}
+                                    {capitalize(p)}
                                 </button>
                             ))}
                         </div>

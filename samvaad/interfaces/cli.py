@@ -623,11 +623,10 @@ class SamvaadInterface:
             try:
                 # Import heavy ingestion modules here to show loading progress
                 from samvaad.pipeline.ingestion.chunking import chunk_text, parse_file
-                from samvaad.pipeline.ingestion.embedding import embed_chunks_with_dedup
+                from samvaad.pipeline.ingestion.embedding import generate_embeddings
                 from samvaad.pipeline.ingestion.ingestion import (
                     ingest_file_pipeline_with_progress,
                 )
-                from samvaad.utils.filehash_db import add_file
                 from samvaad.utils.hashing import generate_file_id
 
                 # Mark loading complete
@@ -918,28 +917,20 @@ class SamvaadInterface:
             self.console.print("ℹNo files found to remove", style=Colors.INFO)
             return
 
-        # Query database for these basenames
+        # Note: CLI file removal is deprecated. Use the web UI or API to delete files.
+        # This CLI command requires user_id which isn't available in standalone CLI mode.
+        self.console.print(
+            "⚠️  File removal is only supported via the web UI or API.",
+            style=Colors.WARNING
+        )
+        self.console.print(
+            "   Use the Knowledge Base panel to delete files.",
+            style=Colors.INFO
+        )
+        return
+        
+        # Legacy code below kept for reference
         all_matches = []
-        try:
-            import sqlite3
-
-            from samvaad.utils.filehash_db import DB_PATH, delete_file_and_cleanup
-
-            conn = sqlite3.connect(DB_PATH)
-            c = conn.cursor()
-
-            for filename in files_to_remove:
-                c.execute(
-                    "SELECT file_id, filename FROM file_metadata WHERE filename = ?",
-                    (filename,),
-                )
-                matches = c.fetchall()
-                all_matches.extend(matches)
-
-            conn.close()
-        except Exception as e:
-            self.console.print(f"❌ Database error: {e}", style=Colors.ERROR)
-            return
 
         if not all_matches:
             self.console.print("No matching files found in database", style=Colors.INFO)
