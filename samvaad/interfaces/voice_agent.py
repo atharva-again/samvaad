@@ -9,7 +9,6 @@ from pipecat.pipeline.base_task import PipelineTaskParams
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams
-from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.deepgram.tts import DeepgramTTSService
 from pipecat.services.groq.llm import GroqLLMService
@@ -19,6 +18,9 @@ from pipecat.processors.frameworks.rtvi import RTVIProcessor, RTVIObserver
 
 # Import shared RAG logic
 from samvaad.pipeline.retrieval.query import rag_query_pipeline
+
+# Import unified context manager
+from samvaad.core.context import SamvaadLLMContext
 
 
 async def create_daily_room() -> tuple[str, str | None]:
@@ -98,7 +100,8 @@ async def start_voice_agent(
     enable_tts: bool = True,
     persona: str = "default",
     strict_mode: bool = False,
-    user_id: str = None
+    user_id: str = None,
+    conversation_id: str = None  # NEW: For unified context
 ):
     """Entry point to start the bot in a specific Daily room"""
 
@@ -191,28 +194,27 @@ async def start_voice_agent(
     )
     md_filter = MarkdownTextFilter()
     
-    # 4. Context & Persona
-    from samvaad.prompts.personas import get_persona_prompt
+    # 4. Context & Persona - Use unified context manager for consistent prompts
+    from samvaad.core.unified_context import UnifiedContextManager
     
-    # Get base persona prompt
-    system_instruction = get_persona_prompt(persona)
-
-    voice_style = """
-
-VOICE CONVERSATION STYLE:
-You are in a real-time voice conversation. Follow these rules:
-
-1. Keep responses brief (2-3 sentences, about 50 words maximum).
-2. Speak naturally and conversationally. Use contractions.
-3. After answering, invite the user to continue or ask a follow-up.
-4. Avoid bullet points, lists, or robotic phrasing.
-5. If the user asks about any topic you are not 100% certain about, use fetch_context to search the knowledge base first before responding.
-"""
-    system_instruction += voice_style
-
-    # Simplified strict mode text for voice context
-    if strict_mode:
-        system_instruction += " CRITICAL: You are in Strict Mode. Answer ONLY based on information retrieved from tools. If no information is found via tools, state that you do not know. Do not use outside knowledge."
+    # Build system prompt using unified manager (same structure as text mode)
+    if conversation_id and user_id:
+        unified_ctx = UnifiedContextManager(conversation_id, user_id)
+        system_instruction = unified_ctx.build_system_prompt(
+            persona=persona,
+            strict_mode=strict_mode,
+            rag_context="",  # RAG is fetched via tool call, not pre-loaded
+            conversation_history="",  # History managed by Pipecat context
+            query="",  # Query comes from speech
+            is_voice=True  # Adds ~50 word limit instruction
+        )
+    else:
+        # Fallback for sessions without conversation_id
+        from samvaad.prompts.personas import get_persona_prompt
+        from samvaad.core.unified_context import VOICE_STYLE_INSTRUCTION
+        system_instruction = get_persona_prompt(persona) + VOICE_STYLE_INSTRUCTION
+        if strict_mode:
+            system_instruction += " CRITICAL: You are in Strict Mode. Answer ONLY based on information retrieved from tools. If no information is found via tools, state that you do not know. Do not use outside knowledge."
 
     # Use Groq with OpenAI gpt-oss-120b
     llm = GroqLLMService(
@@ -221,8 +223,20 @@ You are in a real-time voice conversation. Follow these rules:
     llm.register_function("fetch_context", fetch_context)
 
     # Context Manager (Keeps track of conversation history)
-    # Pass tools and tool_choice here for proper function calling
-    context = OpenAILLMContext(tools=tools, tool_choice="auto")
+    # Use SamvaadLLMContext for database persistence
+    if conversation_id:
+        context = SamvaadLLMContext(
+            conversation_id=conversation_id,
+            user_id=user_id,
+            tools=tools,
+            tool_choice="auto"
+        )
+        context.load_history()  # Load existing messages from DB
+    else:
+        # Fallback to in-memory only (no persistence)
+        from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
+        context = OpenAILLMContext(tools=tools, tool_choice="auto")
+    
     context.add_message(
         {
             "role": "system",

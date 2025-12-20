@@ -96,6 +96,7 @@ export const AttachmentButton: React.FC<AttachmentButtonProps> = ({
                             <span className="text-sm font-medium text-white/90">
                                 View Sources
                             </span>
+                            <ActionTooltip label="View Sources" shortcut="Alt+S" side="right" />
                         </button>
 
                         <button
@@ -112,6 +113,7 @@ export const AttachmentButton: React.FC<AttachmentButtonProps> = ({
                             <span className="text-sm font-medium text-white/90">
                                 Add Sources
                             </span>
+                            <ActionTooltip label="Add Sources" shortcut="Alt+A" side="right" />
                         </button>
 
                         {/* Arrow */}

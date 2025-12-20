@@ -2,7 +2,42 @@
 import React from 'react';
 import { useUIStore, type SourceItem, type DuplicateItem } from '@/lib/stores/useUIStore';
 import { listFiles, uploadFile, deleteFile } from '@/lib/api';
+import { filesCache } from '@/lib/cache/filesCache';
+import { CachedFile } from '@/lib/cache/db';
 import { toast } from 'sonner';
+
+// Helper to convert API response to SourceItem
+const apiToSourceItem = (f: any): SourceItem => ({
+    id: f.id,
+    name: f.filename,
+    type: f.filename.split('.').pop()?.toUpperCase() || "FILE",
+    size: f.size_bytes ? (f.size_bytes / 1024).toFixed(1) + " KB" : "Unknown",
+    uploadedAt: f.created_at,
+    status: 'synced' as const,
+    contentHash: f.content_hash
+});
+
+// Helper to convert CachedFile to SourceItem
+const cacheToSourceItem = (f: CachedFile): SourceItem => ({
+    id: f.id,
+    name: f.filename,
+    type: f.fileType,
+    size: f.sizeBytes ? (f.sizeBytes / 1024).toFixed(1) + " KB" : "Unknown",
+    uploadedAt: f.createdAt,
+    status: 'synced' as const,
+    contentHash: f.contentHash
+});
+
+// Helper to convert API response to CachedFile
+const apiToCachedFile = (f: any): CachedFile => ({
+    id: f.id,
+    filename: f.filename,
+    fileType: f.filename.split('.').pop()?.toUpperCase() || "FILE",
+    sizeBytes: f.size_bytes || 0,
+    contentHash: f.content_hash,
+    createdAt: f.created_at,
+    cachedAt: new Date().toISOString()
+});
 
 export function useFileProcessor() {
     const {
@@ -20,21 +55,44 @@ export function useFileProcessor() {
         setSourcesPanelOpen
     } = useUIStore();
 
-    // Reusing the fetch logic
+    // Cache-first loading with stale-while-revalidate
     const refreshSources = React.useCallback(async () => {
         try {
+            // 1. Check cache first - show instantly
+            const cachedFiles = await filesCache.getAll();
+            if (cachedFiles.length > 0) {
+                console.log('[FileProcessor] Cache HIT - showing', cachedFiles.length, 'files');
+                const mapped = cachedFiles.map(cacheToSourceItem);
+                setSources(mapped);
+                setHasFetchedSources(true);
+
+                // 2. Revalidate in background (stale-while-revalidate)
+                listFiles().then(async (files) => {
+                    console.log('[FileProcessor] Background sync - got', files.length, 'files from server');
+                    const freshMapped = files.map(apiToSourceItem);
+                    setSources(freshMapped);
+
+                    // Update cache with fresh data
+                    const cachedData = files.map(apiToCachedFile);
+                    await filesCache.saveAll(cachedData);
+                }).catch(err => {
+                    console.warn('[FileProcessor] Background sync failed:', err);
+                });
+
+                return mapped;
+            }
+
+            // 3. Cache miss - fetch from server
+            console.log('[FileProcessor] Cache MISS - fetching from server');
             setHasFetchedSources(true);
             const files = await listFiles();
-            const mapped = files.map((f: any) => ({
-                id: f.id,
-                name: f.filename,
-                type: f.filename.split('.').pop()?.toUpperCase() || "FILE",
-                size: f.size_bytes ? (f.size_bytes / 1024).toFixed(1) + " KB" : "Unknown",
-                uploadedAt: f.created_at,
-                status: 'synced' as const,
-                contentHash: f.content_hash
-            }));
+            const mapped = files.map(apiToSourceItem);
             setSources(mapped);
+
+            // Save to cache
+            const cachedData = files.map(apiToCachedFile);
+            await filesCache.saveAll(cachedData);
+
             return mapped;
         } catch (e) {
             console.error("Failed to list files:", e);
@@ -71,12 +129,28 @@ export function useFileProcessor() {
             }
 
             if (result.file_id) {
+                const finalId = result.file_id;
+                const sizeBytes = result.size_bytes || file.size;
+                const createdAt = result.created_at || new Date().toISOString();
+
                 updateSource(tempId, {
-                    id: result.file_id,
+                    id: finalId,
                     status: 'synced',
-                    size: result.size_bytes ? (result.size_bytes / 1024).toFixed(1) + " KB" : newSource.size,
-                    uploadedAt: result.created_at || new Date().toISOString()
+                    size: (sizeBytes / 1024).toFixed(1) + " KB",
+                    uploadedAt: createdAt
                 });
+
+                // Write-through to cache
+                await filesCache.saveFile({
+                    id: finalId,
+                    filename: file.name,
+                    fileType: file.name.split('.').pop()?.toUpperCase() || "FILE",
+                    sizeBytes,
+                    contentHash: result.content_hash,
+                    createdAt,
+                    cachedAt: new Date().toISOString()
+                });
+                console.log("[FileProcessor] File saved to cache:", finalId);
             } else {
                 updateSourceStatus(tempId, 'synced');
             }
@@ -166,6 +240,7 @@ export function useFileProcessor() {
 
                     // Then Delete old version (Cleans up only truly orphaned chunks)
                     await deleteFile(String(match.id));
+                    await filesCache.deleteFile(String(match.id));  // Remove from cache too
 
                     // Update UI
                     removeSource(match.id);

@@ -69,7 +69,7 @@ class File(Base):
     __tablename__ = "files"
 
     id = Column(String, primary_key=True)  # UUID for this specific upload
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
     filename = Column(String, nullable=False)
     
     # Pointer to the global content
@@ -90,12 +90,10 @@ class Conversation(Base):
     
     # UUID v7: time-sortable, efficient indexing (converted to str for psycopg2 compatibility)
     id = Column(UUID(as_uuid=True), primary_key=True, default=lambda: str(uuid_utils.uuid7()))
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
     title = Column(String, default="New Conversation")
-    mode = Column(String, default="text")  # "text" or "voice"
     summary = Column(Text, nullable=True)  # Compressed context for long conversations
     is_pinned = Column(Boolean, default=False)
-    metadata_ = Column("metadata", JSON, default={})  # Extra data (persona, strict_mode, etc.)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
@@ -117,7 +115,7 @@ class Message(Base):
     
     # UUID v7: time-sortable, efficient indexing (converted to str for psycopg2 compatibility)
     id = Column(UUID(as_uuid=True), primary_key=True, default=lambda: str(uuid_utils.uuid7()))
-    conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
+    conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True)
     role = Column(String, nullable=False)  # "user", "assistant", "system"
     content = Column(Text, nullable=False)
     sources = Column(JSON, default=[])  # RAG sources for assistant messages
@@ -125,3 +123,40 @@ class Message(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     conversation = relationship("Conversation", back_populates="messages")
+    embedding = relationship("MessageEmbedding", back_populates="message", uselist=False, cascade="all, delete-orphan")
+
+
+class MessageEmbedding(Base):
+    """
+    Stores vector embedding for a message.
+    Used for semantic search over conversation history.
+    """
+    __tablename__ = "message_embeddings"
+    
+    message_id = Column(UUID(as_uuid=True), ForeignKey("messages.id", ondelete="CASCADE"), primary_key=True)
+    embedding = Column(Vector(1024), nullable=False)  # Voyage AI dimensions
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    message = relationship("Message", back_populates="embedding")
+
+
+class ConversationFact(Base):
+    """
+    Stores extracted facts from conversation.
+    Facts are atomic pieces of information linked to entities.
+    Used by get_entity_facts() tool for context retrieval.
+    """
+    __tablename__ = "conversation_facts"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=lambda: str(uuid_utils.uuid7()))
+    conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True)
+    fact = Column(Text, nullable=False)  # e.g., "User is studying for AWS exam"
+    entity_name = Column(String, nullable=True, index=True)  # Primary entity: "AWS"
+    related_entity = Column(String, nullable=True)  # Related entity: "VPC"
+    relationship_type = Column(String, nullable=True)  # "related_to", "alternative_to"
+    source_message_id = Column(UUID(as_uuid=True), ForeignKey("messages.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    conversation = relationship("Conversation")
+    source_message = relationship("Message")
+

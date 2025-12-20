@@ -10,7 +10,7 @@ import {
     ChevronsLeft,
     ChevronsRight,
 } from "lucide-react";
-import { useConversationStore } from "@/lib/stores/useConversationStore";
+import { useConversationStore, Conversation } from "@/lib/stores/useConversationStore";
 import { useUIStore } from "@/lib/stores/useUIStore";
 import { cn } from "@/lib/utils";
 import { ActionTooltip } from "@/components/ui/action-tooltip";
@@ -18,6 +18,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { usePlatform } from "@/hooks/usePlatform";
 import { createClient } from "@/utils/supabase/client";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
 
 import { useGroupedConversations } from "@/hooks/useGroupedConversations";
 import { NavItem } from "./sidebar/NavItem";
@@ -25,12 +27,18 @@ import { SectionWithPopover } from "./sidebar/SectionWithPopover";
 import { PopoverContent } from "./sidebar/PopoverContent";
 import { AccountMenu } from "./sidebar/AccountMenu";
 import { ConversationItem } from "./sidebar/ConversationItem";
+import { DeleteConfirmModal, RenameModal } from "@/components/modals";
 
 export function IconNavRail() {
     const router = useRouter();
-    const [isExpanded, setIsExpanded] = useState(false);
+    const { user } = useAuth();
+    const { isSidebarOpen: isExpanded, toggleSidebar: setToggleSidebar } = useUIStore();
     const [showAccountMenu, setShowAccountMenu] = useState(false);
 
+    // User info from Google auth
+    const userAvatar = user?.user_metadata?.avatar_url || user?.user_metadata?.picture;
+    const userName = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email;
+    const userInitial = userName ? userName.charAt(0).toUpperCase() : 'U';
     // Account Menu Hover Logic
     const accountTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -51,25 +59,54 @@ export function IconNavRail() {
     const handleLogout = async () => {
         const supabase = createClient();
         await supabase.auth.signOut();
+
+        // Clear local caches for privacy
+        const { conversationCache } = await import("@/lib/cache/conversationCache");
+        const { filesCache } = await import("@/lib/cache/filesCache");
+        await Promise.all([
+            conversationCache.clear(),
+            filesCache.clear()
+        ]);
+
+        // Reset store states
+        useConversationStore.setState({
+            conversations: [],
+            messages: [],
+            currentConversationId: null,
+            hasFetchedConversations: false
+        });
+        useUIStore.setState({
+            sources: [],
+            hasFetchedSources: false,
+            hasInteracted: false
+        });
+
         router.push("/login");
     };
 
     const {
         conversations,
         currentConversationId,
+        isLoadingConversations,
         loadConversation,
         startNewChat,
-        refetchConversations,
+        fetchConversations,
         deleteConversation,
         updateConversationTitle,
         togglePinConversation
     } = useConversationStore();
-    const { toggleSourcesPanel } = useUIStore();
+    const { toggleSourcesPanel, isSourcesPanelOpen } = useUIStore();
     const { modifier: altKey, isMac } = usePlatform();
     const metaKey = isMac ? "Cmd" : "Ctrl";
 
     const [isPinnedMenuOpen, setIsPinnedMenuOpen] = useState(false);
     const [isHistoryMenuOpen, setIsHistoryMenuOpen] = useState(false);
+
+    // Modal states
+    const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
+    const [renameTarget, setRenameTarget] = useState<Conversation | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [isRenaming, setIsRenaming] = useState(false);
 
     const accountMenuRef = useRef<HTMLDivElement>(null);
     const accountButtonRef = useRef<HTMLButtonElement>(null);
@@ -99,6 +136,7 @@ export function IconNavRail() {
             if (e.altKey && (e.key === 'n' || e.key === 'N')) {
                 e.preventDefault();
                 startNewChat();
+                router.push('/');
             }
 
             // Toggle Sidebar: Ctrl + / (Cmd + /)
@@ -106,17 +144,17 @@ export function IconNavRail() {
             const isCmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
             if (isCmdOrCtrl && e.key === '/') {
                 e.preventDefault();
-                setIsExpanded(prev => !prev);
+                setToggleSidebar();
             }
         };
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [startNewChat, isMac]);
+    }, [startNewChat, isMac, setToggleSidebar]);
 
-    // Force fetch conversations on mount
+    // Fetch conversations on mount (cache-first, then background sync)
     useEffect(() => {
-        refetchConversations();
+        fetchConversations();  // No forceRefresh = cache-first behavior
     }, []);
 
     // ─────────────────────────────────────────────────────────────────────
@@ -128,23 +166,52 @@ export function IconNavRail() {
     const pinnedConversations = groupedConversations.pinned;
 
     const handleSelectConversation = (id: string) => {
-        loadConversation(id);
+        router.push(`/chat/${id}`);
     };
 
     const handleRenameConversation = (id: string) => {
-        const newTitle = prompt('Enter new title:');
-        if (newTitle && newTitle.trim()) {
-            updateConversationTitle(id, newTitle.trim());
-        }
+        const conv = conversations.find(c => c.id === id);
+        if (conv) setRenameTarget(conv);
     };
 
     const handlePinConversation = (id: string) => {
+        const conv = conversations.find(c => c.id === id);
+        const wasPinned = conv?.isPinned;
         togglePinConversation(id);
+        toast.success(wasPinned ? 'Unpinned conversation' : 'Pinned conversation');
     };
 
     const handleDeleteConversation = (id: string) => {
-        if (confirm('Delete this conversation?')) {
-            deleteConversation(id);
+        const conv = conversations.find(c => c.id === id);
+        if (conv) setDeleteTarget(conv);
+    };
+
+    const confirmDelete = async () => {
+        if (!deleteTarget) return;
+        const title = deleteTarget.title;
+        setIsDeleting(true);
+        try {
+            await deleteConversation(deleteTarget.id);
+            setDeleteTarget(null);
+            toast.success(`Deleted "${title}"`);
+        } catch {
+            toast.error('Failed to delete conversation');
+        } finally {
+            setIsDeleting(false);
+        }
+    };
+
+    const confirmRename = async (newName: string) => {
+        if (!renameTarget) return;
+        setIsRenaming(true);
+        try {
+            await updateConversationTitle(renameTarget.id, newName);
+            setRenameTarget(null);
+            toast.success('Conversation renamed');
+        } catch {
+            toast.error('Failed to rename conversation');
+        } finally {
+            setIsRenaming(false);
         }
     };
 
@@ -182,7 +249,7 @@ export function IconNavRail() {
                         label="New Chat"
                         isExpanded={isExpanded}
                         isActive={!currentConversationId}
-                        onClick={startNewChat}
+                        onClick={() => { startNewChat(); router.push('/'); }}
                         tooltipLabel="New Chat"
                         tooltipShortcut={`${altKey} + N`}
                     />
@@ -190,6 +257,7 @@ export function IconNavRail() {
                         icon={<FolderOpen className="w-5 h-5" />}
                         label="Sources"
                         isExpanded={isExpanded}
+                        isActive={isSourcesPanelOpen}
                         onClick={toggleSourcesPanel}
                         tooltipLabel="Open Sources"
                         tooltipShortcut={`${altKey} + S`}
@@ -208,7 +276,7 @@ export function IconNavRail() {
                         <PopoverContent
                             title="Pinned"
                             conversations={pinnedConversations}
-                            onSelect={handleSelectConversation}
+                            isLoading={isLoadingConversations}
                             onRename={handleRenameConversation}
                             onPin={handlePinConversation}
                             onDelete={handleDeleteConversation}
@@ -216,17 +284,28 @@ export function IconNavRail() {
                         />
                     }
                 >
-                    {pinnedConversations.map(conv => (
-                        <ConversationItem
-                            key={conv.id}
-                            conversation={conv}
-                            isActive={currentConversationId === conv.id}
-                            onSelect={() => handleSelectConversation(conv.id)}
-                            onRename={() => handleRenameConversation(conv.id)}
-                            onPin={() => handlePinConversation(conv.id)}
-                            onDelete={() => handleDeleteConversation(conv.id)}
-                        />
-                    ))}
+                    {isLoadingConversations ? (
+                        /* Skeleton loaders for expanded sidebar */
+                        <div className="space-y-1 py-1">
+                            {[1, 2, 3].map(i => (
+                                <div key={i} className="ml-9 w-[calc(100%-36px)] pl-2 pr-8 py-1.5 rounded-md animate-pulse">
+                                    <div className="h-4 bg-white/10 rounded w-3/4" />
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        pinnedConversations.map(conv => (
+                            <ConversationItem
+                                key={conv.id}
+                                conversation={conv}
+                                isActive={currentConversationId === conv.id}
+
+                                onRename={() => handleRenameConversation(conv.id)}
+                                onPin={() => handlePinConversation(conv.id)}
+                                onDelete={() => handleDeleteConversation(conv.id)}
+                            />
+                        ))
+                    )}
                 </SectionWithPopover>
 
                 {/* History Section */}
@@ -240,7 +319,7 @@ export function IconNavRail() {
                             title="History"
                             conversations={groupedConversations}
                             grouped
-                            onSelect={handleSelectConversation}
+                            isLoading={isLoadingConversations}
                             onRename={handleRenameConversation}
                             onPin={handlePinConversation}
                             onDelete={handleDeleteConversation}
@@ -248,80 +327,106 @@ export function IconNavRail() {
                         />
                     }
                 >
-                    {/* Today */}
-                    {groupedConversations.today.length > 0 && (
-                        <>
-                            <div className="pl-11 pr-3 py-1 text-[10px] text-white/30 uppercase">Today</div>
-                            {groupedConversations.today.slice(0, 5).map(conv => (
-                                <ConversationItem
-                                    key={conv.id}
-                                    conversation={conv}
-                                    isActive={currentConversationId === conv.id}
-                                    onSelect={() => handleSelectConversation(conv.id)}
-                                    onRename={() => handleRenameConversation(conv.id)}
-                                    onPin={() => handlePinConversation(conv.id)}
-                                    onDelete={() => handleDeleteConversation(conv.id)}
-                                />
+                    {isLoadingConversations ? (
+                        /* Skeleton loaders for expanded sidebar */
+                        <div className="space-y-1 py-1">
+                            {[1, 2, 3, 4].map(i => (
+                                <div key={i} className="ml-9 w-[calc(100%-36px)] pl-2 pr-8 py-1.5 rounded-md animate-pulse">
+                                    <div className="h-4 bg-white/10 rounded w-3/4" />
+                                </div>
                             ))}
-                        </>
-                    )}
-                    {/* Yesterday */}
-                    {groupedConversations.yesterday.length > 0 && (
+                        </div>
+                    ) : (
                         <>
-                            <div className="pl-11 pr-3 py-1 text-[10px] text-white/30 uppercase mt-2">Yesterday</div>
-                            {groupedConversations.yesterday.slice(0, 5).map(conv => (
-                                <ConversationItem
-                                    key={conv.id}
-                                    conversation={conv}
-                                    isActive={currentConversationId === conv.id}
-                                    onSelect={() => handleSelectConversation(conv.id)}
-                                    onRename={() => handleRenameConversation(conv.id)}
-                                    onPin={() => handlePinConversation(conv.id)}
-                                    onDelete={() => handleDeleteConversation(conv.id)}
-                                />
-                            ))}
+                            {/* Today */}
+                            {groupedConversations.today.length > 0 && (
+                                <>
+                                    <div className="pl-11 pr-3 py-1 text-[10px] text-white/30 uppercase">Today</div>
+                                    {groupedConversations.today.slice(0, 5).map(conv => (
+                                        <ConversationItem
+                                            key={conv.id}
+                                            conversation={conv}
+                                            isActive={currentConversationId === conv.id}
+
+                                            onRename={() => handleRenameConversation(conv.id)}
+                                            onPin={() => handlePinConversation(conv.id)}
+                                            onDelete={() => handleDeleteConversation(conv.id)}
+                                        />
+                                    ))}
+                                </>
+                            )}
+                            {/* Yesterday */}
+                            {groupedConversations.yesterday.length > 0 && (
+                                <>
+                                    <div className="pl-11 pr-3 py-1 text-[10px] text-white/30 uppercase mt-2">Yesterday</div>
+                                    {groupedConversations.yesterday.slice(0, 5).map(conv => (
+                                        <ConversationItem
+                                            key={conv.id}
+                                            conversation={conv}
+                                            isActive={currentConversationId === conv.id}
+
+                                            onRename={() => handleRenameConversation(conv.id)}
+                                            onPin={() => handlePinConversation(conv.id)}
+                                            onDelete={() => handleDeleteConversation(conv.id)}
+                                        />
+                                    ))}
+                                </>
+                            )}
+                            {/* Previous 7 Days */}
+                            {groupedConversations.previous7Days.length > 0 && (
+                                <>
+                                    <div className="pl-11 pr-3 py-1 text-[10px] text-white/30 uppercase mt-2">Previous 7 Days</div>
+                                    {groupedConversations.previous7Days.slice(0, 5).map(conv => (
+                                        <ConversationItem
+                                            key={conv.id}
+                                            conversation={conv}
+                                            isActive={currentConversationId === conv.id}
+
+                                            onRename={() => handleRenameConversation(conv.id)}
+                                            onPin={() => handlePinConversation(conv.id)}
+                                            onDelete={() => handleDeleteConversation(conv.id)}
+                                        />
+                                    ))}
+                                </>
+                            )}
+                            {/* Monthly groups (older conversations) */}
+                            {Object.entries(groupedConversations.months)
+                                .sort(([a], [b]) => {
+                                    // Sort by date descending (most recent month first)
+                                    const parseMonth = (key: string) => {
+                                        const [month, year] = key.split(' ');
+                                        const monthIndex = ['January', 'February', 'March', 'April', 'May', 'June',
+                                            'July', 'August', 'September', 'October', 'November', 'December'].indexOf(month);
+                                        return new Date(parseInt(year), monthIndex).getTime();
+                                    };
+                                    return parseMonth(b) - parseMonth(a);
+                                })
+                                .map(([monthKey, convs]) => (
+                                    convs.length > 0 && (
+                                        <React.Fragment key={monthKey}>
+                                            <div className="pl-11 pr-3 py-1 text-[10px] text-white/30 uppercase mt-2">{monthKey}</div>
+                                            {convs.slice(0, 5).map(conv => (
+                                                <ConversationItem
+                                                    key={conv.id}
+                                                    conversation={conv}
+                                                    isActive={currentConversationId === conv.id}
+
+                                                    onRename={() => handleRenameConversation(conv.id)}
+                                                    onPin={() => handlePinConversation(conv.id)}
+                                                    onDelete={() => handleDeleteConversation(conv.id)}
+                                                />
+                                            ))}
+                                        </React.Fragment>
+                                    )
+                                ))
+                            }
+                            {/* See all link - only show when more than 10 conversations */}
+                            {isExpanded && conversations.length > 10 && (
+                                <button className="w-full text-left pl-11 pr-3 py-1.5 text-[12px] text-white/40 hover:text-white/60 transition-colors">
+                                    See all
+                                </button>
+                            )}
                         </>
-                    )}
-                    {/* Previous 7 Days */}
-                    {groupedConversations.previous7Days.length > 0 && (
-                        <>
-                            <div className="pl-11 pr-3 py-1 text-[10px] text-white/30 uppercase mt-2">Previous 7 Days</div>
-                            {groupedConversations.previous7Days.slice(0, 5).map(conv => (
-                                <ConversationItem
-                                    key={conv.id}
-                                    conversation={conv}
-                                    isActive={currentConversationId === conv.id}
-                                    onSelect={() => handleSelectConversation(conv.id)}
-                                    onRename={() => handleRenameConversation(conv.id)}
-                                    onPin={() => handlePinConversation(conv.id)}
-                                    onDelete={() => handleDeleteConversation(conv.id)}
-                                />
-                            ))}
-                        </>
-                    )}
-                    {/* Older */}
-                    {groupedConversations.older.length > 0 && (
-                        <>
-                            <div className="pl-11 pr-3 py-1 text-[10px] text-white/30 uppercase mt-2">Older</div>
-                            {groupedConversations.older.slice(0, 5).map(conv => (
-                                <ConversationItem
-                                    key={conv.id}
-                                    conversation={conv}
-                                    isActive={currentConversationId === conv.id}
-                                    onSelect={() => handleSelectConversation(conv.id)}
-                                    onRename={() => handleRenameConversation(conv.id)}
-                                    onPin={() => handlePinConversation(conv.id)}
-                                    onDelete={() => handleDeleteConversation(conv.id)}
-                                />
-                            ))}
-                        </>
-                    )}
-                    {/* See all link - only show when more than 10 conversations */}
-                    {/* See all link - only show when more than 10 conversations */}
-                    {isExpanded && conversations.length > 10 && (
-                        <button className="w-full text-left pl-11 pr-3 py-1.5 text-[12px] text-white/40 hover:text-white/60 transition-colors">
-                            See all
-                        </button>
                     )}
                 </SectionWithPopover>
             </nav>
@@ -345,11 +450,20 @@ export function IconNavRail() {
                                 : "justify-center w-10 h-10 rounded-full mx-auto"
                         )}
                     >
-                        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shrink-0">
-                            <span className="text-white text-xs font-medium">U</span>
-                        </div>
+                        {userAvatar ? (
+                            <img
+                                src={userAvatar}
+                                alt="Profile"
+                                className="w-7 h-7 rounded-full object-cover shrink-0"
+                                referrerPolicy="no-referrer"
+                            />
+                        ) : (
+                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shrink-0">
+                                <span className="text-white text-xs font-medium">{userInitial}</span>
+                            </div>
+                        )}
                         {isExpanded && (
-                            <span className="text-[13px] text-white/70 truncate">My Account</span>
+                            <span className="text-[13px] text-white/70 truncate">{userName || 'My Account'}</span>
                         )}
                     </button>
 
@@ -380,7 +494,7 @@ export function IconNavRail() {
 
                 {/* Expand/Collapse Toggle */}
                 <button
-                    onClick={() => setIsExpanded(!isExpanded)}
+                    onClick={() => setToggleSidebar()}
                     className={cn(
                         "flex items-center justify-center mt-1 text-white/30 hover:text-white/60 transition-colors hover:bg-white/5 relative group cursor-pointer",
                         isExpanded
@@ -400,6 +514,22 @@ export function IconNavRail() {
                     />
                 </button>
             </div>
+
+            {/* Modals */}
+            <DeleteConfirmModal
+                isOpen={!!deleteTarget}
+                onClose={() => setDeleteTarget(null)}
+                onConfirm={confirmDelete}
+                isDeleting={isDeleting}
+                itemName={deleteTarget?.title}
+            />
+            <RenameModal
+                isOpen={!!renameTarget}
+                onClose={() => setRenameTarget(null)}
+                onConfirm={confirmRename}
+                isRenaming={isRenaming}
+                currentName={renameTarget?.title || ""}
+            />
         </div>
     );
 }

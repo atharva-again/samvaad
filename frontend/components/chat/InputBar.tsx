@@ -36,6 +36,7 @@ import { AttachmentButton } from "./AttachmentButton";
 import { usePlatform } from "@/hooks/usePlatform";
 import { useFileProcessor } from "@/hooks/useFileProcessor";
 import { createClient } from "@/utils/supabase/client";
+import { useConversationStore } from "@/lib/stores/useConversationStore";
 
 interface InputBarProps {
   onSendMessage: (message: string, persona?: string, strictMode?: boolean) => void;
@@ -44,9 +45,10 @@ interface InputBarProps {
   defaultMessage?: string | null;
   onMessageConsumed?: () => void;
   onVoiceMessage?: (message: ChatMessage) => void;
+  conversationId?: string | null;  // For unified voice/text context
 }
 
-export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onMessageConsumed, onVoiceMessage }: InputBarProps) {
+export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onMessageConsumed, onVoiceMessage, conversationId }: InputBarProps) {
   const USE_MOCK_BACKEND = false; // Toggle this to true for mock backend
   const {
     mode,
@@ -347,6 +349,13 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
 
     setIsSessionActive(false);
     setVoiceDuration(0);
+
+    // Reload messages from backend after voice session ends
+    // This syncs any messages persisted by SamvaadLLMContext on the backend
+    if (conversationId) {
+      const { loadConversation } = useConversationStore.getState();
+      loadConversation(conversationId);
+    }
   };
 
   // Latency measurement via RTT to backend health endpoint
@@ -430,12 +439,14 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
       await client.startBotAndConnect({
         endpoint: `${API_BASE_URL}/api/connect`,
         headers: authToken ? new Headers({ Authorization: `Bearer ${authToken}` }) : undefined,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         requestData: {
+          ...(conversationId && { conversation_id: conversationId }),
           session_id: "default",
           enable_tts: enableTTS,
           persona: persona,
           strict_mode: strictMode,
-        },
+        } as any,
       });
 
       console.debug("[InputBar] startBotAndConnect completed successfully");
@@ -701,7 +712,7 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
 
 
 
-  const { modifier, isMobile } = usePlatform();
+  const { isMobile } = usePlatform();
 
   // 1. Main / Initial Bar / Mode Switcher
   if (!hasInteracted) {
@@ -724,7 +735,7 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
             >
               <MessageSquare className="w-5 h-5 transition-colors text-white" />
               <span className="text-lg font-medium">Text Mode</span>
-              <ActionTooltip label="Text Mode" shortcut={`${modifier}+T`} side="top" />
+              <ActionTooltip label="Text Mode" shortcut="Alt+T" side="top" />
             </button>
 
             {/* Vertical Divider */}
@@ -737,7 +748,7 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
             >
               <Mic className="w-5 h-5 transition-colors text-white" />
               <span className="text-lg font-medium">Voice Mode</span>
-              <ActionTooltip label="Voice Mode" shortcut={`${modifier}+V`} side="top" />
+              <ActionTooltip label="Voice Mode" shortcut="Alt+V" side="top" />
             </button>
           </div>
         </div>
@@ -876,7 +887,7 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
             onClick={() => setMode("voice")}
           >
             <Mic className="w-6 h-6" />
-            <ActionTooltip label="Voice Mode" shortcut={`${modifier}+V`} side="top" />
+            <ActionTooltip label="Voice Mode" shortcut="Alt+V" side="top" />
           </Button>
         </div >
       </div >
@@ -1075,7 +1086,7 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
           onClick={() => setMode("text")}
         >
           <MessageSquare className="w-6 h-6" />
-          <ActionTooltip label="Text Mode" shortcut={`${modifier}+T`} side="top" />
+          <ActionTooltip label="Text Mode" shortcut="Alt+T" side="top" />
         </Button>
       </div>
     </div >

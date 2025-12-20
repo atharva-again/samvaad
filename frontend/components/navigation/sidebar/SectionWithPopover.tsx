@@ -21,7 +21,20 @@ export function SectionWithPopover({
 }: SectionWithPopoverProps) {
     const [showPopover, setShowPopover] = useState(false);
     const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const prevForceOpenRef = useRef(forceOpen);
     const shouldShow = (showPopover || forceOpen) && !isExpanded;
+
+    // When dropdown closes (forceOpen: true -> false), close the popover too
+    // This handles the case where user deletes an item from the dropdown
+    React.useEffect(() => {
+        if (prevForceOpenRef.current && !forceOpen) {
+            // Dropdown just closed, close the popover after a short delay
+            timeoutRef.current = setTimeout(() => {
+                setShowPopover(false);
+            }, 150);
+        }
+        prevForceOpenRef.current = forceOpen;
+    }, [forceOpen]);
 
     const handleMouseEnter = () => {
         if (timeoutRef.current) {

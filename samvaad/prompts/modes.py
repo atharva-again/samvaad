@@ -9,6 +9,11 @@ def get_mode_instruction(strict_mode: bool) -> str:
         1. **Goal**: Answer **ONLY** using the information provided in the `<context>` tags.
         2. **Constraint**: Do **NOT** use your own internal knowledge.
         3. **Refusal**: If the answer is NOT in `<context>`, you **MUST** say: "I don't know.".
+        
+        ### Pronoun Resolution (CRITICAL)
+        When user says "it", "that", "this", "who created it", "tell me more":
+        1. Look at the **LAST 1-2 exchanges** in `<history>` to find the MOST RECENT topic.
+        2. Resolve the pronoun to that topic, NOT to an earlier/more extensively discussed topic.
         """
     else:
         return """
@@ -28,6 +33,11 @@ def get_mode_instruction(strict_mode: bool) -> str:
              - If **NO**, or if it's irrelevant, **IGNORE IT COMPLETELY**.
         4. **Knowledge**: Use your own internal knowledge about [Identified Subject] if the context is irrelevant.
         
+        ### Pronoun Resolution (CRITICAL)
+        When user says "it", "that", "this", "who created it", "tell me more":
+        1. Look at the **LAST 1-2 exchanges** in `<history>` to find the MOST RECENT topic.
+        2. Resolve the pronoun to that topic, NOT to an earlier/more extensively discussed topic.
+        
         ### Constraints
         - Answer naturally.
         - Do not mention "context" or "RAG" in your final answer.
@@ -38,13 +48,6 @@ def get_unified_system_prompt(persona_intro: str, context: str, mode_instruction
     Constructs the final system prompt. 
     Unified to handle both history-present and history-absent cases seamlessly.
     """
-    history_section = ""
-    if conversation_history:
-        history_section = f"""
-        Conversation History:
-        {conversation_history}
-        """
-
     return f"""{persona_intro}
     
     {mode_instruction}

@@ -52,3 +52,14 @@ def rerank_documents(query: str, documents: List[str]):
     """Rerank documents using Voyage AI rerank model."""
     client = get_voyage_client()
     return client.rerank(query=query, documents=documents, model="rerank-2.5")
+
+
+async def get_voyage_embeddings(texts: List[str], input_type: str = "query") -> List[List[float]]:
+    """
+    Async wrapper for embedding (runs sync function in executor).
+    Used by memory tools for semantic search.
+    """
+    import asyncio
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, lambda: embed_texts(texts, input_type))
+

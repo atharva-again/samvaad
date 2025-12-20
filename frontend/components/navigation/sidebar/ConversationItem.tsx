@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import Link from "next/link";
 import { MoreVertical, Pencil, Pin, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Conversation } from "@/lib/stores/useConversationStore";
@@ -12,7 +13,6 @@ import {
 interface ConversationItemProps {
     conversation: Conversation;
     isActive: boolean;
-    onSelect: () => void;
     onRename?: () => void;
     onPin?: () => void;
     onDelete?: () => void;
@@ -23,7 +23,6 @@ interface ConversationItemProps {
 export function ConversationItem({
     conversation,
     isActive,
-    onSelect,
     onRename,
     onPin,
     onDelete,
@@ -44,10 +43,10 @@ export function ConversationItem({
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
         >
-            <button
-                onClick={onSelect}
+            <Link
+                href={`/chat/${conversation.id}`}
                 className={cn(
-                    "text-left py-1.5 text-[13px] truncate transition-colors cursor-pointer",
+                    "block text-left py-1.5 text-[13px] truncate transition-colors cursor-pointer",
                     // If inside popover OR collapsed (though collapsed items aren't rendered here? No, they are hidden), use standard pill.
                     // If expanded sidebar (not inside popover), use ml-11 to align with H of History.
                     isInsidePopover
@@ -61,7 +60,7 @@ export function ConversationItem({
                 )}
             >
                 {conversation.title}
-            </button>
+            </Link>
 
             {/* Three-dot menu button */}
             <DropdownMenu onOpenChange={handleOpenChange}>
@@ -99,7 +98,10 @@ export function ConversationItem({
                         }}
                         className="gap-2 text-[13px] text-white/70 focus:text-white focus:bg-white/10 cursor-pointer"
                     >
-                        <Pin className="w-4 h-4" />
+                        <Pin
+                            className="w-4 h-4"
+                            fill={conversation.isPinned ? "currentColor" : "none"}
+                        />
                         {conversation.isPinned ? 'Unpin' : 'Pin'}
                     </DropdownMenuItem>
                     <DropdownMenuItem

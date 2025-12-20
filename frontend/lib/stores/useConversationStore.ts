@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { api } from '@/lib/api'
+import { conversationCache } from '@/lib/cache/conversationCache'
 
 // ─────────────────────────────────────────────────────────────────────
 // Types
@@ -10,7 +11,7 @@ export interface Message {
     id: string
     role: 'user' | 'assistant' | 'system'
     content: string
-    sources?: Array<{ filename: string; content: string }>
+    sources?: Record<string, unknown>[]
     createdAt: string
 }
 
@@ -29,6 +30,47 @@ export interface ConversationDetail extends Conversation {
     messages: Message[]
 }
 
+// Backend snake_case response types (used for API responses)
+interface BackendConversation {
+    id: string
+    title: string
+    mode: string
+    created_at: string
+    updated_at: string | null
+    is_pinned: boolean
+    message_count: number
+}
+
+interface BackendMessage {
+    id: string
+    role: string
+    content: string
+    sources: Record<string, unknown>[]
+    created_at: string
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Transform Helpers (snake_case → camelCase)
+// ─────────────────────────────────────────────────────────────────────
+
+const transformConversation = (conv: BackendConversation): Conversation => ({
+    id: conv.id,
+    title: conv.title,
+    mode: conv.mode as 'text' | 'voice',
+    createdAt: conv.created_at,
+    updatedAt: conv.updated_at,
+    isPinned: conv.is_pinned,
+    messageCount: conv.message_count
+})
+
+const transformMessage = (msg: BackendMessage): Message => ({
+    id: msg.id,
+    role: msg.role as 'user' | 'assistant' | 'system',
+    content: msg.content,
+    sources: msg.sources || [],
+    createdAt: msg.created_at
+})
+
 // ─────────────────────────────────────────────────────────────────────
 // Store State
 // ─────────────────────────────────────────────────────────────────────
@@ -46,13 +88,13 @@ interface ConversationState {
 
     // Actions - Local State
     setCurrentConversation: (id: string | null) => void
-    addMessage: (message: Message) => void
+    addMessage: (message: Message, conversationId?: string) => void
     updateMessage: (id: string, updates: Partial<Message>) => void
     clearMessages: () => void
+    truncateMessagesAt: (index: number) => void
 
     // Actions - API
-    fetchConversations: () => Promise<void>
-    refetchConversations: () => Promise<void>  // Force refresh (bypasses guard)
+    fetchConversations: (forceRefresh?: boolean) => Promise<void>
     createConversation: (title?: string, mode?: 'text' | 'voice') => Promise<string>
     loadConversation: (id: string) => Promise<void>
     deleteConversation: (id: string) => Promise<void>
@@ -86,9 +128,26 @@ export const useConversationStore = create<ConversationState>()(
 
             setCurrentConversation: (id) => set({ currentConversationId: id }),
 
-            addMessage: (message) => set((state) => ({
-                messages: [...state.messages, message]
-            })),
+            addMessage: (message, explicitConversationId) => {
+                const state = get();
+
+                // Update UI state immediately
+                set({ messages: [...state.messages, message] });
+
+                // Write-through to cache (fire and forget for responsiveness)
+                // Use explicit ID if provided, otherwise fall back to state
+                const conversationId = explicitConversationId || state.currentConversationId;
+                if (conversationId) {
+                    conversationCache.saveMessage(conversationId, {
+                        id: message.id,
+                        conversationId,
+                        role: message.role,
+                        content: message.content,
+                        sources: message.sources,
+                        createdAt: message.createdAt
+                    }).catch(err => console.warn('[Cache] Failed to save message:', err));
+                }
+            },
 
             updateMessage: (id, updates) => set((state) => ({
                 messages: state.messages.map((msg) =>
@@ -97,6 +156,32 @@ export const useConversationStore = create<ConversationState>()(
             })),
 
             clearMessages: () => set({ messages: [], currentConversationId: null }),
+
+            truncateMessagesAt: (index) => {
+                const state = get();
+                const newMessages = state.messages.slice(0, index);
+                const keepMessageIds = newMessages.map(m => m.id);
+
+                // Update UI state immediately
+                set({ messages: newMessages });
+
+                // Sync with cache in background
+                if (state.currentConversationId) {
+                    conversationCache.truncateMessages(
+                        state.currentConversationId,
+                        keepMessageIds
+                    ).catch(err => console.warn('[Cache] Failed to truncate:', err));
+
+                    // Sync with backend (fire and forget for responsiveness)
+                    api.delete(`/conversations/${state.currentConversationId}/messages`, {
+                        data: { keep_message_ids: keepMessageIds }
+                    }).then(() => {
+                        console.log('[Store] Backend messages truncated');
+                    }).catch(err => {
+                        console.warn('[Store] Failed to truncate backend messages:', err);
+                    });
+                }
+            },
 
             startNewChat: () => {
                 set({
@@ -119,6 +204,16 @@ export const useConversationStore = create<ConversationState>()(
                 set((state) => ({
                     conversations: [newConversation, ...state.conversations]
                 }))
+
+                // Sync with cache
+                conversationCache.upsertConversation({
+                    id: newConversation.id,
+                    title: newConversation.title,
+                    mode: newConversation.mode,
+                    isPinned: newConversation.isPinned,
+                    createdAt: newConversation.createdAt,
+                    updatedAt: newConversation.updatedAt || newConversation.createdAt
+                }).catch(err => console.warn('[Store] Failed to cache optimistic conv:', err));
             },
 
             updateConversationId: (tempId, realId) => {
@@ -129,91 +224,101 @@ export const useConversationStore = create<ConversationState>()(
                     ),
                     currentConversationId: state.currentConversationId === tempId ? realId : state.currentConversationId
                 }))
+
+                // Sync with cache
+                conversationCache.migrateId(tempId, realId)
+                    .catch(err => console.warn('[Store] Failed to migrate cache ID:', err));
             },
 
             // ─────────────────────────────────────────────────────────────
             // API Actions
             // ─────────────────────────────────────────────────────────────
 
-            fetchConversations: async () => {
-                // Prevent duplicate fetches from multiple component instances
-                if (get().isLoadingConversations || get().hasFetchedConversations) {
-                    return
-                }
-                set({ isLoadingConversations: true })
-                try {
-                    // Backend returns snake_case, we need camelCase
-                    interface BackendConversation {
-                        id: string
-                        title: string
-                        mode: string
-                        created_at: string
-                        updated_at: string | null
-                        is_pinned: boolean
-                        message_count: number
-                    }
-                    const response = await api.get<BackendConversation[]>('/conversations/')
+            fetchConversations: async (forceRefresh = false) => {
+                // Prevent duplicate fetches unless force refresh
+                if (get().isLoadingConversations) return
+                if (!forceRefresh && get().hasFetchedConversations) return
 
-                    // Transform snake_case to camelCase
-                    const conversations: Conversation[] = response.data.map(conv => ({
-                        id: conv.id,
-                        title: conv.title,
-                        mode: conv.mode as 'text' | 'voice',
-                        createdAt: conv.created_at,
-                        updatedAt: conv.updated_at,
-                        isPinned: conv.is_pinned,
-                        messageCount: conv.message_count
-                    }))
+                set({ isLoadingConversations: true })
+
+                // Helper to save conversations to cache
+                // Helper to save conversations to cache and remove orphans
+                const saveToCache = async (data: BackendConversation[]) => {
+                    // 1. Save fresh data
+                    for (const conv of data) {
+                        await conversationCache.upsertConversation({
+                            id: conv.id,
+                            title: conv.title,
+                            mode: conv.mode as 'text' | 'voice',
+                            isPinned: conv.is_pinned,
+                            createdAt: conv.created_at,
+                            updatedAt: conv.updated_at || conv.created_at
+                        }).catch(() => { /* ignore */ })
+                    }
+
+                    // 2. Identify and remove orphans (cached items not in current server response)
+                    const serverIds = new Set(data.map(c => c.id));
+                    const cached = await conversationCache.getAllRaw();
+                    const orphans = cached.filter(c => !serverIds.has(c.id)).map(c => c.id);
+
+                    if (orphans.length > 0) {
+                        console.log('[Cache] Evicting orphans:', orphans.length);
+                        await conversationCache.deleteMultiple(orphans);
+                    }
+                }
+
+                try {
+                    // 1. Cache-first: Load from IndexedDB instantly (skip if force refresh)
+                    if (!forceRefresh) {
+                        const cached = await conversationCache.getAll()
+                        if (cached.length > 0) {
+                            console.log('[Cache] HIT - Showing cached conversations:', cached.length)
+                            // Transform cached to Conversation format
+                            const cachedConversations: Conversation[] = cached.map(c => ({
+                                id: c.id,
+                                title: c.title,
+                                mode: c.mode || 'text',
+                                createdAt: c.createdAt,
+                                updatedAt: c.updatedAt,
+                                isPinned: c.isPinned,
+                                messageCount: 0  // Not stored in cache
+                            }))
+                            set({
+                                conversations: cachedConversations,
+                                isLoadingConversations: false,
+                                hasFetchedConversations: true
+                            })
+
+                            // 2. Background sync: Fetch fresh data from backend
+                            api.get<BackendConversation[]>('/conversations/')
+                                .then(response => {
+                                    const conversations = response.data.map(transformConversation)
+                                    console.log('[Cache] Background sync complete:', conversations.length)
+                                    set({ conversations })
+                                    saveToCache(response.data)
+                                })
+                                .catch(err => console.warn('[Cache] Background sync failed:', err))
+
+                            return
+                        }
+                    }
+
+                    // 3. Cache miss or force refresh: Fetch from server
+                    console.log('[Cache] MISS - Fetching from server...')
+                    const response = await api.get<BackendConversation[]>('/conversations/')
+                    const conversations = response.data.map(transformConversation)
 
                     set({
                         conversations,
                         isLoadingConversations: false,
                         hasFetchedConversations: true
                     })
+
+                    // Save to cache for next time
+                    saveToCache(response.data)
                 } catch (error) {
                     console.error('Failed to fetch conversations:', error)
                     set({ isLoadingConversations: false, hasFetchedConversations: true })
-                }
-            },
-
-            refetchConversations: async () => {
-                // Force refresh - bypasses the guard for intentional updates
-                if (get().isLoadingConversations) return
-                console.log('[refetchConversations] Starting fetch...')
-                set({ isLoadingConversations: true })
-                try {
-                    // Backend returns snake_case, we need camelCase
-                    interface BackendConversation {
-                        id: string
-                        title: string
-                        mode: string
-                        created_at: string
-                        updated_at: string | null
-                        is_pinned: boolean
-                        message_count: number
-                    }
-                    const response = await api.get<BackendConversation[]>('/conversations/')
-                    console.log('[refetchConversations] Raw response:', response.data)
-
-                    // Transform snake_case to camelCase
-                    const conversations: Conversation[] = response.data.map(conv => ({
-                        id: conv.id,
-                        title: conv.title,
-                        mode: conv.mode as 'text' | 'voice',
-                        createdAt: conv.created_at,
-                        updatedAt: conv.updated_at,
-                        isPinned: conv.is_pinned,
-                        messageCount: conv.message_count
-                    }))
-
-                    console.log('[refetchConversations] Transformed:', conversations)
-                    set({
-                        conversations,
-                        isLoadingConversations: false
-                    })
-                } catch (error) {
-                    console.error('[refetchConversations] Failed:', error)
-                    set({ isLoadingConversations: false })
                 }
             },
 
@@ -239,24 +344,97 @@ export const useConversationStore = create<ConversationState>()(
             },
 
             loadConversation: async (id) => {
-                set({ isLoadingMessages: true })
-                try {
-                    const response = await api.get<ConversationDetail>(`/conversations/${id}`)
-                    const detail = response.data
+                const state = get()
+                if (state.isLoadingMessages) return
 
-                    set({
-                        currentConversationId: id,
-                        messages: detail.messages.map((msg) => ({
-                            id: msg.id,
-                            role: msg.role as 'user' | 'assistant' | 'system',
-                            content: msg.content,
-                            sources: msg.sources || [],
-                            createdAt: msg.createdAt
-                        })),
-                        isLoadingMessages: false
-                    })
+                // If already loaded, we only do a background delta sync
+                const isAlreadyLoaded = state.currentConversationId === id && state.messages.length > 0;
+
+                if (!isAlreadyLoaded) {
+                    set({ isLoadingMessages: true })
+                }
+
+                try {
+                    // 1. Check cache first (only if not already loaded in memory)
+                    let lastSyncedAt = '1970-01-01T00:00:00.000Z';
+                    if (!isAlreadyLoaded) {
+                        const cached = await conversationCache.get(id)
+                        if (cached) {
+                            console.log('[Cache] HIT - Showing cached data instantly');
+                            lastSyncedAt = cached.conversation.cachedAt;
+                            set({
+                                currentConversationId: id,
+                                messages: cached.messages.map(m => ({
+                                    id: m.id,
+                                    role: m.role,
+                                    content: m.content,
+                                    sources: m.sources,
+                                    createdAt: m.createdAt
+                                })),
+                                isLoadingMessages: false
+                            })
+                        }
+                    } else {
+                        // Already in memory, find the last sync time from cache meta
+                        const meta = await conversationCache.getMeta(id);
+                        if (meta) lastSyncedAt = meta.cachedAt;
+                    }
+
+                    // 2. Sync with backend (always do this to get fresh messages)
+                    try {
+                        console.log('[Cache] Syncing delta since:', lastSyncedAt);
+                        const deltaResponse = await api.get<BackendMessage[]>(
+                            `/conversations/${id}/messages`,
+                            { params: { after: lastSyncedAt } }
+                        )
+
+                        if (deltaResponse.data.length > 0) {
+                            const newUIMessages = deltaResponse.data.map(transformMessage)
+                            const newCacheMessages = deltaResponse.data.map(msg => ({
+                                ...transformMessage(msg),
+                                conversationId: id
+                            }))
+
+                            await conversationCache.appendMessages(id, newCacheMessages)
+
+                            set((state) => {
+                                const existingIds = new Set(state.messages.map(m => m.id))
+                                const uniqueNewMessages = newUIMessages.filter(m => !existingIds.has(m.id))
+                                return {
+                                    messages: [...state.messages, ...uniqueNewMessages]
+                                }
+                            })
+                        }
+                    } catch (deltaError) {
+                        console.debug('[Cache] Background sync failed:', deltaError)
+                    }
+
+                    // 3. Fallback for cache miss (+ full load)
+                    if (!isAlreadyLoaded && !get().messages.length) {
+                        console.log('[Cache] MISS - Full fetch from server...')
+                        interface BackendDetail {
+                            id: string; title: string; summary: string | null;
+                            created_at: string; updated_at: string | null;
+                            messages: BackendMessage[];
+                        }
+                        const response = await api.get<BackendDetail>(`/conversations/${id}`)
+                        const detail = response.data
+
+                        const cms = detail.messages.map(m => ({ ...transformMessage(m), conversationId: id }))
+                        await conversationCache.save({
+                            id: detail.id, title: detail.title, summary: detail.summary || undefined,
+                            isPinned: false, createdAt: detail.created_at, updatedAt: detail.updated_at || detail.created_at
+                        }, cms)
+
+                        set({
+                            currentConversationId: id,
+                            messages: detail.messages.map(transformMessage),
+                            isLoadingMessages: false
+                        })
+                    }
                 } catch (error) {
-                    console.error('Failed to load conversation:', error)
+                    console.error('Failed to load/sync conversation:', error)
+                } finally {
                     set({ isLoadingMessages: false })
                 }
             },
@@ -271,6 +449,10 @@ export const useConversationStore = create<ConversationState>()(
                     currentConversationId: currentConversationId === id ? null : currentConversationId,
                     messages: currentConversationId === id ? [] : state.messages
                 }))
+
+                // Sync with cache
+                conversationCache.delete(id)
+                    .catch(err => console.warn('[Store] Failed to delete from cache:', err));
 
                 try {
                     await api.delete(`/conversations/${id}`)
@@ -291,6 +473,10 @@ export const useConversationStore = create<ConversationState>()(
                         c.id === id ? { ...c, title } : c
                     )
                 }))
+
+                // Sync with cache
+                conversationCache.updateConversation(id, { title })
+                    .catch(err => console.warn('[Store] Failed to update title in cache:', err));
 
                 try {
                     await api.patch(`/conversations/${id}`, { title })
@@ -324,6 +510,10 @@ export const useConversationStore = create<ConversationState>()(
                     return { conversations: sortedConversations }
                 })
 
+                // Sync with cache
+                conversationCache.updateConversation(id, { isPinned: newPinnedParam })
+                    .catch(err => console.warn('[Store] Failed to update cache pin:', err));
+
                 try {
                     await api.patch(`/conversations/${id}`, { is_pinned: newPinnedParam })
                 } catch (error) {
@@ -336,10 +526,8 @@ export const useConversationStore = create<ConversationState>()(
         }),
         {
             name: 'samvaad-conversations',
-            // Only persist the current conversation ID, not the full message list
-            partialize: (state) => ({
-                currentConversationId: state.currentConversationId
-            })
+            // NO persistence of currentConversationId - rely on URL
+            partialize: (state) => ({})
         }
     )
 )

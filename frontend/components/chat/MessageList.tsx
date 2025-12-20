@@ -16,7 +16,7 @@ export function MessageList({ messages, isLoading, onEdit }: MessageListProps) {
   }, [messages, isLoading]);
 
   return (
-    <div className="flex-1 w-full max-w-3xl mx-auto px-4 py-8 overflow-y-auto">
+    <div className="flex-1 w-full max-w-3xl mx-auto px-6 md:px-4 py-8 overflow-y-auto">
       {messages.map((msg, index) => (
         <MessageBubble
           key={index}

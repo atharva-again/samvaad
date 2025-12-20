@@ -52,10 +52,14 @@ export const sendMessage = async (
   signal?: AbortSignal,
   persona: string = "default",
   strictMode: boolean = false,
+  userMessageId?: string,
+  assistantMessageId?: string,
 ) => {
   const response = await api.post<ChatResponse>("/text-mode", {
     message,
     conversation_id: conversationId,
+    user_message_id: userMessageId,
+    assistant_message_id: assistantMessageId,
     persona,
     strict_mode: strictMode,
   }, { signal });
@@ -63,12 +67,14 @@ export const sendMessage = async (
 };
 
 export const startVoiceMode = async (
+  conversationId?: string,  // Existing conversation to continue
   sessionId: string = "default",
   enable_tts: boolean = true,
   persona: string = "default",
   strictMode: boolean = false,
 ) => {
   const response = await api.post<VoiceModeResponse>("/voice-mode", {
+    conversation_id: conversationId,
     session_id: sessionId,
     enable_tts,
     persona,

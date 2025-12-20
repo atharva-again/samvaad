@@ -6,8 +6,16 @@ export interface GroupedConversations {
     today: Conversation[];
     yesterday: Conversation[];
     previous7Days: Conversation[];
-    older: Conversation[];
+    // Monthly buckets for older conversations (key format: "Month Year", e.g., "December 2024")
+    months: { [key: string]: Conversation[] };
 }
+
+// Helper to get month-year key from a date
+const getMonthKey = (date: Date): string => {
+    const months = ['January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'];
+    return `${months[date.getMonth()]} ${date.getFullYear()}`;
+};
 
 export function useGroupedConversations(conversations: Conversation[], searchQuery: string = "") {
     return useMemo<GroupedConversations>(() => {
@@ -16,9 +24,10 @@ export function useGroupedConversations(conversations: Conversation[], searchQue
             today: [],
             yesterday: [],
             previous7Days: [],
-            older: []
+            months: {}
         };
 
+        // All dates use browser's local timezone
         const now = new Date();
         const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
         const yesterday = today - 86400000;
@@ -33,16 +42,28 @@ export function useGroupedConversations(conversations: Conversation[], searchQue
             if (conv.isPinned) {
                 groups.pinned.push(conv);
                 // Note: Intentionally NOT returning here so pinned items also appear in history
-                // per recent UX requirements.
             }
 
-            const date = new Date(conv.updatedAt || conv.createdAt).getTime();
-            if (date >= today) groups.today.push(conv);
-            else if (date >= yesterday) groups.yesterday.push(conv);
-            else if (date >= lastWeek) groups.previous7Days.push(conv);
-            else groups.older.push(conv);
+            const convDate = new Date(conv.updatedAt || conv.createdAt);
+            const timestamp = convDate.getTime();
+
+            if (timestamp >= today) {
+                groups.today.push(conv);
+            } else if (timestamp >= yesterday) {
+                groups.yesterday.push(conv);
+            } else if (timestamp >= lastWeek) {
+                groups.previous7Days.push(conv);
+            } else {
+                // Group by month for older conversations
+                const monthKey = getMonthKey(convDate);
+                if (!groups.months[monthKey]) {
+                    groups.months[monthKey] = [];
+                }
+                groups.months[monthKey].push(conv);
+            }
         });
 
         return groups;
     }, [conversations, searchQuery]);
 }
+

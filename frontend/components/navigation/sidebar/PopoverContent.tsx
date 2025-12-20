@@ -7,18 +7,27 @@ interface PopoverContentProps {
     title: string;
     conversations: Conversation[] | GroupedConversations;
     grouped?: boolean;
-    onSelect: (id: string) => void;
+    isLoading?: boolean;
     onRename?: (id: string) => void;
     onPin?: (id: string) => void;
     onDelete?: (id: string) => void;
     onMenuOpenChange?: (open: boolean) => void;
 }
 
+// Skeleton loader component for loading state
+function ConversationSkeleton() {
+    return (
+        <div className="w-[calc(100%-8px)] mx-1 px-2 py-1.5 rounded-md animate-pulse">
+            <div className="h-4 bg-white/10 rounded w-3/4" />
+        </div>
+    );
+}
+
 export function PopoverContent({
     title,
     conversations,
     grouped = false,
-    onSelect,
+    isLoading = false,
     onRename,
     onPin,
     onDelete,
@@ -28,7 +37,7 @@ export function PopoverContent({
         ? (conversations as GroupedConversations).today.length +
         (conversations as GroupedConversations).yesterday.length +
         (conversations as GroupedConversations).previous7Days.length +
-        (conversations as GroupedConversations).older.length
+        Object.values((conversations as GroupedConversations).months).reduce((sum, arr) => sum + arr.length, 0)
         : (conversations as Conversation[]).length;
 
     const renderItem = (conv: Conversation) => (
@@ -36,7 +45,6 @@ export function PopoverContent({
             key={conv.id}
             conversation={conv}
             isActive={false}
-            onSelect={() => onSelect(conv.id)}
             onRename={() => onRename?.(conv.id)}
             onPin={() => onPin?.(conv.id)}
             onDelete={() => onDelete?.(conv.id)}
@@ -57,6 +65,22 @@ export function PopoverContent({
         );
     };
 
+    // Loading skeleton
+    if (isLoading) {
+        return (
+            <div className="py-2 max-h-[400px] overflow-y-auto">
+                <div className="px-3 py-2 text-[11px] font-semibold text-white/60 uppercase tracking-wider border-b border-white/5 mb-1">
+                    {title}
+                </div>
+                <div className="space-y-1 py-1">
+                    <ConversationSkeleton />
+                    <ConversationSkeleton />
+                    <ConversationSkeleton />
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="py-2 max-h-[400px] overflow-y-auto">
             <div className="px-3 py-2 text-[11px] font-semibold text-white/60 uppercase tracking-wider border-b border-white/5 mb-1">
@@ -67,7 +91,20 @@ export function PopoverContent({
                     {renderGroup("Today", (conversations as GroupedConversations).today)}
                     {renderGroup("Yesterday", (conversations as GroupedConversations).yesterday)}
                     {renderGroup("Previous 7 Days", (conversations as GroupedConversations).previous7Days)}
-                    {renderGroup("Older", (conversations as GroupedConversations).older)}
+                    {/* Monthly groups (older conversations) */}
+                    {Object.entries((conversations as GroupedConversations).months)
+                        .sort(([a], [b]) => {
+                            // Sort by date descending (most recent month first)
+                            const parseMonth = (key: string) => {
+                                const [month, year] = key.split(' ');
+                                const monthIndex = ['January', 'February', 'March', 'April', 'May', 'June',
+                                    'July', 'August', 'September', 'October', 'November', 'December'].indexOf(month);
+                                return new Date(parseInt(year), monthIndex).getTime();
+                            };
+                            return parseMonth(b) - parseMonth(a);
+                        })
+                        .map(([monthKey, convs]) => renderGroup(monthKey, convs))
+                    }
                 </>
             ) : (
                 (conversations as Conversation[]).length > 0
@@ -82,3 +119,4 @@ export function PopoverContent({
         </div>
     );
 }
+

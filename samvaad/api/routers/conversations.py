@@ -23,7 +23,6 @@ conversation_service = ConversationService()
 
 class ConversationCreate(BaseModel):
     title: Optional[str] = "New Conversation"
-    mode: str = "text"  # "text" or "voice"
 
 
 class ConversationUpdate(BaseModel):
@@ -45,7 +44,7 @@ class MessageResponse(BaseModel):
 class ConversationResponse(BaseModel):
     id: str
     title: str
-    mode: str
+    mode: str = "text"  # Hardcoded - mode column removed from DB
     created_at: datetime
     updated_at: Optional[datetime]
     is_pinned: bool = False
@@ -58,7 +57,7 @@ class ConversationResponse(BaseModel):
 class ConversationDetailResponse(BaseModel):
     id: str
     title: str
-    mode: str
+    mode: str = "text"  # Hardcoded - mode column removed from DB
     summary: Optional[str]
     created_at: datetime
     updated_at: Optional[datetime]
@@ -80,14 +79,12 @@ def create_conversation(
     """Create a new conversation."""
     conversation = conversation_service.create_conversation(
         user_id=current_user.id,
-        title=data.title or "New Conversation",
-        mode=data.mode
+        title=data.title or "New Conversation"
     )
     
     return ConversationResponse(
         id=str(conversation.id),
         title=conversation.title,
-        mode=conversation.mode,
         created_at=conversation.created_at,
         updated_at=conversation.updated_at,
         message_count=0
@@ -113,7 +110,6 @@ def list_conversations(
         result.append(ConversationResponse(
             id=str(conv.id),
             title=conv.title,
-            mode=conv.mode,
             created_at=conv.created_at,
             updated_at=conv.updated_at,
             is_pinned=conv.is_pinned,
@@ -140,7 +136,6 @@ def get_conversation(
     return ConversationDetailResponse(
         id=str(conversation.id),
         title=conversation.title,
-        mode=conversation.mode,
         summary=conversation.summary,
         created_at=conversation.created_at,
         updated_at=conversation.updated_at,
@@ -155,6 +150,63 @@ def get_conversation(
             for msg in conversation.messages
         ]
     )
+
+
+@router.get("/{conversation_id}/messages", response_model=List[MessageResponse])
+def get_messages_since(
+    conversation_id: UUID,
+    after: Optional[datetime] = None,
+    current_user: User = Depends(get_current_user)
+):
+    """Get messages created after a timestamp (for delta sync).
+    
+    If 'after' is not provided, returns all messages.
+    """
+    messages = conversation_service.get_messages_since(
+        conversation_id=conversation_id,
+        user_id=current_user.id,
+        after=after
+    )
+    
+    return [
+        MessageResponse(
+            id=str(msg.id),
+            role=msg.role,
+            content=msg.content,
+            sources=msg.sources or [],
+            created_at=msg.created_at
+        )
+        for msg in messages
+    ]
+
+
+class TruncateMessagesRequest(BaseModel):
+    """Request body for truncating messages."""
+    keep_message_ids: List[str]
+
+
+class TruncateMessagesResponse(BaseModel):
+    """Response for truncate messages endpoint."""
+    deleted_count: int
+
+
+@router.delete("/{conversation_id}/messages", response_model=TruncateMessagesResponse)
+def truncate_messages(
+    conversation_id: UUID,
+    request: TruncateMessagesRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Truncate messages in a conversation, keeping only the specified message IDs.
+    
+    Used for edit functionality - removes messages not in keep_message_ids.
+    """
+    deleted_count = conversation_service.truncate_messages_from(
+        conversation_id=conversation_id,
+        user_id=current_user.id,
+        keep_message_ids=request.keep_message_ids
+    )
+    
+    return TruncateMessagesResponse(deleted_count=deleted_count)
 
 
 @router.patch("/{conversation_id}", response_model=ConversationResponse)
@@ -179,7 +231,6 @@ def update_conversation(
     return ConversationResponse(
         id=str(conversation.id),
         title=conversation.title,
-        mode=conversation.mode,
         is_pinned=conversation.is_pinned,
         created_at=conversation.created_at,
         updated_at=conversation.updated_at,

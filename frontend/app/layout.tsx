@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { Toaster } from "sonner";
+import { ChatToaster } from "@/components/ui/ChatToaster";
 import { PipecatProvider } from "@/components/providers/PipecatProvider";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
@@ -35,18 +35,9 @@ export default function RootLayout({
           <PipecatProvider>{children}</PipecatProvider>
         </AuthProvider>
 
-        <Toaster
-          position="top-center"
-          toastOptions={{
-            style: {
-              background: "#121212",
-              border: "1px solid rgba(255,255,255,0.1)",
-              color: "#f3f4f6",
-            },
-            className: "font-sans",
-          }}
-        />
+        <ChatToaster />
       </body>
     </html>
   );
 }
+

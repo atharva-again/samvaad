@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { ActionTooltip } from "@/components/ui/action-tooltip";
 import { listFiles, uploadFile, deleteFile } from "@/lib/api";
+import { filesCache } from "@/lib/cache/filesCache";
 import { usePlatform } from "@/hooks/usePlatform";
 
 // Helper function to get icon based on file type
@@ -59,7 +60,7 @@ const getTimeAgo = (dateString: string) => {
 };
 
 export function SourcesPanel() {
-    const { modifier, isMobile } = usePlatform();
+    const { isMobile } = usePlatform();
     const {
         isSourcesPanelOpen,
         toggleSourcesPanel,
@@ -348,9 +349,9 @@ export function SourcesPanel() {
                 )}
             </AnimatePresence>
 
-            {/* Persistent Toggle (Visible when closed) - Responsive Position */}
+            {/* Persistent Toggle (Visible when closed) - Mobile only */}
             <AnimatePresence>
-                {!isSourcesPanelOpen && (
+                {!isSourcesPanelOpen && isMobile && (
                     <motion.div
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
@@ -359,10 +360,9 @@ export function SourcesPanel() {
                     >
                         <div
                             onClick={toggleSourcesPanel}
-                            className="h-12 w-1.5 md:h-16 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-l-full cursor-pointer transition-all duration-300 hover:w-6 flex items-center justify-center group overflow-visible relative"
+                            className="h-12 w-1.5 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-l-full cursor-pointer transition-all duration-300 hover:w-6 flex items-center justify-center group overflow-visible relative"
                         >
-                            <ChevronLeft className="w-3 h-3 md:w-4 md:h-4 text-white/50 group-hover:text-white opacity-0 group-hover:opacity-100 transition-all duration-300 relative z-10" />
-                            {!isMobile && <ActionTooltip label="Open Sources" shortcut="Alt+S" side="left" />}
+                            <ChevronLeft className="w-3 h-3 text-white/50 group-hover:text-white opacity-0 group-hover:opacity-100 transition-all duration-300 relative z-10" />
                         </div>
                     </motion.div>
                 )}
@@ -505,6 +505,7 @@ export function SourcesPanel() {
                                                         const idStr = String(file.id);
                                                         setDeletingIds(prev => new Set(prev).add(idStr));
                                                         await deleteFile(idStr);
+                                                        await filesCache.deleteFile(idStr);  // Remove from cache too
                                                         removeSource(file.id);
                                                         toast.success(`${file.name} removed`);
                                                     } catch (err) {
@@ -543,7 +544,7 @@ export function SourcesPanel() {
                                     className="w-full h-14 bg-white text-black hover:bg-white/90 hover:scale-[1.01] transition-all duration-300 rounded-2xl font-semibold text-base shadow-[0_0_20px_rgba(255,255,255,0.1)] flex items-center justify-center gap-2 group relative"
                                 >
                                     <span className="text-xl leading-none font-light">+</span> Add Source
-                                    <ActionTooltip label="Add Source" shortcut={`${modifier}+A`} side="top" />
+                                    <ActionTooltip label="Add Source" shortcut="Alt+A" side="top" />
                                 </Button>
                             </div>
                         </div>
