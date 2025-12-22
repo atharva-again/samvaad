@@ -36,11 +36,14 @@ export function ChatView({ conversationId }: ChatViewProps) {
         loadConversation,
     } = useConversationStore();
 
-    // Convert store messages to ChatMessage format
-    const messages: ChatMessage[] = storeMessages.map((m) => ({
+    // Convert store messages to ChatMessage format - MEMOIZED to prevent scroll triggers
+    const messages: ChatMessage[] = React.useMemo(() => storeMessages.map((m) => ({
+        id: m.id,
         role: m.role,
         content: m.content,
-    }));
+        timestamp: m.createdAt,
+        sources: m.sources,
+    })), [storeMessages]);
 
     // Swipe Detection for Sources Panel
     const touchStart = useRef<number | null>(null);
@@ -113,12 +116,8 @@ export function ChatView({ conversationId }: ChatViewProps) {
         if (isNewConversation && newConversationId) {
             addConversationOptimistic(newConversationId, text.slice(0, 50) + (text.length > 50 ? '...' : ''));
             setCurrentConversation(newConversationId);
-            // Update URL without triggering Next.js navigation (no page reload)
-            window.history.replaceState(
-                { ...window.history.state, as: `/chat/${newConversationId}`, url: `/chat/${newConversationId}` },
-                '',
-                `/chat/${newConversationId}`
-            );
+            // [UX-FIX #41] Use Router for safe navigation
+            router.replace(`/chat/${newConversationId}`, { scroll: false });
         }
 
         // Use the conversation ID from URL, current state, or newly generated
@@ -208,11 +207,8 @@ export function ChatView({ conversationId }: ChatViewProps) {
             // Update state and URL like text mode does
             addConversationOptimistic(newId, message.content.slice(0, 50) + (message.content.length > 50 ? '...' : ''));
             setCurrentConversation(newId);
-            window.history.replaceState(
-                { ...window.history.state, as: `/chat/${newId}`, url: `/chat/${newId}` },
-                '',
-                `/chat/${newId}`
-            );
+            // [UX-FIX #41] Use Router for safe navigation
+            router.replace(`/chat/${newId}`, { scroll: false });
             console.debug("[ChatView] Created new voice conversation:", newId);
         }
 

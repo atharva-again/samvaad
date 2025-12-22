@@ -11,12 +11,16 @@ Features:
 - Unified system prompt generation
 - Database persistence with proper UUID handling
 - Summarization support
+- Pipecat integration (SamvaadLLMContext)
 """
 from dataclasses import dataclass
 from functools import lru_cache
 from uuid import UUID
 from typing import List, Dict, Optional, Tuple, Any
 import tiktoken
+import os
+
+from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 
 from samvaad.db.conversation_service import ConversationService
 from samvaad.prompts.personas import get_persona_prompt
@@ -34,17 +38,153 @@ VOICE CONVERSATION STYLE:
 """
 
 # Default sliding window size
-SLIDING_WINDOW_SIZE = 6
+# Default sliding window size
+# [PHASE-3 #81] Configurable History Window
+SLIDING_WINDOW_SIZE = int(os.getenv("HISTORY_WINDOW_SIZE", "6"))
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Pipecat Integration: SamvaadLLMContext
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SamvaadLLMContext(OpenAILLMContext):
+    """
+    Database-backed LLM context manager for Pipecat voice pipelines.
+    
+    Extends OpenAILLMContext to automatically:
+    - Load existing conversation history from DB on init
+    - Persist new messages to DB when added
+    
+    This enables seamless switching between voice and text modes
+    within the same conversation.
+    """
+    
+    def __init__(
+        self,
+        conversation_id: str,
+        user_id: str,
+        conversation_service: Optional[ConversationService] = None,
+        **kwargs
+    ):
+        """
+        Initialize context with database backing.
+        
+        Args:
+            conversation_id: UUID of the conversation
+            user_id: UUID of the user
+            conversation_service: Optional injected service (for testing)
+            **kwargs: Passed to OpenAILLMContext (tools, tool_choice, etc.)
+        """
+        super().__init__(**kwargs)
+        self.conversation_id = conversation_id
+        self.user_id = user_id
+        self._db = conversation_service or ConversationService()
+        self._initialized = False
+        
+    def load_history(self):
+        """
+        Load existing messages from database into context.
+        Call this after initialization to populate history.
+        """
+        if self._initialized:
+            return
+            
+        messages = self._db.get_messages(UUID(self.conversation_id))
+        for msg in messages:
+            # Use parent's add_message to avoid re-persisting
+            super().add_message({
+                "role": msg.role,
+                "content": msg.content
+            })
+        self._initialized = True
+    
+    def add_message(self, message):
+        """
+        Override: Add message to in-memory context only.
+        
+        Note: Database persistence is handled by the frontend's write-through
+        cache (IndexedDB + backend sync), same as text mode. This prevents
+        duplicate messages from ID mismatches between client/server UUIDs.
+        
+        Background fact extraction is triggered after assistant responses.
+        
+        Args:
+            message: Dict with 'role' and 'content' keys
+        """
+        # Add to in-memory context
+        super().add_message(message)
+        
+        # Trigger background fact extraction after assistant response
+        if message.get("role") == "assistant" and self.user_id and self.conversation_id:
+            # Get the previous user message for fact extraction
+            messages = self.get_messages()
+            if len(messages) >= 2:
+                # Find the last user message before this assistant response
+                user_msg = None
+                for m in reversed(messages[:-1]):  # Exclude the just-added assistant msg
+                    if m.get("role") == "user":
+                        user_msg = m.get("content", "")
+                        break
+                
+                if user_msg:
+                    # Fire-and-forget background task
+                    import asyncio
+                    try:
+                        loop = asyncio.get_running_loop()
+                        loop.create_task(self._extract_facts_async(
+                            user_msg, 
+                            message.get("content", "")
+                        ))
+                    except RuntimeError:
+                        # No running loop - skip fact extraction
+                        pass
+    
+    async def _extract_facts_async(self, user_message: str, assistant_message: str):
+        """Background: Extract and merge facts, save to Conversation.facts."""
+        from samvaad.core.memory import extract_facts_from_exchange
+        
+        try:
+            # Get current facts
+            conversation = self._db.get_conversation(
+                UUID(self.conversation_id), 
+                self.user_id
+            )
+            existing_facts = conversation.facts if conversation else ""
+            
+            # LLM merges existing + new facts, handles deduplication
+            merged_facts = await extract_facts_from_exchange(
+                user_message, 
+                assistant_message,
+                existing_facts=existing_facts
+            )
+            
+            if merged_facts:
+                # Format merged facts as simple text
+                updated_facts = ". ".join([f.get("fact", "") for f in merged_facts if f.get("fact")])
+                
+                self._db.update_conversation(
+                    UUID(self.conversation_id),
+                    self.user_id,
+                    facts=updated_facts
+                )
+                print(f"[Voice Memory] Updated facts for {self.conversation_id}")
+        except Exception as e:
+            print(f"[Voice Memory] Fact extraction error: {e}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Token Budget Configuration
+# ─────────────────────────────────────────────────────────────────────────────
 
 @dataclass
 class ContextBudget:
     """Token budget allocation for context window."""
-    total_budget: int = 8000  # Conservative limit for Groq's 8k context
-    system_prompt: int = 500
-    summary_buffer: int = 1000
-    recent_messages: int = 4000
-    rag_context: int = 2500
+    total_budget: int = 8000      # Efficient allocation
+    system_prompt: int = 500      # Persona + instructions
+    facts_state: int = 500        # Inline facts/preferences (increased for 20 facts)
+    summary: int = 700            # Turn-range summary
+    recent_messages: int = 1500   # JIT sliding window
+    rag_context: int = 1000       
 
 
 class UnifiedContextManager:
@@ -243,14 +383,23 @@ class UnifiedContextManager:
         if not chunks:
             return ""
         
+        import html
+        
         parts = []
         total_tokens = 0
         
         for i, chunk in enumerate(chunks, 1):
-            content = chunk.get("content", "")
-            filename = chunk.get("filename", f"doc_{i}")
+            # [SECURITY-FIX #75] Sanitize content to prevent injection via XML tags
+            raw_content = chunk.get("content", "")
+            # Escape XML special chars (<, >, &, ", ')
+            content = html.escape(raw_content)
             
-            formatted = f'<document id="{i}" source="{filename}">\n{content}\n</document>'
+            # Sanitize filename too
+            raw_filename = chunk.get("filename", f"doc_{i}")
+            filename = html.escape(raw_filename)
+            
+            # Use strict XML format - NO source attribute to force numeric IDs
+            formatted = f'<document id="{i}">\n{content}\n</document>'
             chunk_tokens = self.count_tokens(formatted)
             
             if total_tokens + chunk_tokens > max_tokens:
@@ -306,7 +455,8 @@ class UnifiedContextManager:
         rag_context: str,
         conversation_history: str,
         query: str,
-        is_voice: bool = False
+        is_voice: bool = False,
+        has_tools: bool = False
     ) -> str:
         """
         Build unified system prompt for either text or voice mode.
@@ -314,21 +464,48 @@ class UnifiedContextManager:
         Args:
             persona: Persona name (default, tutor, coder, etc.)
             strict_mode: Whether strict mode is enabled
-            rag_context: Pre-formatted RAG context
+            rag_context: Pre-formatted RAG context (if pre-fetched)
             conversation_history: Pre-formatted conversation history
             query: Current user query
-            is_voice: If True, adds voice-specific constraints (~50 word limit)
+            is_voice: If True, uses lean format (no XML placeholders) + voice constraints
+            has_tools: Whether LLM has access to fetch_context tool
+                       (True for tool-based RAG, False for pre-fetched context)
             
         Returns:
             Complete system prompt
         """
         persona_intro = get_persona_prompt(persona)
-        mode_instruction = get_mode_instruction(strict_mode)
         
-        # Add voice-specific constraints
+        # Get mode instruction based on whether tools are available and if it's voice mode
+        mode_instruction = get_mode_instruction(
+        persona_intro=persona_intro,
+        strict_mode=strict_mode,
+        is_voice=is_voice
+    )
+    
+        # Voice mode: Use lean format without XML placeholders
+        # Pipecat manages conversation context as separate messages
         if is_voice:
             persona_intro += VOICE_STYLE_INSTRUCTION
+            # Lean voice prompt - no XML tags, mode_instruction already has tool info
+            return f"""{persona_intro}
+
+{mode_instruction}"""
         
+        # Text mode with tools: Use lean format similar to voice (no empty XML tags)
+        if has_tools and not rag_context:
+            # [SECURITY-FIX #72] Do NOT interpolate query into system prompt.
+            # The query is passed as the last user message in the message list.
+            return f"""{persona_intro}
+
+{mode_instruction}
+
+### Conversation History
+{conversation_history if conversation_history else "No history yet."}
+
+Provide your answer:"""
+        
+        # Text mode with pre-fetched context: Use full unified prompt with XML structure
         return get_unified_system_prompt(
             persona_intro=persona_intro,
             context=rag_context,
@@ -336,6 +513,7 @@ class UnifiedContextManager:
             conversation_history=conversation_history,
             query=query
         )
+
     
     # ─────────────────────────────────────────────────────────────────────────
     # Database Operations
@@ -399,7 +577,7 @@ class UnifiedContextManager:
     def _create_simple_summary(self, messages: List[Dict]) -> str:
         """
         Create a simple summary without LLM call.
-        For proper summarization, use summarize_with_llm() method.
+        For proper LLM-based summarization, use memory.update_conversation_summary().
         """
         if not messages:
             return ""
@@ -435,56 +613,13 @@ class UnifiedContextManager:
             messages, self.budget.recent_messages
         )
         return len(older_messages) >= trigger_threshold
-    
-    async def summarize_with_llm(
-        self,
-        messages: List[Dict],
-        existing_summary: Optional[str] = None
-    ) -> str:
-        """
-        Generate summary using LLM for older messages.
-        Uses progressive summarization: incorporates existing summary.
-        """
-        from groq import Groq
-        import os
-        
-        groq_key = os.getenv("GROQ_API_KEY")
-        if not groq_key:
-            return self._create_simple_summary(messages)
-        
-        client = Groq(api_key=groq_key)
-        
-        # Build prompt for summarization
-        context = ""
-        if existing_summary:
-            context = f"Previous summary:\n{existing_summary}\n\nNew messages to incorporate:\n"
-        
-        messages_text = self.format_messages_for_prompt(messages)
-        
-        prompt = f"""{context}{messages_text}
 
-Create a concise summary (max 200 words) that captures:
-1. Main topics discussed
-2. Key questions asked by the user
-3. Important information provided by the assistant
-4. Any decisions or conclusions reached
 
-Summary:"""
-        
-        try:
-            response = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[
-                    {"role": "system", "content": "You are a conversation summarizer. Be concise and focus on key information."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.3,
-                max_tokens=300,
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            print(f"[UnifiedContextManager] Summarization error: {e}")
-            return self._create_simple_summary(messages)
+# ─────────────────────────────────────────────────────────────────────────────
+# NOTE: LLM-based summarization is in memory.py (update_conversation_summary)
+# Use that function for proper summarization. _create_simple_summary above is
+# a fallback for when LLM is unavailable.
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 # ─────────────────────────────────────────────────────────────────────────────

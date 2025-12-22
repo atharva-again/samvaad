@@ -249,7 +249,31 @@ def delete_conversation(
         user_id=current_user.id
     )
     
+    
     if not success:
         raise HTTPException(status_code=404, detail="Conversation not found")
     
     return {"success": True, "message": "Conversation deleted"}
+
+
+# [PHASE-3 #27] Bulk Delete Endpoint
+class BulkDeleteRequest(BaseModel):
+    conversation_ids: List[UUID]
+
+@router.delete("/batch", response_model=dict)
+def bulk_delete_conversations(
+    data: BulkDeleteRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Delete multiple conversations at once.
+    Returns the count of deleted conversations.
+    """
+    if not data.conversation_ids:
+        return {"deleted_count": 0}
+        
+    count = conversation_service.delete_conversations(
+        conversation_ids=data.conversation_ids,
+        user_id=current_user.id
+    )
+    return {"deleted_count": count, "success": True}

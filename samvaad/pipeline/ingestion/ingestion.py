@@ -7,7 +7,7 @@ import os
 import time
 
 from samvaad.pipeline.ingestion.chunking import (
-    chunk_text,
+    structural_chunk,
     parse_file,
 )
 from samvaad.pipeline.ingestion.embedding import generate_embeddings
@@ -79,7 +79,7 @@ def ingest_file_pipeline_with_progress(
 
     # Parse the file
     progress("Parsing file...")
-    text, error = parse_file(filename, content_type, contents)
+    pages, error = parse_file(filename, content_type, contents)
     if error:
         return {
             "filename": filename,
@@ -93,9 +93,11 @@ def ingest_file_pipeline_with_progress(
 
     from samvaad.utils.hashing import generate_chunk_id
     
-    # Chunk the text
-    progress("Chunking text...")
-    chunks = chunk_text(text)
+    # Chunk the text structurally
+    progress("Chunking text based on structure...")
+    chunks_obj = structural_chunk(pages)
+    chunks = [c.content for c in chunks_obj]
+    chunk_metadatas = [c.metadata for c in chunks_obj]
     
     if not chunks:
          return {
@@ -163,7 +165,8 @@ def ingest_file_pipeline_with_progress(
         chunks=chunks,
         chunk_hashes=chunk_hashes,
         new_embeddings_map=new_embeddings_map,
-        user_id=user_id
+        user_id=user_id,
+        chunk_metadatas=chunk_metadatas
     )
     
     store_end_time = time.time()

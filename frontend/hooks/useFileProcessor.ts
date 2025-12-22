@@ -5,6 +5,8 @@ import { listFiles, uploadFile, deleteFile } from '@/lib/api';
 import { filesCache } from '@/lib/cache/filesCache';
 import { CachedFile } from '@/lib/cache/db';
 import { toast } from 'sonner';
+import { useConversationStore } from '@/lib/stores/useConversationStore';
+import { uuidv7 } from 'uuidv7';
 
 // Helper to convert API response to SourceItem
 const apiToSourceItem = (f: any): SourceItem => ({
@@ -29,8 +31,9 @@ const cacheToSourceItem = (f: CachedFile): SourceItem => ({
 });
 
 // Helper to convert API response to CachedFile
-const apiToCachedFile = (f: any): CachedFile => ({
+const apiToCachedFile = (f: any, userId: string): CachedFile => ({
     id: f.id,
+    userId, // [SECURITY-FIX #01]
     filename: f.filename,
     fileType: f.filename.split('.').pop()?.toUpperCase() || "FILE",
     sizeBytes: f.size_bytes || 0,
@@ -55,11 +58,16 @@ export function useFileProcessor() {
         setSourcesPanelOpen
     } = useUIStore();
 
+    const userId = useConversationStore(state => state.userId);
+
     // Cache-first loading with stale-while-revalidate
     const refreshSources = React.useCallback(async () => {
         try {
+            // 0. Safety check
+            if (!userId) return [];
+
             // 1. Check cache first - show instantly
-            const cachedFiles = await filesCache.getAll();
+            const cachedFiles = await filesCache.getAll(userId);
             if (cachedFiles.length > 0) {
                 console.log('[FileProcessor] Cache HIT - showing', cachedFiles.length, 'files');
                 const mapped = cachedFiles.map(cacheToSourceItem);
@@ -73,8 +81,8 @@ export function useFileProcessor() {
                     setSources(freshMapped);
 
                     // Update cache with fresh data
-                    const cachedData = files.map(apiToCachedFile);
-                    await filesCache.saveAll(cachedData);
+                    const cachedData = files.map(f => apiToCachedFile(f, userId));
+                    await filesCache.saveAll(cachedData, userId);
                 }).catch(err => {
                     console.warn('[FileProcessor] Background sync failed:', err);
                 });
@@ -90,8 +98,8 @@ export function useFileProcessor() {
             setSources(mapped);
 
             // Save to cache
-            const cachedData = files.map(apiToCachedFile);
-            await filesCache.saveAll(cachedData);
+            const cachedData = files.map(f => apiToCachedFile(f, userId));
+            await filesCache.saveAll(cachedData, userId);
 
             return mapped;
         } catch (e) {
@@ -99,11 +107,12 @@ export function useFileProcessor() {
             toast.error("Failed to load files");
             return [];
         }
-    }, [setHasFetchedSources, setSources]);
+    }, [setHasFetchedSources, setSources, userId]);
 
-    const uploadSingleFile = async (file: File) => {
+    const uploadSingleFile = async (file: File): Promise<{ success: boolean, name: string, error?: string }> => {
         console.log("[useFileProcessor] Processing file:", file.name);
-        const tempId = Date.now().toString() + Math.random().toString().slice(2, 5); // Unique ID
+        // [SECURITY-FIX #02] Use UUIDv7 for consistent IDs
+        const tempId = uuidv7();
         const newSource = {
             id: tempId,
             name: file.name,
@@ -124,8 +133,9 @@ export function useFileProcessor() {
             if (result.error) {
                 console.error("[useFileProcessor] Backend processing error:", result.error);
                 updateSourceStatus(tempId, 'error');
-                toast.error(`Failed to process ${file.name}: ${result.error}`);
-                return;
+                updateSourceStatus(tempId, 'error');
+                // toast.error(`Failed to process ${file.name}: ${result.error}`); // Suppress for batch summary
+                return { success: false, name: file.name, error: result.error };
             }
 
             if (result.file_id) {
@@ -141,24 +151,29 @@ export function useFileProcessor() {
                 });
 
                 // Write-through to cache
-                await filesCache.saveFile({
-                    id: finalId,
-                    filename: file.name,
-                    fileType: file.name.split('.').pop()?.toUpperCase() || "FILE",
-                    sizeBytes,
-                    contentHash: result.content_hash,
-                    createdAt,
-                    cachedAt: new Date().toISOString()
-                });
-                console.log("[FileProcessor] File saved to cache:", finalId);
+                if (userId) {
+                    await filesCache.saveFile({
+                        id: finalId,
+                        userId, // [SECURITY-FIX #01]
+                        filename: file.name,
+                        fileType: file.name.split('.').pop()?.toUpperCase() || "FILE",
+                        sizeBytes,
+                        contentHash: result.content_hash,
+                        createdAt,
+                        cachedAt: new Date().toISOString()
+                    });
+                    console.log("[FileProcessor] File saved to cache:", finalId);
+                }
             } else {
                 updateSourceStatus(tempId, 'synced');
             }
-            toast.success(`${file.name} uploaded successfully`);
+            // toast.success(`${file.name} uploaded successfully`); // Suppress for batch summary
+            return { success: true, name: file.name };
         } catch (error) {
             console.error("[useFileProcessor] Upload error:", error);
             removeSource(tempId);
-            toast.error(`Failed to upload ${file.name}`);
+            // toast.error(`Failed to upload ${file.name}`); // Suppress for batch summary
+            return { success: false, name: file.name, error: String(error) };
         }
     };
 
@@ -173,6 +188,20 @@ export function useFileProcessor() {
     const processFiles = async (files: File[]) => {
         console.log("[useFileProcessor] processFiles called with", files.length, "files");
         if (files.length > 0) {
+            // [UX-FIX] Client-side file size validation (25MB limit)
+            const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
+            const oversizedFiles = files.filter(f => f.size > MAX_FILE_SIZE);
+            const validFiles = files.filter(f => f.size <= MAX_FILE_SIZE);
+
+            if (oversizedFiles.length > 0) {
+                const names = oversizedFiles.map(f => f.name).join(', ');
+                toast.error(`File${oversizedFiles.length > 1 ? 's' : ''} too large (max 25MB): ${names}`);
+            }
+
+            if (validFiles.length === 0) {
+                return; // No valid files to process
+            }
+
             // Auto-open the knowledge base panel to show upload progress
             setSourcesPanelOpen(true);
 
@@ -185,7 +214,7 @@ export function useFileProcessor() {
             const uniqueFiles: File[] = [];
 
             // We need to check async hashes
-            await Promise.all(files.map(async (file) => {
+            await Promise.all(validFiles.map(async (file) => {
                 let duplicateMatch: SourceItem | null = null; // SourceItem
 
                 // 1. Check Filename Collision
@@ -214,7 +243,20 @@ export function useFileProcessor() {
             }));
 
             if (uniqueFiles.length > 0) {
-                await Promise.all(uniqueFiles.map(uploadSingleFile));
+                const results = await Promise.all(uniqueFiles.map(uploadSingleFile));
+
+                // [UX-FIX] Batch Toast Summary
+                const successCount = results.filter(r => r.success).length;
+                const errors = results.filter(r => !r.success);
+
+                if (successCount > 0) {
+                    toast.success(`Uploaded ${successCount} file${successCount > 1 ? 's' : ''} successfully`);
+                }
+
+                if (errors.length > 0) {
+                    toast.error(`Failed to upload ${errors.length} file${errors.length > 1 ? 's' : ''}`);
+                    console.error("Upload failures:", errors);
+                }
             }
 
             if (duplicates.length > 0) {
@@ -240,7 +282,7 @@ export function useFileProcessor() {
 
                     // Then Delete old version (Cleans up only truly orphaned chunks)
                     await deleteFile(String(match.id));
-                    await filesCache.deleteFile(String(match.id));  // Remove from cache too
+                    if (userId) await filesCache.deleteFile(String(match.id), userId);  // Remove from cache too
 
                     // Update UI
                     removeSource(match.id);

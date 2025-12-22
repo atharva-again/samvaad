@@ -8,10 +8,15 @@ interface PopoverContentProps {
     conversations: Conversation[] | GroupedConversations;
     grouped?: boolean;
     isLoading?: boolean;
-    onRename?: (id: string) => void;
+    onRename?: (id: string, newTitle: string) => void;
     onPin?: (id: string) => void;
     onDelete?: (id: string) => void;
     onMenuOpenChange?: (open: boolean) => void;
+
+    // Selection Props (optional for popover context but good to have parity)
+    isSelectMode?: boolean;
+    selectedIds?: Set<string>;
+    onToggleSelect?: (id: string) => void;
 }
 
 // Skeleton loader component for loading state
@@ -31,7 +36,10 @@ export function PopoverContent({
     onRename,
     onPin,
     onDelete,
-    onMenuOpenChange
+    onMenuOpenChange,
+    isSelectMode = false,
+    selectedIds,
+    onToggleSelect
 }: PopoverContentProps) {
     const totalItems = grouped
         ? (conversations as GroupedConversations).today.length +
@@ -45,11 +53,14 @@ export function PopoverContent({
             key={conv.id}
             conversation={conv}
             isActive={false}
-            onRename={() => onRename?.(conv.id)}
+            onRename={(newTitle) => onRename?.(conv.id, newTitle)}
             onPin={() => onPin?.(conv.id)}
             onDelete={() => onDelete?.(conv.id)}
             isInsidePopover={true}
             onMenuOpenChange={onMenuOpenChange}
+            isSelectMode={isSelectMode}
+            isSelected={selectedIds?.has(conv.id)}
+            onToggleSelect={() => onToggleSelect?.(conv.id)}
         />
     );
 

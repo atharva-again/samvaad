@@ -3,7 +3,7 @@
  */
 
 /** Available persona options for AI interactions */
-export const PERSONAS = ["default", "tutor", "coder", "friend", "expert"] as const;
+export const PERSONAS = ["default", "tutor", "coder", "friend", "expert", "quizzer"] as const;
 export type Persona = typeof PERSONAS[number];
 
 /** Capitalize first letter of a string */

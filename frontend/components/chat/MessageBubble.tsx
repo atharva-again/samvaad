@@ -6,6 +6,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { cn } from "@/lib/utils";
 import { ChatMessage } from "@/lib/api";
+import { useUIStore, CitationItem } from "@/lib/stores/useUIStore";
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -67,7 +68,77 @@ const markdownComponents = {
   ),
 };
 
-import { Copy, Pencil, Volume2, Loader2, StopCircle } from "lucide-react";
+// Separate component with local hover state for instant feedback
+interface CitationBadgeProps {
+  index: number;
+  citationNum: string;
+  messageId: string;
+  hasSources: boolean;
+  sources: any;
+  citedIndices: number[] | undefined;
+  openCitations: (messageId: string, citations: any[], citedIndices?: number[]) => void;
+  setHoveredCitationIndex: (index: number | null, messageId: string | null, source?: 'bubble' | 'panel' | null) => void;
+}
+
+function CitationBadge({ index, citationNum, messageId, hasSources, sources, citedIndices, openCitations, setHoveredCitationIndex }: CitationBadgeProps) {
+  const [isLocalHovered, setIsLocalHovered] = React.useState(false);
+  // Also check global store to support reverse highlighting (SourcesPanel -> MessageBubble)
+  const { hoveredCitationIndex, hoveredCitationMessageId } = useUIStore();
+  const isGlobalHovered = hoveredCitationIndex === index && hoveredCitationMessageId === messageId;
+  const isHovered = isLocalHovered || isGlobalHovered;
+
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center justify-center min-w-[1.2rem] h-[1.2rem] text-[0.65rem] font-bold rounded-full align-text-top ml-0.5 cursor-pointer transition-all duration-150 select-none",
+        isHovered
+          ? "bg-text-primary text-surface scale-110 shadow-[0_0_10px_rgba(255,255,255,0.3)]"
+          : "bg-surface-light border border-white/10 text-text-secondary hover:bg-white/20 hover:text-white"
+      )}
+      onMouseEnter={() => {
+        setIsLocalHovered(true);
+        setHoveredCitationIndex(index, messageId, 'bubble');
+      }}
+      onMouseLeave={() => {
+        setIsLocalHovered(false);
+        setHoveredCitationIndex(null, null);
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (hasSources && messageId && sources) {
+          openCitations(messageId, sources as unknown as CitationItem[], citedIndices);
+        }
+      }}
+    >
+      {citationNum}
+    </span>
+  );
+}
+
+// Text that precedes a citation - highlights when the citation is hovered
+interface CitationTextProps {
+  text: string;
+  precedesCitationIndex: number;
+  messageId: string;
+}
+
+function CitationText({ text, precedesCitationIndex, messageId }: CitationTextProps) {
+  const { hoveredCitationIndex, hoveredCitationMessageId } = useUIStore();
+  const isHighlighted = hoveredCitationIndex === precedesCitationIndex && hoveredCitationMessageId === messageId;
+
+  return (
+    <span
+      className={cn(
+        "transition-all duration-150",
+        isHighlighted && "bg-amber-400/30 text-white rounded-sm px-0.5 py-0.5 -mx-0.5"
+      )}
+    >
+      {text}
+    </span>
+  );
+}
+
+import { Copy, Pencil, Volume2, Loader2, StopCircle, BookMarked } from "lucide-react";
 import { toast } from "sonner";
 import { useState, useRef } from "react";
 import { API_BASE_URL } from "@/lib/api";
@@ -77,6 +148,114 @@ export function MessageBubble({ message, index, onEdit }: MessageBubbleProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const messageRef = useRef<HTMLDivElement>(null);
+
+  const { openCitations, hoveredCitationIndex, hoveredCitationMessageId, setHoveredCitationIndex, sourcesPanelTab, setCitations, isSourcesPanelOpen } = useUIStore();
+
+  // Check if message has sources for citations button
+  const hasSources = !isUser && message.sources && Array.isArray(message.sources) && message.sources.length > 0;
+
+  // Extract cited indices from content (e.g. [1], [3]) to filter the sources panel
+  const citedIndices = React.useMemo(() => {
+    if (!hasSources) return undefined;
+    const matches = message.content.match(/\[(\d+)\]/g);
+    if (!matches) return undefined;
+
+    // Extract numbers, subtract 1 (0-indexed), and get unique values
+    const indices = new Set<number>();
+    matches.forEach(m => {
+      const match = m.match(/\[(\d+)\]/);
+      if (match && match[1]) {
+        indices.add(parseInt(match[1], 10) - 1);
+      }
+    });
+
+    return Array.from(indices).sort((a, b) => a - b);
+  }, [message.content, hasSources]);
+
+  // Memoize markdown components - DO NOT depend on hover state to prevent DOM recreation on hover
+  // Hover highlighting is handled via data-attributes and CSS
+  const components = React.useMemo(() => {
+    // Helper to process text and inject citation badges
+    const renderWithCitations = (text: string) => {
+      // Regex to find [N] patterns
+      const parts = text.split(/(\[\d+\])/g);
+
+      // If no citations, return text
+      if (parts.length === 1) return text;
+
+      // Map segments to reconstruct elements
+      return parts.map((part, i) => {
+        // Check if this part is a citation like [1]
+        const citationMatch = part.match(/^\[(\d+)\]$/);
+
+        if (citationMatch) {
+          const citationNum = citationMatch[1];
+          const index = parseInt(citationNum, 10) - 1; // 0-indexed
+
+          // CitationBadge component with local hover state for instant feedback
+          return (
+            <CitationBadge
+              key={i}
+              index={index}
+              citationNum={citationNum}
+              messageId={message.id || ''}
+              hasSources={hasSources || false}
+              sources={message.sources}
+              citedIndices={citedIndices}
+              openCitations={openCitations}
+              setHoveredCitationIndex={setHoveredCitationIndex}
+            />
+          );
+        }
+
+        // Regular text segment - check if it precedes a citation
+        const nextPart = parts[i + 1];
+        const nextMatch = nextPart?.match(/^\[(\d+)\]$/);
+
+        if (nextMatch) {
+          const nextIndex = parseInt(nextMatch[1], 10) - 1;
+          return (
+            <CitationText
+              key={i}
+              text={part}
+              precedesCitationIndex={nextIndex}
+              messageId={message.id || ''}
+            />
+          );
+        }
+
+        return <span key={i}>{part}</span>;
+      });
+    };
+
+    return {
+      ...markdownComponents,
+      p: ({ node, children, ...props }: any) => {
+        const processedChildren = React.Children.map(children, (child) => {
+          if (typeof child === 'string') {
+            return renderWithCitations(child);
+          }
+          return child;
+        });
+
+        return (
+          <p className="mb-4 last:mb-0 leading-relaxed" {...props}>
+            {processedChildren}
+          </p>
+        );
+      },
+      li: ({ node, children, ...props }: any) => {
+        const processedChildren = React.Children.map(children, (child) => {
+          if (typeof child === 'string') {
+            return renderWithCitations(child);
+          }
+          return child;
+        });
+        return <li className="pl-1" {...props}>{processedChildren}</li>;
+      }
+    };
+  }, [setHoveredCitationIndex, hasSources, message.id, message.sources, openCitations, citedIndices]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(message.content);
@@ -142,8 +321,39 @@ export function MessageBubble({ message, index, onEdit }: MessageBubbleProps) {
     }
   };
 
+  // IntersectionObserver: Auto-update citations when scrolling with Citations tab open
+  React.useEffect(() => {
+    if (!hasSources || !messageRef.current) return;
+
+    // Only observe if Citations tab is open
+    if (!isSourcesPanelOpen || sourcesPanelTab !== 'citations') return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
+            // This message is now prominently visible - update citations
+            if (message.id && message.sources) {
+              setCitations(message.id, message.sources as any, citedIndices);
+            }
+          }
+        });
+      },
+      {
+        root: null, // viewport
+        threshold: 0.5, // Trigger when 50% visible
+        rootMargin: '-100px 0px -100px 0px' // Focus on center of viewport
+      }
+    );
+
+    observer.observe(messageRef.current);
+
+    return () => observer.disconnect();
+  }, [hasSources, isSourcesPanelOpen, sourcesPanelTab, message.id, message.sources, citedIndices, setCitations]);
+
   return (
     <motion.div
+      ref={messageRef}
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: "easeOut" }}
@@ -177,7 +387,7 @@ export function MessageBubble({ message, index, onEdit }: MessageBubbleProps) {
         >
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
-            components={markdownComponents}
+            components={components}
           >
             {message.content}
           </ReactMarkdown>
@@ -230,6 +440,15 @@ export function MessageBubble({ message, index, onEdit }: MessageBubbleProps) {
                 <Volume2 className="w-3.5 h-3.5" />
               )}
             </button>
+            {hasSources && (
+              <button
+                onClick={() => openCitations(message.id || `msg-${index}`, message.sources as unknown as CitationItem[], citedIndices)}
+                className="p-1.5 hover:bg-white/10 rounded-md text-text-secondary hover:text-white transition-colors cursor-pointer"
+                title="View Citations"
+              >
+                <BookMarked className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         )}
       </div>

@@ -21,14 +21,22 @@ def _count_tokens(text: str) -> int:
 
 
 def search_similar_chunks(
-    query_emb: List[float], query_text: str, top_k: int = 3, user_id: str = None
+    query_emb: List[float], query_text: str, top_k: int = 3, user_id: str = None, file_ids: List[str] = None
 ) -> List[Dict]:
-    """Search for similar chunks using dense semantic search with reranking."""
+    """Search for similar chunks using dense semantic search with reranking.
+    
+    Args:
+        query_emb: Query embedding vector
+        query_text: Original query text for reranking
+        top_k: Number of results to return
+        user_id: User ID for access control
+        file_ids: Optional list of file IDs to filter by (RAG source whitelist)
+    """
 
     # Fetch top 6 from Postgres for reranking
     fetch_k = 6
     try:
-        results = DBService.search_similar_chunks(query_emb, top_k=fetch_k, user_id=user_id)
+        results = DBService.search_similar_chunks(query_emb, top_k=fetch_k, user_id=user_id, file_ids=file_ids)
     except Exception as e:
         print(f"Warning: DB search failed: {e}")
         return []
@@ -75,9 +83,21 @@ def rag_query_pipeline(
     user_id: str = None,
     persona: str = "default",
     strict_mode: bool = False,
+    file_ids: List[str] = None,
 ) -> Dict[str, Any]:
     """
     Complete RAG pipeline: embed query, search, generate answer.
+
+    Args:
+        query_text: The user's query
+        top_k: Number of chunks to retrieve
+        model: LLM model to use for generation
+        history_str: Conversation history string
+        generate_answer: Whether to generate an answer or just return context
+        user_id: User ID for access control
+        persona: Persona to use for generation
+        strict_mode: Whether to strictly use only retrieved context
+        file_ids: Optional list of file IDs to filter by (RAG source whitelist)
 
     Returns:
         dict: {
@@ -105,7 +125,7 @@ def rag_query_pipeline(
 
         # Step 2: Search for similar chunks (dense semantic search)
         search_start = time.time()
-        chunks = search_similar_chunks(query_emb, query_text, top_k, user_id=user_id)
+        chunks = search_similar_chunks(query_emb, query_text, top_k, user_id=user_id, file_ids=file_ids)
         search_ms = (time.time() - search_start) * 1000
         
         if chunks:

@@ -730,6 +730,7 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
           <div className="h-16 w-full max-w-lg bg-black/40 backdrop-blur-2xl border border-white/10 rounded-full p-1.5 flex items-center justify-center gap-1 shadow-2xl ring-1 ring-white/5">
             {/* Text Mode Option */}
             <button
+              id="walkthrough-text-mode"
               onClick={() => handleModeSelect("text")}
               className="relative flex-1 h-full rounded-full flex items-center justify-center gap-2 transition-all duration-300 group hover:bg-white/5 text-white cursor-pointer"
             >
@@ -743,6 +744,7 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
 
             {/* Voice Mode Option */}
             <button
+              id="walkthrough-voice-mode"
               onClick={() => handleModeSelect("voice")}
               className="relative flex-1 h-full rounded-full flex items-center justify-center gap-2 transition-all duration-300 group hover:bg-white/5 text-white cursor-pointer"
             >

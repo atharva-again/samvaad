@@ -24,9 +24,11 @@ api.interceptors.request.use(async (config) => {
 });
 
 export interface ChatMessage {
+  id?: string;
   role: "user" | "assistant" | "system";
   content: string;
   timestamp?: string;
+  sources?: Record<string, unknown>[];
 }
 
 export interface ChatResponse {
@@ -54,6 +56,7 @@ export const sendMessage = async (
   strictMode: boolean = false,
   userMessageId?: string,
   assistantMessageId?: string,
+  allowedFileIds?: string[] | null,
 ) => {
   const response = await api.post<ChatResponse>("/text-mode", {
     message,
@@ -62,6 +65,7 @@ export const sendMessage = async (
     assistant_message_id: assistantMessageId,
     persona,
     strict_mode: strictMode,
+    allowed_file_ids: allowedFileIds || null,
   }, { signal });
   return response.data;
 };
@@ -113,6 +117,20 @@ export const deleteFile = async (fileId: string) => {
   return response.data;
 };
 
+export const batchDeleteFiles = async (fileIds: string[]) => {
+  const response = await api.delete("/files/batch", {
+    data: { file_ids: fileIds }
+  });
+  return response.data;
+};
+
+export const renameFile = async (fileId: string, newFilename: string) => {
+  const response = await api.patch(`/files/${fileId}`, {
+    filename: newFilename
+  });
+  return response.data;
+};
+
 export const uploadFile = async (file: File) => {
   const formData = new FormData();
   formData.append("file", file);
@@ -126,3 +144,4 @@ export const uploadFile = async (file: File) => {
   });
   return response.data;
 };
+

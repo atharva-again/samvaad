@@ -82,9 +82,10 @@ class ConversationService:
         user_id: str,
         title: Optional[str] = None,
         summary: Optional[str] = None,
+        facts: Optional[str] = None,
         is_pinned: Optional[bool] = None
     ) -> Optional[Conversation]:
-        """Update a conversation's title, summary, or pinned status."""
+        """Update a conversation's title, summary, facts, or pinned status."""
         with get_db_context() as db:
             conversation = db.execute(
                 select(Conversation)
@@ -99,6 +100,8 @@ class ConversationService:
                 conversation.title = title
             if summary is not None:
                 conversation.summary = summary
+            if facts is not None:
+                conversation.facts = facts
             if is_pinned is not None:
                 conversation.is_pinned = is_pinned
             
@@ -120,6 +123,22 @@ class ConversationService:
             )
             db.commit()
             return result.rowcount > 0
+
+    def delete_conversations(self, conversation_ids: List[UUID], user_id: str) -> int:
+        """
+        Delete multiple conversations at once (Bulk Delete).
+        Returns number of deleted records.
+        """
+        with get_db_context() as db:
+            result = db.execute(
+                delete(Conversation)
+                .where(Conversation.id.in_(conversation_ids))
+                .where(Conversation.user_id == user_id)
+            )
+            # Use result.rowcount to get deleted count
+            count = result.rowcount
+            db.commit()
+            return count
     
     # ─────────────────────────────────────────────────────────────────────
     # Message CRUD
@@ -296,110 +315,4 @@ class ConversationService:
             
             db.commit()
             return deleted_count
-
-    # ─────────────────────────────────────────────────────────────────────
-    # Message Embeddings (for semantic search)
-    # ─────────────────────────────────────────────────────────────────────
-    
-    def add_message_embedding(
-        self,
-        message_id: UUID,
-        embedding: List[float]
-    ) -> None:
-        """Store embedding for a message."""
-        from samvaad.db.models import MessageEmbedding
-        
-        with get_db_context() as db:
-            emb = MessageEmbedding(
-                message_id=message_id,
-                embedding=embedding
-            )
-            db.add(emb)
-            db.commit()
-    
-    def search_messages_by_embedding(
-        self,
-        conversation_id: UUID,
-        query_embedding: List[float],
-        limit: int = 5
-    ) -> List[Message]:
-        """Find messages semantically similar to query embedding."""
-        from samvaad.db.models import MessageEmbedding
-        
-        with get_db_context() as db:
-            # Use pgvector cosine distance operator
-            result = db.execute(
-                select(Message)
-                .join(MessageEmbedding, Message.id == MessageEmbedding.message_id)
-                .where(Message.conversation_id == conversation_id)
-                .order_by(MessageEmbedding.embedding.cosine_distance(query_embedding))
-                .limit(limit)
-            )
-            return list(result.scalars().all())
-
-    # ─────────────────────────────────────────────────────────────────────
-    # Conversation Facts (for entity-based retrieval)
-    # ─────────────────────────────────────────────────────────────────────
-    
-    def add_fact(
-        self,
-        conversation_id: UUID,
-        fact: str,
-        entity_name: Optional[str] = None,
-        related_entity: Optional[str] = None,
-        relationship_type: Optional[str] = None,
-        source_message_id: Optional[UUID] = None
-    ) -> None:
-        """Add an extracted fact to the conversation."""
-        from samvaad.db.models import ConversationFact
-        
-        with get_db_context() as db:
-            db.add(ConversationFact(
-                conversation_id=conversation_id,
-                fact=fact,
-                entity_name=entity_name,
-                related_entity=related_entity,
-                relationship_type=relationship_type,
-                source_message_id=source_message_id
-            ))
-            db.commit()
-    
-    def get_facts_by_entity(
-        self,
-        conversation_id: UUID,
-        entity_name: str
-    ) -> List[Dict]:
-        """Get all facts mentioning an entity."""
-        from samvaad.db.models import ConversationFact
-        
-        with get_db_context() as db:
-            result = db.execute(
-                select(ConversationFact)
-                .where(ConversationFact.conversation_id == conversation_id)
-                .where(
-                    (ConversationFact.entity_name.ilike(f"%{entity_name}%")) |
-                    (ConversationFact.related_entity.ilike(f"%{entity_name}%"))
-                )
-                .order_by(ConversationFact.created_at.desc())
-            )
-            facts = result.scalars().all()
-            return [{"fact": f.fact, "entity": f.entity_name, "related": f.related_entity} for f in facts]
-    
-    def get_all_facts(
-        self,
-        conversation_id: UUID,
-        limit: int = 20
-    ) -> List[Dict]:
-        """Get all facts for a conversation."""
-        from samvaad.db.models import ConversationFact
-        
-        with get_db_context() as db:
-            result = db.execute(
-                select(ConversationFact)
-                .where(ConversationFact.conversation_id == conversation_id)
-                .order_by(ConversationFact.created_at.desc())
-                .limit(limit)
-            )
-            facts = result.scalars().all()
-            return [{"fact": f.fact, "entity": f.entity_name, "related": f.related_entity} for f in facts]
 

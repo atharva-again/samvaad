@@ -124,18 +124,26 @@ def detect_query_complexity(query: str, recent_entities: List[str] = None) -> Di
 # Summarization (Background Task)
 # ─────────────────────────────────────────────────────────────────────────────
 
-SUMMARIZATION_PROMPT = """You are a conversation summarizer. Create a concise summary.
+SUMMARIZATION_PROMPT = """Summarize this conversation by grouping turns into topic ranges.
 
-Current summary:
+Previous summary:
 {existing_summary}
 
-New messages to incorporate:
+New messages (turns {start_turn}-{end_turn}):
 {new_messages}
 
-Write an updated summary (max 100 words) that:
-1. Preserves key facts from previous summary
-2. Adds important new information (topics, decisions, preferences)
-3. Removes redundant details
+Format your summary as:
+- Start with: "Started with: [first topic]"
+- Group turns: "Turns X-Y: [topic summary]"
+- End with: "Currently: [what user is working on]"
+
+Example:
+"Started with: VPC networking basics.
+Turns 1-4: Explained CIDR blocks and subnet design.
+Turns 5-8: Deep dive into NAT Gateway vs NAT Instance.
+Currently: User implementing private subnet routing."
+
+Keep under 150 words. Preserve any user preferences mentioned.
 
 Updated summary:"""
 
@@ -143,11 +151,19 @@ Updated summary:"""
 async def update_conversation_summary(
     existing_summary: str,
     exiting_messages: List[Dict],
+    start_turn: int = 1,
+    end_turn: int = 1,
     groq_api_key: str = None
 ) -> str:
     """
     Update conversation summary when messages exit the sliding window.
     Uses llama-3.1-8b-instant for cost efficiency.
+    
+    Args:
+        existing_summary: Previous summary text
+        exiting_messages: Messages to incorporate
+        start_turn: Starting turn number for this batch
+        end_turn: Ending turn number for this batch
     """
     if not exiting_messages:
         return existing_summary or ""
@@ -162,6 +178,8 @@ async def update_conversation_summary(
     
     prompt = SUMMARIZATION_PROMPT.format(
         existing_summary=existing_summary or "No previous summary.",
+        start_turn=start_turn,
+        end_turn=end_turn,
         new_messages=format_messages_for_prompt(exiting_messages)
     )
     
@@ -183,30 +201,49 @@ async def update_conversation_summary(
 # Fact Extraction (Background Task)
 # ─────────────────────────────────────────────────────────────────────────────
 
-FACT_EXTRACTION_PROMPT = """Extract 0-3 key facts from this conversation exchange.
-Only extract facts that would be useful to remember for future responses.
-Focus on: user preferences, decisions made, important topics, named entities.
+FACT_EXTRACTION_PROMPT = """You manage a list of facts about the user and conversation.
 
+Current facts:
+{existing_facts}
+
+New exchange:
 User: {user_message}
 Assistant: {assistant_message}
 
-Output as JSON array. If no important facts, output empty array [].
-Example: ["User prefers Python over JavaScript", "Discussed AWS VPC networking"]
+Instructions:
+1. Extract ALL new facts from this exchange (preferences, progress, decisions, entities).
+2. Merge with existing facts to create a COMPREHENSIVE list. Do not drop valid facts.
+3. **Resolve Conflicts with Recency Bias**:
+   - If a new fact conflicts with an old one (e.g. user preferred tables but now wants lists), overwrite the old fact.
+   - For progress (e.g. "Step 2" -> "Step 3"), update to the latest state.
+4. Keep the list concise (max 20 facts, ~300 words total). Discard least important facts if limit reached.
+5. Strictly deduplicate: do not include the same fact twice.
 
-Facts:"""
+Output the COMPLETE updated facts list as a JSON array.
+If no changes needed, return existing facts as-is.
+
+Example output: ["User prefers bullet points", "Currently on Step 4 of VPC setup", "Using AWS region ap-south-1"]
+
+Updated facts:"""
 
 
 async def extract_facts_from_exchange(
     user_message: str,
     assistant_message: str,
+    existing_facts: str = "",
     groq_api_key: str = None
 ) -> List[Dict]:
     """
-    Extract facts from a user-assistant exchange.
+    Extract and merge facts from a user-assistant exchange.
     Uses llama-3.1-8b-instant for cost efficiency.
     
+    Args:
+        user_message: The user's message
+        assistant_message: The assistant's response
+        existing_facts: Current facts string to merge with
+    
     Returns:
-        List of {"fact": str, "entity_name": str | None}
+        List of {"fact": str} dicts
     """
     api_key = groq_api_key or os.getenv("GROQ_API_KEY")
     if not api_key:
@@ -215,6 +252,7 @@ async def extract_facts_from_exchange(
     client = AsyncGroq(api_key=api_key)
     
     prompt = FACT_EXTRACTION_PROMPT.format(
+        existing_facts=existing_facts or "None yet.",
         user_message=user_message,
         assistant_message=assistant_message
     )
@@ -227,28 +265,67 @@ async def extract_facts_from_exchange(
             max_tokens=200,
         )
         
-        content = response.choices[0].message.content.strip()
+        content = response.choices[0].message.content
+        if not content:
+            return []
         
-        # Parse JSON array from response
+        content = content.strip()
+        
+        # Parse JSON array from response - robust extraction
         import json
+        import re
+        
         # Handle potential markdown code blocks
         if "```" in content:
-            content = content.split("```")[1]
-            if content.startswith("json"):
-                content = content[4:]
+            parts = content.split("```")
+            if len(parts) >= 2:
+                content = parts[1]
+                if content.startswith("json"):
+                    content = content[4:]
+                content = content.strip()
         
+        # Extract first JSON array - non-greedy to avoid multi-array issues
+        # Find first [ and then find its matching ]
+        start_idx = content.find('[')
+        if start_idx == -1:
+            return []
+        
+        # Find matching closing bracket
+        depth = 0
+        end_idx = start_idx
+        for i, char in enumerate(content[start_idx:], start_idx):
+            if char == '[':
+                depth += 1
+            elif char == ']':
+                depth -= 1
+                if depth == 0:
+                    end_idx = i + 1
+                    break
+        
+        content = content[start_idx:end_idx]
+        
+        # Skip if empty array
+        if content.strip() == '[]':
+            return []
+        
+        # Try to parse
         facts_raw = json.loads(content)
+        
+        # Handle non-list responses
+        if not isinstance(facts_raw, list):
+            return []
         
         # Convert to structured format
         facts = []
         for fact in facts_raw:
-            if isinstance(fact, str):
-                facts.append({"fact": fact, "entity_name": None})
-            elif isinstance(fact, dict):
+            if isinstance(fact, str) and fact.strip():
+                facts.append({"fact": fact.strip(), "entity_name": None})
+            elif isinstance(fact, dict) and fact.get("fact"):
                 facts.append(fact)
         
-        return facts[:3]  # Max 3 facts per exchange
+        return facts  # LLM is instructed to keep max 10
         
     except Exception as e:
         print(f"[Memory] Fact extraction error: {e}")
         return []
+

@@ -5,6 +5,7 @@ import { PipecatClient } from "@pipecat-ai/client-js";
 import { DailyTransport } from "@pipecat-ai/daily-transport";
 import { PipecatClientProvider } from "@pipecat-ai/client-react";
 import { PipecatClientAudio } from "@pipecat-ai/client-react";
+import { useUIStore, CitationItem } from "@/lib/stores/useUIStore";
 
 /**
  * PipecatProvider
@@ -12,6 +13,7 @@ import { PipecatClientAudio } from "@pipecat-ai/client-react";
  * Responsibilities:
  * - Initialize a browser-only DailyTransport and PipecatClient on the client.
  * - Provide the initialized PipecatClient to child components via PipecatClientProvider.
+ * - Handle custom server messages (e.g., citations from voice RAG).
  *
  * Notes:
  * - Transport and client initialization must run inside a client-only effect because
@@ -25,6 +27,7 @@ interface PipecatProviderProps {
 
 export function PipecatProvider({ children }: PipecatProviderProps) {
   const [client, setClient] = useState<PipecatClient | null>(null);
+  const { setCitations, setSourcesPanelTab, setSourcesPanelOpen } = useUIStore();
 
   useEffect(() => {
     // Only run on the client
@@ -55,8 +58,19 @@ export function PipecatProvider({ children }: PipecatProviderProps) {
             onTransportStateChanged: (state: string) => {
               console.debug("[PipecatProvider] Transport state changed:", state);
             },
+            // Handle custom server messages (e.g., citations from voice RAG)
+            onServerMessage: (data: unknown) => {
+              const msg = data as { type?: string; sources?: CitationItem[] };
+              if (msg.type === "citations" && msg.sources) {
+                console.debug("[PipecatProvider] Received citations:", msg.sources.length);
+                // Store citations and optionally open the panel
+                setCitations("voice-response", msg.sources);
+                setSourcesPanelTab("citations");
+              }
+            },
           },
         });
+
 
         if (!mounted) {
           // If component unmounted immediately, attempt to gracefully cleanup if possible.

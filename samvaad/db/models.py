@@ -14,6 +14,7 @@ class User(Base):
     # Supabase uses UUID strings for user IDs
     id = Column(String, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
+    has_seen_walkthrough = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     files = relationship("File", back_populates="owner", cascade="all, delete-orphan")
@@ -27,7 +28,8 @@ global_file_chunks = Table(
     Base.metadata,
     Column("global_file_hash", String, ForeignKey("global_files.hash", ondelete="CASCADE"), primary_key=True),
     Column("chunk_hash", String, ForeignKey("global_chunks.hash", ondelete="CASCADE"), primary_key=True),
-    Column("chunk_index", Integer, nullable=False)
+    Column("chunk_index", Integer, nullable=False),
+    Column("chunk_metadata", JSON, nullable=True)  # Store page_number, heading, etc.
 )
 
 
@@ -92,7 +94,8 @@ class Conversation(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=lambda: str(uuid_utils.uuid7()))
     user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
     title = Column(String, default="New Conversation")
-    summary = Column(Text, nullable=True)  # Compressed context for long conversations
+    summary = Column(Text, nullable=True)  # Turn-range summary of older messages
+    facts = Column(Text, nullable=True)    # User preferences, progress state (inline in prompt)
     is_pinned = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -123,40 +126,4 @@ class Message(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     conversation = relationship("Conversation", back_populates="messages")
-    embedding = relationship("MessageEmbedding", back_populates="message", uselist=False, cascade="all, delete-orphan")
-
-
-class MessageEmbedding(Base):
-    """
-    Stores vector embedding for a message.
-    Used for semantic search over conversation history.
-    """
-    __tablename__ = "message_embeddings"
-    
-    message_id = Column(UUID(as_uuid=True), ForeignKey("messages.id", ondelete="CASCADE"), primary_key=True)
-    embedding = Column(Vector(1024), nullable=False)  # Voyage AI dimensions
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
-    message = relationship("Message", back_populates="embedding")
-
-
-class ConversationFact(Base):
-    """
-    Stores extracted facts from conversation.
-    Facts are atomic pieces of information linked to entities.
-    Used by get_entity_facts() tool for context retrieval.
-    """
-    __tablename__ = "conversation_facts"
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=lambda: str(uuid_utils.uuid7()))
-    conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True)
-    fact = Column(Text, nullable=False)  # e.g., "User is studying for AWS exam"
-    entity_name = Column(String, nullable=True, index=True)  # Primary entity: "AWS"
-    related_entity = Column(String, nullable=True)  # Related entity: "VPC"
-    relationship_type = Column(String, nullable=True)  # "related_to", "alternative_to"
-    source_message_id = Column(UUID(as_uuid=True), ForeignKey("messages.id", ondelete="SET NULL"), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
-    conversation = relationship("Conversation")
-    source_message = relationship("Message")
 

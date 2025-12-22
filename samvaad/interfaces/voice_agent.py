@@ -14,13 +14,14 @@ from pipecat.services.deepgram.tts import DeepgramTTSService
 from pipecat.services.groq.llm import GroqLLMService
 from pipecat.transports.daily.transport import DailyParams, DailyTransport
 from pipecat.utils.text.markdown_text_filter import MarkdownTextFilter
-from pipecat.processors.frameworks.rtvi import RTVIProcessor, RTVIObserver
+from pipecat.processors.frameworks.rtvi import RTVIProcessor, RTVIObserver, RTVIServerMessageFrame
+from samvaad.utils.logger import logger
 
 # Import shared RAG logic
 from samvaad.pipeline.retrieval.query import rag_query_pipeline
 
 # Import unified context manager
-from samvaad.core.context import SamvaadLLMContext
+from samvaad.core.unified_context import SamvaadLLMContext
 
 
 async def create_daily_room() -> tuple[str, str | None]:
@@ -39,7 +40,9 @@ async def create_daily_room() -> tuple[str, str | None]:
     expiration_time = int(time.time()) + 3600
 
     # Create a room that expires in 1 hour to keep your account clean
+    # [SECURITY-FIX #84] Force private room to prevent eavesdropping
     payload = {
+        "privacy": "private", 
         "properties": {
             "exp": expiration_time,
             "enable_chat": False,
@@ -55,8 +58,33 @@ async def create_daily_room() -> tuple[str, str | None]:
                 raise Exception(f"Failed to create room: {text}")
 
             data = await response.json()
-            # Return URL and None (Tokens are not needed for public dev rooms)
-            return data["url"], data.get("token")
+            
+            # [SECURITY-FIX #84] Now that room is private, we MUST generate a token for the owner
+            # The 'token' field in room creation response might be None if not requested or different API.
+            # Best practice: Explicitly create a meeting token for the user.
+            
+            # Actually, Daily's room creation response usually doesn't include a token unless requested?
+            # Wait, the previous code expected `data.get("token")`.
+            # If the room is private, we need a token to join.
+            # Let's create a meeting token explicitly.
+            
+            owner_token_url = "https://api.daily.co/v1/meeting-tokens"
+            token_payload = {
+                "properties": {
+                    "room_name": data["name"],
+                    "is_owner": True,
+                    "exp": expiration_time,
+                }
+            }
+            
+            async with session.post(owner_token_url, headers=headers, json=token_payload) as token_res:
+                 if token_res.status != 200:
+                      # Fallback? If token fails, user can't join private room.
+                      token_text = await token_res.text()
+                      raise Exception(f"Room created but token generation failed: {token_text}")
+                 
+                 token_data = await token_res.json()
+                 return data["url"], token_data["token"]
 
 
 async def delete_daily_room(room_url: str) -> bool:
@@ -66,13 +94,13 @@ async def delete_daily_room(room_url: str) -> bool:
     """
     api_key = os.getenv("DAILY_API_KEY")
     if not api_key:
-        print("DAILY_API_KEY not set, cannot delete room")
+        logger.warning("DAILY_API_KEY not set, cannot delete room")
         return False
 
     # Extract room name from URL (e.g., https://samvaad.daily.co/abc123 -> abc123)
     room_name = room_url.rstrip("/").split("/")[-1]
     if not room_name:
-        print(f"Could not extract room name from URL: {room_url}")
+        logger.warning(f"Could not extract room name from URL: {room_url}")
         return False
 
     api_url = f"https://api.daily.co/v1/rooms/{room_name}"
@@ -83,14 +111,14 @@ async def delete_daily_room(room_url: str) -> bool:
             async with session.delete(api_url, headers=headers) as response:
                 if response.status in (200, 204, 404):
                     # 200/204 = deleted, 404 = already gone
-                    print(f"Daily room {room_name} deleted successfully")
+                    logger.info(f"Daily room {room_name} deleted successfully")
                     return True
                 else:
                     text = await response.text()
-                    print(f"Failed to delete Daily room: {text}")
+                    logger.warning(f"Failed to delete Daily room: {text}")
                     return False
     except Exception as e:
-        print(f"Error deleting Daily room: {e}")
+        logger.error(f"Error deleting Daily room: {e}")
         return False
 
 
@@ -141,14 +169,30 @@ async def start_voice_agent(
         ),
     )
 
-    # 2. Define Tools (The RAG Integration)
+    # 2. Create RTVI processor early (needed by fetch_context for citations)
+    rtvi = RTVIProcessor()
+    
+    # 3. Define Tools (The RAG Integration)
     RAG_TIMEOUT_SECONDS = 10.0
 
     async def fetch_context(function_call_params):
-        query = function_call_params.arguments["query"]
-        print(f"RAG Tool Triggered: {query} (user_id: {user_id})")
-
         try:
+            # [SECURITY-FIX #74] Strict validation of tool arguments
+            args = function_call_params.arguments
+            if not isinstance(args, dict):
+                 raise ValueError("Invalid arguments format")
+            
+            query = args.get("query")
+            if not isinstance(query, str) or not query.strip():
+                 raise ValueError("Query must be a non-empty string")
+                 
+            # Sanitize length to prevent excessive processing
+            if len(query) > 500:
+                query = query[:500]
+                
+            logger.info(f"RAG Tool Triggered: {query} (user_id: {user_id})")
+    
+            sources = []
             # Run blocking RAG code with timeout to avoid hanging
             result = await asyncio.wait_for(
                 asyncio.to_thread(
@@ -157,13 +201,40 @@ async def start_voice_agent(
                 timeout=RAG_TIMEOUT_SECONDS
             )
             rag_text = result.get("answer", "No information found.")
+            
+            # Extract sources for citations panel
+            chunks = result.get("chunks", [])
+            for chunk in chunks[:3]:
+                sources.append({
+                    "filename": chunk.get("filename", "document"),
+                    "content_preview": chunk.get("content", "")[:1000],
+                    "rerank_score": chunk.get("rerank_score"),
+                    "chunk_id": chunk.get("chunk_id")
+                })
+
         except asyncio.TimeoutError:
-            print(f"[voice_agent] RAG timeout after {RAG_TIMEOUT_SECONDS}s for query: {query}")
+            logger.warning(f"[voice_agent] RAG timeout after {RAG_TIMEOUT_SECONDS}s for query: {query}")
             rag_text = "Search timed out. Please try your question again."
+        except ValueError as e:
+             logger.warning(f"[voice_agent] Tool validation error: {e}")
+             rag_text = f"Invalid search request: {e}"
         except Exception as e:
-            print(f"[voice_agent] RAG error: {e}")
+            logger.error(f"[voice_agent] RAG error: {e}")
             rag_text = "An error occurred while searching. Please try again."
 
+        # Send citations to frontend via RTVI custom message
+        if sources:
+            try:
+                frame = RTVIServerMessageFrame(data={
+                    "type": "citations",
+                    "sources": sources
+                })
+
+                await rtvi.push_frame(frame)
+                logger.debug(f"[voice_agent] Sent {len(sources)} citations to frontend")
+            except Exception as e:
+                logger.error(f"[voice_agent] Failed to send citations: {e}")
+        
         await function_call_params.result_callback(rag_text)
 
     # OpenAI-compatible tool format for Groq
@@ -206,7 +277,8 @@ async def start_voice_agent(
             rag_context="",  # RAG is fetched via tool call, not pre-loaded
             conversation_history="",  # History managed by Pipecat context
             query="",  # Query comes from speech
-            is_voice=True  # Adds ~50 word limit instruction
+            is_voice=True,  # Adds ~50 word limit instruction
+            has_tools=True   # Tool-based RAG - LLM will call fetch_context
         )
     else:
         # Fallback for sessions without conversation_id
@@ -250,9 +322,9 @@ async def start_voice_agent(
         user_params=LLMUserAggregatorParams(enable_emulated_vad_interruptions=False),
     )
 
-    # 5. The Pipeline (Data Flow)
+    # 6. The Pipeline (Data Flow)
     # RTVIProcessor handles RTVI protocol messages (BotReady, user/bot speaking, etc.)
-    rtvi = RTVIProcessor()
+    # (rtvi already created earlier for fetch_context access)
     
     # Conditional pipeline construction based on enable_tts
     processors = [
@@ -263,13 +335,29 @@ async def start_voice_agent(
         llm,  # Groq thinks
     ]
 
+    # Create Custom Deepgram TTS Service to strip citations ONLY from audio
+    # leaving the transcript intact (which comes from TTSTextFrame)
+    from typing import AsyncGenerator
+    import re
+    from pipecat.frames.frames import Frame
+    from pipecat.services.deepgram.tts import DeepgramTTSService
+
+    class CustomDeepgramTTSService(DeepgramTTSService):
+        async def run_tts(self, text: str) -> AsyncGenerator[Frame, None]:
+            # Filter text for audio generation relative to the original text
+            # This ensures [1], [2] are not spoken, but they remain in the
+            # TTSTextFrame that populates the transcript.
+            filtered_text = re.sub(r'\[\d+(?:[,\s-]*\d+)*\]', '', text)
+            async for frame in super().run_tts(filtered_text):
+                yield frame
+
     if enable_tts:
-        tts = DeepgramTTSService(
+        tts = CustomDeepgramTTSService(
             api_key=deepgram_api_key,
             base_url="wss://api.eu.deepgram.com",  # EU endpoint for better connectivity
             voice="aura-2-asteria-en",
             encoding="linear16",
-            text_filters=[md_filter],
+            text_filters=[md_filter], # Only markdown filter here
         )
         processors.append(tts)
     
@@ -291,20 +379,20 @@ async def start_voice_agent(
             participant_id = participant.get('id', participant.get('session_id', 'unknown'))
         else:
             participant_id = str(participant)
-        print(f"[voice_agent] Successfully joined room as: {participant_id}")
+        logger.info(f"[voice_agent] Successfully joined room as: {participant_id}")
     
     @rtvi.event_handler("on_client_ready")
     async def on_client_ready(rtvi_processor):
         nonlocal transport_joined
         # Wait for transport to join before sending bot-ready
         if not transport_joined:
-            print("[voice_agent] Client ready but transport not joined yet, waiting...")
+            logger.info("[voice_agent] Client ready but transport not joined yet, waiting...")
             # Wait up to 5 seconds for transport to join
             for _ in range(50):
                 await asyncio.sleep(0.1)
                 if transport_joined:
                     break
-        print("[voice_agent] Client ready - sending bot-ready")
+        logger.info("[voice_agent] Client ready - sending bot-ready")
         await rtvi_processor.set_bot_ready()
 
     # Cleanup flag to prevent duplicate cleanup (both events can fire)
@@ -313,23 +401,23 @@ async def start_voice_agent(
     async def do_cleanup(reason: str):
         nonlocal cleanup_done
         if cleanup_done:
-            print(f"[voice_agent] Cleanup already done, skipping ({reason})")
+            logger.info(f"[voice_agent] Cleanup already done, skipping ({reason})")
             return
         cleanup_done = True
-        print(f"[voice_agent] Cleaning up - {reason}")
+        logger.info(f"[voice_agent] Cleaning up - {reason}")
         await delete_daily_room(room_url)
         await task.cancel()
 
     # 7. Handle participant leaving - cleanup room
     @transport.event_handler("on_participant_left")
     async def on_participant_left(transport_obj, participant, reason):
-        print(f"[voice_agent] Participant left: {participant['id']}, reason: {reason}")
+        logger.info(f"[voice_agent] Participant left: {participant['id']}, reason: {reason}")
         await do_cleanup("participant_left")
 
     # 8. Handle client disconnection (browser close, etc.)
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport_obj, client):
-        print(f"[voice_agent] Client disconnected")
+        logger.info(f"[voice_agent] Client disconnected")
         await do_cleanup("client_disconnected")
 
     # 9. Handle transport errors explicitly - trigger cleanup on failure
@@ -337,7 +425,7 @@ async def start_voice_agent(
     # rely on the frontend's 30-second timeout to detect connection failure
     @transport.event_handler("on_error")
     async def on_transport_error(transport_obj, error):
-        print(f"[voice_agent] Transport error: {error}")
+        logger.error(f"[voice_agent] Transport error: {error}")
         # Trigger cleanup to allow frontend timeout to detect failure
         await do_cleanup("transport_error")
 

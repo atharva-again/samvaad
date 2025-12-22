@@ -16,8 +16,10 @@ def test_get_persona_prompt_new_personas():
     """Test new persona types."""
     assert get_persona_prompt("friend") == PERSONAS["friend"]
     assert get_persona_prompt("expert") == PERSONAS["expert"]
+    assert get_persona_prompt("quizzer") == PERSONAS["quizzer"]
     assert "human friend" in PERSONAS["friend"] or "friend" in PERSONAS["friend"].lower()
     assert "domain expert" in PERSONAS["expert"] or "expert" in PERSONAS["expert"].lower()
+    assert "quiz" in PERSONAS["quizzer"].lower()
 
 
 def test_get_mode_instruction_strict():

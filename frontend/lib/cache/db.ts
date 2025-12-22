@@ -3,6 +3,7 @@ import Dexie, { Table } from 'dexie';
 // Cached message structure - mirrors server's Message model
 export interface CachedMessage {
     id: string;
+    userId: string; // [SECURITY-FIX #01] Added for isolation
     conversationId: string;
     role: 'user' | 'assistant' | 'system';
     content: string;
@@ -13,6 +14,7 @@ export interface CachedMessage {
 // Cached conversation metadata
 export interface CachedConversation {
     id: string;
+    userId: string; // [SECURITY-FIX #01] Added for isolation
     title: string;
     summary?: string;
     mode?: 'text' | 'voice';  // Chat mode
@@ -25,6 +27,7 @@ export interface CachedConversation {
 // Cached file/source metadata
 export interface CachedFile {
     id: string;
+    userId: string; // [SECURITY-FIX #01] Added for isolation
     filename: string;
     fileType: string;
     sizeBytes: number;
@@ -59,6 +62,22 @@ class SamvaadDB extends Dexie {
             conversations: 'id, updatedAt, cachedAt',
             messages: 'id, conversationId, createdAt',
             files: 'id, filename, contentHash, cachedAt',
+            cacheMeta: 'key'
+        });
+
+        // [SECURITY-FIX #01] Version 3: Drop old tables to allow PK change
+        // Dexie doesn't support changing PKs in-place, so we must drop and recreate.
+        this.version(3).stores({
+            conversations: null,
+            messages: null,
+            files: null
+        });
+
+        // Version 4: Recreate with User Isolation (Compound Keys)
+        this.version(4).stores({
+            conversations: '[userId+id], userId, updatedAt, cachedAt',
+            messages: '[userId+id], userId, conversationId, createdAt',
+            files: '[userId+id], userId, filename, contentHash, cachedAt',
             cacheMeta: 'key'
         });
     }

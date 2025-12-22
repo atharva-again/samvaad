@@ -22,6 +22,23 @@ def get_voyage_client() -> voyageai.Client:
     return _client
 
 
+
+# [SECURITY-FIX #95] Scrub PII before sending to 3rd party embedding service
+import re
+
+def scrub_pii(text: str) -> str:
+    """Scrub PII from text using regex."""
+    # Email
+    text = re.sub(r'[\w\.-]+@[\w\.-]+\.\w+', '[EMAIL_REDACTED]', text)
+    # Phone: Matches (123) 456-7890, 123-456-7890, 123 456 7890
+    text = re.sub(r'\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}', '[PHONE_REDACTED]', text)
+    # SSN-like: 000-00-0000
+    text = re.sub(r'\b\d{3}-\d{2}-\d{4}\b', '[SSN_REDACTED]', text)
+    # Credit Card-like: 16 digits (simple)
+    text = re.sub(r'\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b', '[CARD_REDACTED]', text)
+    return text
+
+
 @retry(wait=wait_random_exponential(multiplier=1, max=60), stop=stop_after_attempt(6))
 def embed_texts(texts: List[str], input_type: str = "document") -> List[List[float]]:
     """
@@ -36,8 +53,12 @@ def embed_texts(texts: List[str], input_type: str = "document") -> List[List[flo
     """
     if not texts:
         return []
+
+    scrubbed_texts = [scrub_pii(t) for t in texts]
+    
     client = get_voyage_client()
-    return client.embed(texts=texts, model="voyage-3.5-lite", input_type=input_type).embeddings
+    # Use scrubbed text for embedding
+    return client.embed(texts=scrubbed_texts, model="voyage-3.5-lite", input_type=input_type).embeddings
 
 
 @retry(wait=wait_random_exponential(multiplier=1, max=60), stop=stop_after_attempt(6))

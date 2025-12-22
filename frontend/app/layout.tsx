@@ -5,6 +5,8 @@ import { PipecatProvider } from "@/components/providers/PipecatProvider";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 
+import { WalkthroughController } from "@/components/onboarding/WalkthroughController";
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -33,6 +35,7 @@ export default function RootLayout({
       >
         <AuthProvider>
           <PipecatProvider>{children}</PipecatProvider>
+          <WalkthroughController />
         </AuthProvider>
 
         <ChatToaster />

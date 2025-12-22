@@ -1,4 +1,5 @@
 import { db, CachedConversation, CachedMessage } from './db';
+import Dexie from 'dexie';
 
 const MAX_CACHED_CONVERSATIONS = 50;
 
@@ -9,18 +10,29 @@ export interface CachedConversationWithMessages {
 
 export const conversationCache = {
     /**
-     * Get cached conversation with all its messages
+     * Get cached conversation with all its messages [SECURITY-FIX #01]
      */
-    async get(id: string): Promise<CachedConversationWithMessages | null> {
-        const conversation = await db.conversations.get(id);
+    async get(id: string, userId: string): Promise<CachedConversationWithMessages | null> {
+        // [SECURITY-FIX #01] Use composite key query or filter
+        const conversation = await db.conversations.get({ userId, id });
         if (!conversation) return null;
 
         const messages = await db.messages
-            .where('conversationId')
-            .equals(id)
+            .where('[userId+id]') // Leveraging new index if possible, or just filter
+            .between([userId, Dexie.minKey], [userId, Dexie.maxKey])
+            .and(m => m.conversationId === id) // Dexie compound index limitations might require manual filter or simpler query
+            // Simpler approach with compound index '[userId+conversationId+...]' would be better but requires schema change
+            // For now, let's filter by userId AND conversationId
+            // Actually, best query for messages: index conversationId? No, that leaks.
+            // We need an index on [userId+conversationId].
+            // Current index is [userId+id], userId, conversationId.
+            // We can query by userId then filter conversationId
             .sortBy('createdAt');
 
-        return { conversation, messages };
+        // Correct query using userId index:
+        const userMessages = messages.filter(m => m.conversationId === id && m.userId === userId);
+
+        return { conversation, messages: userMessages };
     },
 
     /**
@@ -31,15 +43,16 @@ export const conversationCache = {
     },
 
     /**
-     * Get all cached conversations (for sidebar list)
-     * Returns sorted by updatedAt descending
-     * Filters out placeholder entries (created by saveMessage before backend sync)
+     * Get all cached conversations (for sidebar list) [SECURITY-FIX #01]
      */
-    async getAll(): Promise<CachedConversation[]> {
-        const conversations = await db.conversations.toArray();
-        // Filter out placeholder conversations that haven't been synced yet
+    async getAll(userId: string): Promise<CachedConversation[]> {
+        // [SECURITY-FIX #01] Only get conversations for this user
+        const conversations = await db.conversations
+            .where('userId')
+            .equals(userId)
+            .toArray();
+
         const validConversations = conversations.filter(c => c.title !== 'New conversation');
-        // Sort: Pinned first, then by updatedAt descending
         return validConversations.sort((a, b) => {
             if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
             return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
@@ -61,22 +74,28 @@ export const conversationCache = {
         messages: CachedMessage[]
     ): Promise<void> {
         const now = new Date().toISOString();
+        if (!conversation.userId) {
+            console.error('Cannot save conversation without userId');
+            return;
+        }
 
         await db.transaction('rw', [db.conversations, db.messages], async () => {
-            // Save conversation with cache timestamp
             await db.conversations.put({
                 ...conversation,
                 cachedAt: now
             });
 
-            // Bulk insert messages for efficiency
             if (messages.length > 0) {
-                await db.messages.bulkPut(messages);
+                // Ensure messages have userId
+                const cleanMessages = messages.map(m => ({
+                    ...m,
+                    userId: conversation.userId
+                }));
+                await db.messages.bulkPut(cleanMessages);
             }
         });
 
-        // Evict old conversations if over limit
-        await this.evictOld();
+        await this.evictOld(conversation.userId);
     },
 
     /**
@@ -104,29 +123,34 @@ export const conversationCache = {
      */
     async saveMessage(conversationId: string, message: CachedMessage): Promise<void> {
         const now = new Date().toISOString();
+        if (!message.userId) {
+            console.error('Cannot save message without userId');
+            return;
+        }
 
         await db.transaction('rw', [db.conversations, db.messages], async () => {
-            // Ensure conversation exists in cache
-            const existing = await db.conversations.get(conversationId);
+            // [SECURITY-FIX #01] Use composite key
+            const existing = await db.conversations.get({ userId: message.userId, id: conversationId });
+
             if (!existing) {
-                // Create minimal conversation entry - will be enriched on next full load
                 await db.conversations.put({
                     id: conversationId,
+                    userId: message.userId, // Explicit set
                     title: 'New conversation',
                     isPinned: false,
                     createdAt: now,
                     updatedAt: now,
-                    cachedAt: '1970-01-01T00:00:00.000Z' // Never synced from server
+                    cachedAt: '1970-01-01T00:00:00.000Z'
                 });
             } else {
-                // Update updatedAt but NOT cachedAt. 
-                // cachedAt should only be bumped by server-sync to avoid skipping messages from other devices.
-                await db.conversations.update(conversationId, {
+                // Compound ID update needs full object put or careful key usage
+                // db.update with composite key is tricky, easier to use known key tuple or just put
+                await db.conversations.put({
+                    ...existing,
                     updatedAt: now
                 });
             }
 
-            // Save the message
             await db.messages.put(message);
         });
     },
@@ -231,6 +255,28 @@ export const conversationCache = {
     },
 
     /**
+     * [RESILIENCE-FIX] Trim conversation to a max number of messages
+     * Prevents single conversations from growing infinitely in IndexedDB
+     */
+    async trimMessages(conversationId: string, maxMessages: number = 1000): Promise<void> {
+        const count = await db.messages.where('conversationId').equals(conversationId).count();
+        if (count <= maxMessages) return;
+
+        const toDelete = count - maxMessages;
+        // Delete oldest messages first
+        const oldestKey = await db.messages
+            .where('conversationId')
+            .equals(conversationId)
+            .limit(toDelete)
+            .primaryKeys();
+
+        if (oldestKey.length > 0) {
+            console.log(`[Cache] Trimming ${oldestKey.length} old messages from ${conversationId}`);
+            await db.messages.bulkDelete(oldestKey);
+        }
+    },
+
+    /**
      * Delete a specific conversation from cache
      */
     async delete(id: string): Promise<void> {
@@ -253,27 +299,34 @@ export const conversationCache = {
     /**
      * LRU eviction - remove oldest cached conversations when over limit
      */
-    async evictOld(): Promise<void> {
-        const count = await db.conversations.count();
+    async evictOld(userId: string): Promise<void> {
+        // [SECURITY-FIX #01] Evict only for this user
+        const count = await db.conversations.where('userId').equals(userId).count();
 
         if (count > MAX_CACHED_CONVERSATIONS) {
             const toEvict = count - MAX_CACHED_CONVERSATIONS;
 
-            // Get oldest by cachedAt
             const oldest = await db.conversations
-                .orderBy('cachedAt')
-                .limit(toEvict)
-                .toArray();
+                .where('userId')
+                .equals(userId)
+                .sortBy('cachedAt'); // sortBy returns array already
 
-            const idsToDelete = oldest.map(c => c.id);
+            // oldest is array of conversations
+            const limited = oldest.slice(0, toEvict);
+
+            const idsToDelete = limited.map(c => c.id);
 
             await db.transaction('rw', [db.conversations, db.messages], async () => {
-                await db.conversations.bulkDelete(idsToDelete);
-                // Delete all messages for evicted conversations
-                await db.messages
-                    .where('conversationId')
-                    .anyOf(idsToDelete)
-                    .delete();
+                // Cannot bulkDelete with just ID if composite key used? 
+                // Actually with [userId+id], we need to delete by key tuple or bulkDelete keys
+                const keysToDelete = idsToDelete.map(id => [userId, id]); // Valid for composite keys
+                await db.conversations.bulkDelete(keysToDelete);
+
+                // For messages, same issue. Need to find them first.
+                // We'll trust the userId filter on messages
+                const msgsToDelete = await db.messages.where('conversationId').anyOf(idsToDelete).filter(m => m.userId === userId).toArray();
+                const msgKeys = msgsToDelete.map(m => [m.userId, m.id]);
+                await db.messages.bulkDelete(msgKeys);
             });
         }
     },

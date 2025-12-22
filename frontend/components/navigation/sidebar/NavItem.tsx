@@ -11,6 +11,7 @@ interface NavItemProps {
     shortcut?: string;
     tooltipLabel?: string;
     tooltipShortcut?: string;
+    id?: string;
 }
 
 export function NavItem({
@@ -21,10 +22,12 @@ export function NavItem({
     onClick,
     shortcut,
     tooltipLabel,
-    tooltipShortcut
+    tooltipShortcut,
+    id
 }: NavItemProps) {
     return (
         <button
+            id={id}
             onClick={onClick}
             className={cn(
                 "w-full flex items-center transition-all duration-150 relative group rounded-lg cursor-pointer",

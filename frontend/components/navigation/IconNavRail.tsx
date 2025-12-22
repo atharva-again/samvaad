@@ -9,6 +9,7 @@ import {
     History,
     ChevronsLeft,
     ChevronsRight,
+    Trash2,
 } from "lucide-react";
 import { useConversationStore, Conversation } from "@/lib/stores/useConversationStore";
 import { useUIStore } from "@/lib/stores/useUIStore";
@@ -27,12 +28,12 @@ import { SectionWithPopover } from "./sidebar/SectionWithPopover";
 import { PopoverContent } from "./sidebar/PopoverContent";
 import { AccountMenu } from "./sidebar/AccountMenu";
 import { ConversationItem } from "./sidebar/ConversationItem";
-import { DeleteConfirmModal, RenameModal } from "@/components/modals";
+import { DeleteConfirmModal, UniversalSearchModal } from "@/components/modals";
 
 export function IconNavRail() {
     const router = useRouter();
-    const { user } = useAuth();
-    const { isSidebarOpen: isExpanded, toggleSidebar: setToggleSidebar } = useUIStore();
+    const { user, isLoading } = useAuth();
+    const { isSidebarOpen: isExpanded, toggleSidebar: setToggleSidebar, isSearchOpen } = useUIStore();
     const [showAccountMenu, setShowAccountMenu] = useState(false);
 
     // User info from Google auth
@@ -93,9 +94,17 @@ export function IconNavRail() {
         fetchConversations,
         deleteConversation,
         updateConversationTitle,
-        togglePinConversation
+        togglePinConversation,
+        // Bulk Actions
+        isSelectMode,
+        selectedIds,
+        toggleSelectMode,
+        toggleSelection,
+        selectAll,
+        deselectAll,
+        deleteSelectedConversations
     } = useConversationStore();
-    const { toggleSourcesPanel, isSourcesPanelOpen } = useUIStore();
+    const { toggleSourcesPanel, isSourcesPanelOpen, toggleSearch } = useUIStore();
     const { modifier: altKey, isMac } = usePlatform();
     const metaKey = isMac ? "Cmd" : "Ctrl";
 
@@ -104,9 +113,8 @@ export function IconNavRail() {
 
     // Modal states
     const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
-    const [renameTarget, setRenameTarget] = useState<Conversation | null>(null);
+
     const [isDeleting, setIsDeleting] = useState(false);
-    const [isRenaming, setIsRenaming] = useState(false);
 
     const accountMenuRef = useRef<HTMLDivElement>(null);
     const accountButtonRef = useRef<HTMLButtonElement>(null);
@@ -146,6 +154,12 @@ export function IconNavRail() {
                 e.preventDefault();
                 setToggleSidebar();
             }
+
+            // Universal Search: Cmd/Ctrl + K
+            if (isCmdOrCtrl && (e.key === 'k' || e.key === 'K')) {
+                e.preventDefault();
+                toggleSearch();
+            }
         };
 
         window.addEventListener('keydown', handleKeyDown);
@@ -169,9 +183,13 @@ export function IconNavRail() {
         router.push(`/chat/${id}`);
     };
 
-    const handleRenameConversation = (id: string) => {
-        const conv = conversations.find(c => c.id === id);
-        if (conv) setRenameTarget(conv);
+    const handleRenameConversation = async (id: string, newTitle: string) => {
+        try {
+            await updateConversationTitle(id, newTitle);
+            toast.success('Conversation renamed');
+        } catch {
+            toast.error('Failed to rename conversation');
+        }
     };
 
     const handlePinConversation = (id: string) => {
@@ -201,24 +219,16 @@ export function IconNavRail() {
         }
     };
 
-    const confirmRename = async (newName: string) => {
-        if (!renameTarget) return;
-        setIsRenaming(true);
-        try {
-            await updateConversationTitle(renameTarget.id, newName);
-            setRenameTarget(null);
-            toast.success('Conversation renamed');
-        } catch {
-            toast.error('Failed to rename conversation');
-        } finally {
-            setIsRenaming(false);
-        }
+    // Bulk Delete Handlers
+    const handleBulkDelete = async () => {
+        if (!confirm(`Are you sure you want to delete ${selectedIds.size} conversations?`)) return;
+        await deleteSelectedConversations();
     };
 
     return (
         <div
             className={cn(
-                "h-full bg-[#0a0a0a] border-r border-white/5 flex flex-col transition-all duration-300",
+                "h-full bg-[#0a0a0a] border-r border-white/5 flex flex-col transition-all duration-300 relative",
                 isExpanded ? "w-60" : "w-14"
             )}
         >
@@ -237,23 +247,28 @@ export function IconNavRail() {
                 {/* Top Navigation Items */}
                 <div className="space-y-1">
                     <NavItem
+                        id="walkthrough-search-trigger"
                         icon={<Search className="w-5 h-5" />}
                         label="Search"
                         shortcut="⌘K"
                         isExpanded={isExpanded}
+                        isActive={isSearchOpen}
+                        onClick={toggleSearch}
                         tooltipLabel="Search"
-                        tooltipShortcut={`${metaKey} + K`}
+                        tooltipShortcut="Mod+K"
                     />
                     <NavItem
+                        id="walkthrough-new-chat"
                         icon={<MessageSquarePlus className="w-5 h-5" />}
                         label="New Chat"
                         isExpanded={isExpanded}
-                        isActive={!currentConversationId}
+                        isActive={!currentConversationId && !isSearchOpen && !isSourcesPanelOpen}
                         onClick={() => { startNewChat(); router.push('/'); }}
                         tooltipLabel="New Chat"
                         tooltipShortcut={`${altKey} + N`}
                     />
                     <NavItem
+                        id="walkthrough-sources-trigger"
                         icon={<FolderOpen className="w-5 h-5" />}
                         label="Sources"
                         isExpanded={isExpanded}
@@ -281,6 +296,10 @@ export function IconNavRail() {
                             onPin={handlePinConversation}
                             onDelete={handleDeleteConversation}
                             onMenuOpenChange={setIsPinnedMenuOpen}
+
+                            isSelectMode={isSelectMode}
+                            selectedIds={selectedIds}
+                            onToggleSelect={toggleSelection}
                         />
                     }
                 >
@@ -300,9 +319,13 @@ export function IconNavRail() {
                                 conversation={conv}
                                 isActive={currentConversationId === conv.id}
 
-                                onRename={() => handleRenameConversation(conv.id)}
+                                onRename={(newTitle) => handleRenameConversation(conv.id, newTitle)}
                                 onPin={() => handlePinConversation(conv.id)}
                                 onDelete={() => handleDeleteConversation(conv.id)}
+
+                                isSelectMode={isSelectMode}
+                                isSelected={selectedIds.has(conv.id)}
+                                onToggleSelect={() => toggleSelection(conv.id)}
                             />
                         ))
                     )}
@@ -324,6 +347,10 @@ export function IconNavRail() {
                             onPin={handlePinConversation}
                             onDelete={handleDeleteConversation}
                             onMenuOpenChange={setIsHistoryMenuOpen}
+
+                            isSelectMode={isSelectMode}
+                            selectedIds={selectedIds}
+                            onToggleSelect={toggleSelection}
                         />
                     }
                 >
@@ -348,9 +375,13 @@ export function IconNavRail() {
                                             conversation={conv}
                                             isActive={currentConversationId === conv.id}
 
-                                            onRename={() => handleRenameConversation(conv.id)}
+                                            onRename={(newTitle) => handleRenameConversation(conv.id, newTitle)}
                                             onPin={() => handlePinConversation(conv.id)}
                                             onDelete={() => handleDeleteConversation(conv.id)}
+
+                                            isSelectMode={isSelectMode}
+                                            isSelected={selectedIds.has(conv.id)}
+                                            onToggleSelect={() => toggleSelection(conv.id)}
                                         />
                                     ))}
                                 </>
@@ -365,9 +396,13 @@ export function IconNavRail() {
                                             conversation={conv}
                                             isActive={currentConversationId === conv.id}
 
-                                            onRename={() => handleRenameConversation(conv.id)}
+                                            onRename={(newTitle) => handleRenameConversation(conv.id, newTitle)}
                                             onPin={() => handlePinConversation(conv.id)}
                                             onDelete={() => handleDeleteConversation(conv.id)}
+
+                                            isSelectMode={isSelectMode}
+                                            isSelected={selectedIds.has(conv.id)}
+                                            onToggleSelect={() => toggleSelection(conv.id)}
                                         />
                                     ))}
                                 </>
@@ -382,9 +417,13 @@ export function IconNavRail() {
                                             conversation={conv}
                                             isActive={currentConversationId === conv.id}
 
-                                            onRename={() => handleRenameConversation(conv.id)}
+                                            onRename={(newTitle) => handleRenameConversation(conv.id, newTitle)}
                                             onPin={() => handlePinConversation(conv.id)}
                                             onDelete={() => handleDeleteConversation(conv.id)}
+
+                                            isSelectMode={isSelectMode}
+                                            isSelected={selectedIds.has(conv.id)}
+                                            onToggleSelect={() => toggleSelection(conv.id)}
                                         />
                                     ))}
                                 </>
@@ -411,9 +450,13 @@ export function IconNavRail() {
                                                     conversation={conv}
                                                     isActive={currentConversationId === conv.id}
 
-                                                    onRename={() => handleRenameConversation(conv.id)}
+                                                    onRename={(newTitle) => handleRenameConversation(conv.id, newTitle)}
                                                     onPin={() => handlePinConversation(conv.id)}
                                                     onDelete={() => handleDeleteConversation(conv.id)}
+
+                                                    isSelectMode={isSelectMode}
+                                                    isSelected={selectedIds.has(conv.id)}
+                                                    onToggleSelect={() => toggleSelection(conv.id)}
                                                 />
                                             ))}
                                         </React.Fragment>
@@ -450,20 +493,31 @@ export function IconNavRail() {
                                 : "justify-center w-10 h-10 rounded-full mx-auto"
                         )}
                     >
-                        {userAvatar ? (
-                            <img
-                                src={userAvatar}
-                                alt="Profile"
-                                className="w-7 h-7 rounded-full object-cover shrink-0"
-                                referrerPolicy="no-referrer"
-                            />
+                        {isLoading ? (
+                            <>
+                                <div className="w-7 h-7 rounded-full bg-white/10 animate-pulse shrink-0" />
+                                {isExpanded && (
+                                    <div className="w-20 h-4 bg-white/10 rounded animate-pulse" />
+                                )}
+                            </>
                         ) : (
-                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shrink-0">
-                                <span className="text-white text-xs font-medium">{userInitial}</span>
-                            </div>
-                        )}
-                        {isExpanded && (
-                            <span className="text-[13px] text-white/70 truncate">{userName || 'My Account'}</span>
+                            <>
+                                {userAvatar ? (
+                                    <img
+                                        src={userAvatar}
+                                        alt="Profile"
+                                        className="w-7 h-7 rounded-full object-cover shrink-0"
+                                        referrerPolicy="no-referrer"
+                                    />
+                                ) : (
+                                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shrink-0">
+                                        <span className="text-white text-xs font-medium">{userInitial}</span>
+                                    </div>
+                                )}
+                                {isExpanded && (
+                                    <span className="text-[13px] text-white/70 truncate">{userName || 'My Account'}</span>
+                                )}
+                            </>
                         )}
                     </button>
 
@@ -523,13 +577,8 @@ export function IconNavRail() {
                 isDeleting={isDeleting}
                 itemName={deleteTarget?.title}
             />
-            <RenameModal
-                isOpen={!!renameTarget}
-                onClose={() => setRenameTarget(null)}
-                onConfirm={confirmRename}
-                isRenaming={isRenaming}
-                currentName={renameTarget?.title || ""}
-            />
+
+            <UniversalSearchModal />
         </div>
     );
 }

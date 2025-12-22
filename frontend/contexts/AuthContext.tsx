@@ -5,6 +5,7 @@ import { createContext, useContext, useEffect, useState } from 'react'
 import { Session, User } from '@supabase/supabase-js'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
+import { useConversationStore } from '@/lib/stores/useConversationStore'
 
 type AuthContextType = {
     user: User | null
@@ -12,6 +13,8 @@ type AuthContextType = {
     isLoading: boolean
     signInWithGoogle: () => Promise<void>
     signOut: () => Promise<void>
+    hasSeenWalkthrough: boolean
+    markWalkthroughSeen: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -20,17 +23,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null)
     const [session, setSession] = useState<Session | null>(null)
     const [isLoading, setIsLoading] = useState(true)
+    const [hasSeenWalkthrough, setHasSeenWalkthrough] = useState(false)
     const router = useRouter()
     const supabase = createClient()
 
     useEffect(() => {
+        // Sync userId to store for isolation
+        const { setUserId } = useConversationStore.getState();
+        setUserId(user?.id ?? null);
+    }, [user]);
+
+    useEffect(() => {
         const {
             data: { subscription },
-        } = supabase.auth.onAuthStateChange((event, session) => {
+        } = supabase.auth.onAuthStateChange(async (event, session) => {
             setSession(session)
             setUser(session?.user ?? null)
+
+            if (session?.user) {
+                // Fetch profile data including has_seen_walkthrough
+                try {
+                    const token = session.access_token
+                    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/users/me`, {
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    })
+                    if (response.ok) {
+                        const profile = await response.json()
+                        setHasSeenWalkthrough(profile.has_seen_walkthrough)
+                    }
+                } catch (error) {
+                    console.error("Failed to fetch user profile", error)
+                }
+            }
+
             setIsLoading(false)
             if (event === 'SIGNED_OUT') {
+                setHasSeenWalkthrough(false)
                 router.push('/login')
                 router.refresh()
             }
@@ -56,8 +86,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         router.refresh()
     }
 
+    const markWalkthroughSeen = async () => {
+        if (!session?.access_token) return
+        try {
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/users/walkthrough`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`
+                },
+                body: JSON.stringify({ has_seen: true })
+            })
+            if (response.ok) {
+                setHasSeenWalkthrough(true)
+            }
+        } catch (error) {
+            console.error("Failed to update walkthrough status", error)
+        }
+    }
+
     return (
-        <AuthContext.Provider value={{ user, session, isLoading, signInWithGoogle, signOut }}>
+        <AuthContext.Provider value={{ user, session, isLoading, signInWithGoogle, signOut, hasSeenWalkthrough, markWalkthroughSeen }}>
             {children}
         </AuthContext.Provider>
     )

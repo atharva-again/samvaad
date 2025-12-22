@@ -1,14 +1,17 @@
 import React from "react";
 import { useUIStore } from "@/lib/stores/useUIStore";
 import { useFileProcessor } from "@/hooks/useFileProcessor";
+import { useConversationStore } from "@/lib/stores/useConversationStore";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, FileText, Trash2, ChevronLeft, FileAudio, FileImage, FileVideo, FileCode, FileSpreadsheet, File, Loader2, Search, UploadCloud, AlertTriangle } from "lucide-react";
+import { X, ExternalLink, FileText, ChevronRight, Loader2, Sparkles, ChevronDown, ChevronUp, FileSpreadsheet, Trash2, ChevronLeft, FileAudio, FileImage, FileVideo, FileCode, File, Search, UploadCloud, AlertTriangle, Check, CheckSquare, Square, Eye, EyeOff, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { ActionTooltip } from "@/components/ui/action-tooltip";
-import { listFiles, uploadFile, deleteFile } from "@/lib/api";
+import { listFiles, uploadFile, deleteFile, batchDeleteFiles, renameFile } from "@/lib/api";
 import { filesCache } from "@/lib/cache/filesCache";
 import { usePlatform } from "@/hooks/usePlatform";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 // Helper function to get icon based on file type
 const getFileIcon = (type: string) => {
@@ -67,26 +70,72 @@ export function SourcesPanel() {
         sources,
         setSources,
         removeSource,
+        removeSources,
+        updateSource,
         hasFetchedSources,
         setHasFetchedSources,
         setSourcesPanelOpen,
+        sourcesSearchQuery,
+        setSourcesSearchQuery,
+
+        // Tab & Citations State
+        sourcesPanelTab,
+        setSourcesPanelTab,
+        currentCitations,
+        citationsMessageId,
+        hoveredCitationIndex,
+        setHoveredCitationIndex,
+        citedIndices,
+        clearCitations,
+        hoverSource,
 
         // Duplicates (Global State)
         pendingDuplicates,
         setPendingDuplicates,
         showDuplicateModal,
-        setShowDuplicateModal
+        setShowDuplicateModal,
+
+
+        // Selection Mode (Batch Delete)
+        // isSelectionMode removed from destructure - we derive it now
+        selectedSourceIds,
+        toggleSelectionMode,
+        toggleSourceSelection,
+        selectAllSources,
+        clearSourceSelection,
+
+        // RAG Source Whitelist
+        allowedSourceIds,
+        toggleAllowedSource,
+        allowAllSources,
+        enableSources,
+        disableSources
     } = useUIStore();
+
+    // Auto-derive selection mode
+    const isSelectionMode = selectedSourceIds.size > 0;
+
 
     const { processFiles, handleReplaceDuplicates, refreshSources } = useFileProcessor();
 
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     const searchInputRef = React.useRef<HTMLInputElement>(null);
-    const [searchQuery, setSearchQuery] = React.useState("");
     const [deletingIds, setDeletingIds] = React.useState<Set<string>>(new Set());
+    const [isBatchDeleting, setIsBatchDeleting] = React.useState(false);
+    const [editingId, setEditingId] = React.useState<string | null>(null);
+    const [editingName, setEditingName] = React.useState("");
+    const renameInputRef = React.useRef<HTMLInputElement>(null);
+    const citationsContainerRef = React.useRef<HTMLDivElement>(null);
+
+    // Scroll citations to top when hovering from chat bubble
+    React.useEffect(() => {
+        if (hoveredCitationIndex !== null && hoverSource === 'bubble' && citationsContainerRef.current) {
+            citationsContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    }, [hoveredCitationIndex, hoverSource]);
 
     const filteredSources = sources.filter((file) =>
-        file.name.toLowerCase().includes(searchQuery.toLowerCase())
+        file.name.toLowerCase().includes(sourcesSearchQuery.toLowerCase())
     );
 
     const [isLoading, setIsLoading] = React.useState(false);
@@ -210,21 +259,7 @@ export function SourcesPanel() {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [toggleSourcesPanel]);
 
-    // Search Shortcut (Ctrl + K)
-    React.useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-                e.preventDefault();
-                if (!isSourcesPanelOpen) {
-                    toggleSourcesPanel();
-                }
-                // Wait for panel to mount/transition
-                setTimeout(() => searchInputRef.current?.focus(), 100);
-            }
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isSourcesPanelOpen, toggleSourcesPanel]);
+
 
     return (
         <>
@@ -394,10 +429,10 @@ export function SourcesPanel() {
                             <div className="flex items-center justify-between px-6 md:px-8 py-6 md:py-8">
                                 <div>
                                     <h2 className="text-xl font-medium text-white tracking-tight flex items-center gap-2">
-                                        Knowledge Base
+                                        Sources
                                     </h2>
                                     <p className="text-sm text-text-secondary mt-1 font-light tracking-wide">
-                                        Manage your context sources
+                                        See and Manage Context Sources
                                     </p>
                                 </div>
                                 <Button
@@ -410,129 +445,530 @@ export function SourcesPanel() {
                                 </Button>
                             </div>
 
-                            {/* Search */}
-                            <div className="px-6 md:px-8 pb-6">
-                                <div className="relative group">
-                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-secondary/50 group-focus-within:text-white transition-colors" />
-                                    <input
-                                        ref={searchInputRef}
-                                        type="text"
-                                        placeholder="Search sources... (Ctrl+K)"
-                                        value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
-                                        className="w-full bg-white/5 border border-white/5 rounded-xl py-2.5 pl-10 pr-4 text-sm text-white placeholder:text-text-secondary/50 focus:outline-none focus:bg-white/10 focus:border-white/20 transition-all font-light"
-                                    />
+                            {/* Tab Buttons */}
+                            <div className="px-6 md:px-8 pb-4">
+                                <div className="flex bg-white/5 rounded-xl p-1 border border-white/5">
+                                    <button
+                                        id="walkthrough-kb-tab"
+                                        onClick={() => setSourcesPanelTab('knowledge-base')}
+                                        className={`flex-1 py-2 px-3 text-sm font-medium rounded-lg transition-all duration-200 cursor-pointer ${sourcesPanelTab === 'knowledge-base'
+                                            ? 'bg-white/10 text-white'
+                                            : 'text-text-secondary hover:text-white'
+                                            }`}
+                                    >
+                                        Knowledge Base
+                                    </button>
+                                    <button
+                                        id="walkthrough-citations-tab"
+                                        onClick={() => setSourcesPanelTab('citations')}
+                                        className={`flex-1 py-2 px-3 text-sm font-medium rounded-lg transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer ${sourcesPanelTab === 'citations'
+                                            ? 'bg-white/10 text-white'
+                                            : 'text-text-secondary hover:text-white'
+                                            }`}
+                                    >
+                                        Citations
+                                        {currentCitations.length > 0 && (
+                                            <span className="bg-accent text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[1.2rem] flex items-center justify-center">
+                                                {currentCitations.length}
+                                            </span>
+                                        )}
+                                    </button>
                                 </div>
                             </div>
 
-                            {/* List */}
-                            <div className="flex-1 overflow-y-auto px-4 md:px-6 pb-6 space-y-2 custom-scrollbar">
-                                <div className="flex items-center justify-between px-2 pb-2">
-                                    <span className="text-xs font-medium text-text-secondary/60 uppercase tracking-widest">Active Sources</span>
-                                    <span className="text-xs font-mono text-text-secondary/40">{filteredSources.length} items</span>
+                            {/* Search (only for Knowledge Base tab) */}
+                            {sourcesPanelTab === 'knowledge-base' && (
+                                <div className="px-6 md:px-8 pb-6">
+                                    <div className="relative group">
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-secondary/50 group-focus-within:text-white transition-colors" />
+                                        <input
+                                            ref={searchInputRef}
+                                            type="text"
+                                            placeholder="Search sources..."
+                                            value={sourcesSearchQuery}
+                                            onChange={(e) => setSourcesSearchQuery(e.target.value)}
+                                            data-sources-search
+                                            className="w-full bg-white/5 border border-white/5 rounded-xl py-2.5 pl-10 pr-4 text-sm text-white placeholder:text-text-secondary/50 focus:outline-none focus:bg-white/10 focus:border-white/20 transition-all font-light"
+                                        />
+                                    </div>
                                 </div>
+                            )}
 
-                                {isFetchingInfo ? (
-                                    <div className="space-y-3 pt-2">
-                                        {[...Array(3)].map((_, i) => (
-                                            <motion.div
-                                                key={i}
-                                                initial={{ opacity: 0, y: 10 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                transition={{ delay: i * 0.1 }}
-                                                className="flex items-center gap-4 p-4 rounded-2xl bg-white/[0.01] border border-white/[0.02]"
-                                            >
-                                                <div className="w-12 h-12 rounded-xl bg-white/5 animate-pulse" />
-                                                <div className="flex-1 space-y-2">
-                                                    <div className="h-4 w-24 bg-white/5 rounded-md animate-pulse" />
-                                                    <div className="h-3 w-16 bg-white/5 rounded-md animate-pulse" />
-                                                </div>
-                                            </motion.div>
-                                        ))}
-                                    </div>
-                                ) : filteredSources.length === 0 ? (
-                                    <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
-                                        <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center">
-                                            <File className="w-5 h-5 text-white/20" />
+                            {/* Tab Content */}
+                            {sourcesPanelTab === 'knowledge-base' ? (
+                                /* Knowledge Base Tab - File List */
+                                <div className="flex-1 overflow-y-auto px-4 md:px-6 pb-6 space-y-2 custom-scrollbar">
+                                    {/* Header with Selection Mode Toggle */}
+                                    <div className="flex items-center justify-between px-2 pb-2">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs font-medium text-text-secondary/60 uppercase tracking-widest">Active Sources</span>
                                         </div>
-                                        <div>
-                                            <p className="text-sm font-medium text-white/60">No sources yet</p>
-                                            <p className="text-xs text-text-secondary/40 mt-1 max-w-[200px]">Upload documents to give your agent more context.</p>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    filteredSources.map((file) => (
-                                        <div
-                                            key={file.id}
-                                            className="group relative flex items-center gap-4 p-4 rounded-2xl bg-white/[0.02] border border-white/[0.03] hover:bg-white/[0.04] hover:border-white/10 transition-all duration-300 cursor-pointer"
-                                        >
-                                            {/* Icon */}
-                                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-white/5 to-transparent border border-white/5 flex items-center justify-center text-text-secondary group-hover:text-white group-hover:scale-105 transition-all duration-300 shadow-inner relative">
-                                                {file.status === 'uploading' ? (
-                                                    <div className="absolute inset-0 bg-black/50 rounded-xl flex items-center justify-center backdrop-blur-sm z-10">
-                                                        <Loader2 className="w-5 h-5 animate-spin text-white" />
+                                        <div className="flex items-center gap-2">
+                                            {/* Active Sources Count (Always visible when not selecting or when selecting but no selection) */}
+                                            {selectedSourceIds.size === 0 && sources.length > 0 && (
+                                                <span className="text-[10px] bg-white/10 text-white/90 px-2 py-0.5 rounded-full font-medium">
+                                                    {allowedSourceIds ? allowedSourceIds.size : sources.length}/{sources.length}
+                                                </span>
+                                            )}
+                                            {/* Show Delete + Select All only when there are selections */}
+                                            {selectedSourceIds.size > 0 && (
+                                                <>
+                                                    <div className="relative group flex items-center justify-center">
+                                                        <Button
+                                                            size="icon"
+                                                            variant="ghost"
+                                                            onClick={(e: React.MouseEvent) => {
+                                                                e.stopPropagation();
+                                                                const ids = Array.from(selectedSourceIds);
+                                                                enableSources(ids);
+                                                                clearSourceSelection();
+                                                                toast.success("Selected sources enabled for RAG");
+                                                            }}
+                                                            className="h-7 w-7 text-white/70 hover:text-white hover:bg-white/10 rounded-lg"
+                                                        >
+                                                            <Eye className="w-3.5 h-3.5" />
+                                                        </Button>
+                                                        <ActionTooltip label="Enable source" side="bottom" />
                                                     </div>
-                                                ) : null}
-                                                {getFileIcon(file.type)}
-                                            </div>
 
-                                            {/* Info */}
-                                            <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-                                                <h4 className="text-sm font-medium text-white/90 truncate group-hover:text-white transition-colors tracking-tight">{file.name}</h4>
-                                                <div className="flex items-center gap-2 text-xs text-text-secondary/70 group-hover:text-text-secondary transition-colors font-mono">
-                                                    {file.status === 'uploading' ? (
-                                                        <span className="text-blue-400 flex items-center gap-1">
-                                                            Uploading...
-                                                        </span>
-                                                    ) : (
-                                                        <>
-                                                            <span>{file.type}</span>
-                                                            <span className="w-0.5 h-0.5 rounded-full bg-white/20" />
-                                                            <span>Uploaded {getTimeAgo(file.uploadedAt)}</span>
-                                                        </>
+                                                    <div className="relative group flex items-center justify-center">
+                                                        <Button
+                                                            size="icon"
+                                                            variant="ghost"
+                                                            onClick={(e: React.MouseEvent) => {
+                                                                e.stopPropagation();
+                                                                const ids = Array.from(selectedSourceIds);
+                                                                disableSources(ids);
+                                                                clearSourceSelection();
+                                                                toast.success("Selected sources disabled for RAG");
+                                                            }}
+                                                            className="h-7 w-7 text-white/70 hover:text-white hover:bg-white/10 rounded-lg"
+                                                        >
+                                                            <EyeOff className="w-3.5 h-3.5" />
+                                                        </Button>
+                                                        <ActionTooltip label="Disable source" side="bottom" />
+                                                    </div>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        onClick={selectedSourceIds.size === filteredSources.length ? clearSourceSelection : selectAllSources}
+                                                        className="h-7 px-2 text-xs text-text-secondary hover:text-white"
+                                                    >
+                                                        {selectedSourceIds.size === filteredSources.length ? 'Deselect All' : 'Select All'}
+                                                    </Button>
+                                                    <Button
+                                                        size="icon"
+                                                        variant="ghost"
+                                                        disabled={isBatchDeleting}
+                                                        onClick={async () => {
+                                                            const ids = Array.from(selectedSourceIds);
+                                                            setIsBatchDeleting(true);
+                                                            try {
+                                                                await batchDeleteFiles(ids);
+                                                                const userId = useConversationStore.getState().userId;
+                                                                if (userId) {
+                                                                    for (const id of ids) {
+                                                                        await filesCache.deleteFile(id, userId);
+                                                                    }
+                                                                }
+                                                                removeSources(ids);
+                                                                toast.success(`${ids.length} files deleted`);
+                                                                clearSourceSelection();
+                                                            } catch (err) {
+                                                                console.error(err);
+                                                                toast.error("Failed to delete files");
+                                                            } finally {
+                                                                setIsBatchDeleting(false);
+                                                            }
+                                                        }}
+                                                        className="h-7 w-7 text-red-400 hover:text-red-300 hover:bg-red-500/20"
+                                                    >
+                                                        {isBatchDeleting ? (
+                                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                        ) : (
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                        )}
+                                                    </Button>
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {isFetchingInfo ? (
+                                        <div className="space-y-3 pt-2">
+                                            {[...Array(3)].map((_, i) => (
+                                                <motion.div
+                                                    key={i}
+                                                    initial={{ opacity: 0, y: 10 }}
+                                                    animate={{ opacity: 1, y: 0 }}
+                                                    transition={{ delay: i * 0.1 }}
+                                                    className="flex items-center gap-4 p-4 rounded-2xl bg-white/[0.01] border border-white/[0.02]"
+                                                >
+                                                    <div className="w-12 h-12 rounded-xl bg-white/5 animate-pulse" />
+                                                    <div className="flex-1 space-y-2">
+                                                        <div className="h-4 w-24 bg-white/5 rounded-md animate-pulse" />
+                                                        <div className="h-3 w-16 bg-white/5 rounded-md animate-pulse" />
+                                                    </div>
+                                                </motion.div>
+                                            ))}
+                                        </div>
+                                    ) : filteredSources.length === 0 ? (
+                                        <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
+                                            <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center">
+                                                <File className="w-5 h-5 text-white/20" />
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-medium text-white/60">No sources yet</p>
+                                                <p className="text-xs text-text-secondary/40 mt-1 max-w-[200px]">Upload documents to give your agent more context.</p>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        filteredSources.map((file) => {
+                                            const idStr = String(file.id);
+                                            const isSelected = selectedSourceIds.has(idStr);
+                                            const isAllowed = allowedSourceIds === null || allowedSourceIds.has(idStr);
+                                            const isEditing = editingId === idStr;
+
+                                            return (
+                                                <div
+                                                    key={file.id}
+                                                    className={`group relative flex items-center gap-3 p-4 rounded-2xl border transition-all duration-300 cursor-pointer ${isSelected
+                                                        ? 'bg-accent/5 border-accent/20'
+                                                        : !isAllowed
+                                                            ? 'bg-white/[0.01] border-white/[0.02] opacity-50'
+                                                            : 'bg-white/[0.02] border-white/[0.03] hover:bg-white/[0.04] hover:border-white/10'
+                                                        }`}
+                                                    onClick={() => {
+                                                        if (isSelectionMode) {
+                                                            toggleSourceSelection(idStr);
+                                                        }
+                                                    }}
+                                                >
+                                                    {/* Icon / Checkbox area - hover shows checkbox, click toggles selection */}
+                                                    <div
+                                                        className={`w-10 h-10 rounded-xl bg-gradient-to-br from-white/5 to-transparent border border-white/5 flex items-center justify-center transition-all duration-200 shadow-inner relative shrink-0 cursor-pointer ${!isAllowed ? 'opacity-50' : ''}`}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            toggleSourceSelection(idStr);
+                                                        }}
+                                                    >
+                                                        {file.status === 'uploading' ? (
+                                                            <div className="absolute inset-0 bg-black/50 rounded-xl flex items-center justify-center backdrop-blur-sm z-10">
+                                                                <Loader2 className="w-4 h-4 animate-spin text-white" />
+                                                            </div>
+                                                        ) : isSelectionMode || isSelected ? (
+                                                            /* Always show checkbox in selection mode or if selected */
+                                                            isSelected ? (
+                                                                <CheckSquare className="w-5 h-5 text-accent" />
+                                                            ) : (
+                                                                <Square className="w-5 h-5 text-text-secondary/40" />
+                                                            )
+                                                        ) : (
+                                                            /* Show icon normally, checkbox on hover */
+                                                            <>
+                                                                <div className="group-hover:hidden text-text-secondary">
+                                                                    {getFileIcon(file.type)}
+                                                                </div>
+                                                                <div className="hidden group-hover:block">
+                                                                    <Square className="w-5 h-5 text-text-secondary/60" />
+                                                                </div>
+                                                            </>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Info */}
+                                                    <div className="flex-1 min-w-0 flex flex-col gap-0.5 pr-2 group-hover:pr-28 transition-[padding] duration-200">
+                                                        {isEditing ? (
+                                                            <div className="flex items-center">
+                                                                <input
+                                                                    ref={renameInputRef}
+                                                                    type="text"
+                                                                    value={editingName}
+                                                                    onChange={(e) => setEditingName(e.target.value)}
+                                                                    onBlur={async () => {
+                                                                        const lastDot = file.name.lastIndexOf('.');
+                                                                        const extension = lastDot !== -1 ? file.name.slice(lastDot) : '';
+                                                                        const finalName = editingName.trim() + extension;
+
+                                                                        if (editingName.trim() && finalName !== file.name) {
+                                                                            try {
+                                                                                await renameFile(idStr, finalName);
+                                                                                updateSource(file.id, { name: finalName });
+                                                                                toast.success("File renamed");
+                                                                            } catch (err) {
+                                                                                console.error(err);
+                                                                                toast.error("Failed to rename file");
+                                                                            }
+                                                                        }
+                                                                        setEditingId(null);
+                                                                    }}
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === 'Enter') {
+                                                                            (e.target as HTMLInputElement).blur();
+                                                                        } else if (e.key === 'Escape') {
+                                                                            setEditingId(null);
+                                                                        }
+                                                                    }}
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                    className="text-sm font-medium text-white bg-white/10 border border-white/20 rounded px-2 py-0.5 focus:outline-none focus:border-accent min-w-0 flex-1"
+                                                                    autoFocus
+                                                                />
+                                                                {file.name.includes('.') && (
+                                                                    <span className="text-sm text-text-secondary ml-1 select-none">
+                                                                        {file.name.slice(file.name.lastIndexOf('.'))}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        ) : (
+                                                            <div className="flex items-center gap-1.5 min-w-0">
+                                                                <h4 className="text-sm font-medium text-white/90 truncate group-hover:text-white transition-colors tracking-tight">{file.name}</h4>
+                                                                {selectedSourceIds.size > 0 && (
+                                                                    <div title={isAllowed ? "RAG Enabled" : "RAG Disabled"}>
+                                                                        {isAllowed ? (
+                                                                            <Eye className="w-3 h-3 text-white/40 shrink-0" />
+                                                                        ) : (
+                                                                            <EyeOff className="w-3 h-3 text-white/20 shrink-0" />
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                        <div className="flex items-center gap-2 text-xs text-text-secondary/70 group-hover:opacity-0 transition-opacity font-mono whitespace-nowrap overflow-hidden">
+                                                            {file.status === 'uploading' ? (
+                                                                <span className="text-blue-400 flex items-center gap-1">
+                                                                    Uploading...
+                                                                </span>
+                                                            ) : (
+                                                                <>
+                                                                    <span>{file.type}</span>
+                                                                    <span className="w-0.5 h-0.5 rounded-full bg-white/20" />
+                                                                    <span className="truncate">Uploaded {getTimeAgo(file.uploadedAt)}</span>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Actions (visible when no selections) */}
+                                                    {selectedSourceIds.size === 0 && (
+                                                        <div className="flex items-center gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-all duration-300 absolute right-4">
+                                                            {/* RAG Toggle Button */}
+                                                            <div className="relative group">
+                                                                <Button
+                                                                    size="icon"
+                                                                    variant="ghost"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        toggleAllowedSource(idStr);
+                                                                    }}
+                                                                    className={`h-8 w-8 rounded-lg ${isAllowed
+                                                                        ? 'text-white opacity-100'
+                                                                        : 'text-white/40 hover:text-white'}`}
+                                                                >
+                                                                    {isAllowed ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                                                                </Button>
+                                                                <ActionTooltip label={isAllowed ? "Disable source" : "Enable source"} side="top" />
+                                                            </div>
+                                                            {/* Rename Button */}
+                                                            <Button
+                                                                size="icon"
+                                                                variant="ghost"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setEditingId(idStr);
+                                                                    const lastDot = file.name.lastIndexOf('.');
+                                                                    const baseName = lastDot !== -1 ? file.name.slice(0, lastDot) : file.name;
+                                                                    setEditingName(baseName);
+                                                                }}
+                                                                className="h-8 w-8 text-text-secondary hover:text-white hover:bg-white/10 rounded-lg"
+                                                            >
+                                                                <Pencil className="w-3.5 h-3.5" />
+                                                            </Button>
+                                                            {/* Delete Button */}
+                                                            <Button
+                                                                size="icon"
+                                                                variant="ghost"
+                                                                disabled={deletingIds.has(idStr)}
+                                                                onClick={async (e) => {
+                                                                    e.stopPropagation();
+                                                                    try {
+                                                                        const userId = useConversationStore.getState().userId;
+
+                                                                        setDeletingIds(prev => new Set(prev).add(idStr));
+                                                                        await deleteFile(idStr);
+
+                                                                        if (userId) {
+                                                                            await filesCache.deleteFile(idStr, userId);
+                                                                        }
+
+                                                                        removeSource(file.id);
+                                                                        toast.success(`${file.name} removed`);
+                                                                    } catch (err) {
+                                                                        console.error(err);
+                                                                        toast.error("Failed to delete file");
+                                                                    } finally {
+                                                                        setDeletingIds(prev => {
+                                                                            const next = new Set(prev);
+                                                                            next.delete(idStr);
+                                                                            return next;
+                                                                        });
+                                                                    }
+                                                                }}
+                                                                className="h-8 w-8 text-text-secondary hover:text-red-400 hover:bg-red-500/10 rounded-lg"
+                                                            >
+                                                                {deletingIds.has(idStr) ? (
+                                                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                                ) : (
+                                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                                )}
+                                                            </Button>
+                                                        </div>
                                                     )}
                                                 </div>
+                                            );
+                                        })
+                                    )}
+
+
+                                </div>
+                            ) : (
+                                /* Citations Tab - RAG Chunks */
+                                <div ref={citationsContainerRef} className="flex-1 overflow-y-auto px-4 md:px-6 pb-6 space-y-3 custom-scrollbar">
+                                    {currentCitations.length === 0 ? (
+                                        <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
+                                            <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center">
+                                                <FileText className="w-5 h-5 text-white/20" />
                                             </div>
-
-                                            {/* Actions */}
-                                            <Button
-                                                size="icon"
-                                                variant="ghost"
-                                                disabled={deletingIds.has(String(file.id))}
-                                                onClick={async (e) => {
-                                                    e.stopPropagation();
-                                                    try {
-                                                        const idStr = String(file.id);
-                                                        setDeletingIds(prev => new Set(prev).add(idStr));
-                                                        await deleteFile(idStr);
-                                                        await filesCache.deleteFile(idStr);  // Remove from cache too
-                                                        removeSource(file.id);
-                                                        toast.success(`${file.name} removed`);
-                                                    } catch (err) {
-                                                        console.error(err);
-                                                        toast.error("Failed to delete file");
-                                                    } finally {
-                                                        setDeletingIds(prev => {
-                                                            const next = new Set(prev);
-                                                            next.delete(String(file.id));
-                                                            return next;
-                                                        });
-                                                    }
-                                                }}
-                                                className="h-9 w-9 opacity-100 md:opacity-0 group-hover:opacity-100 text-text-secondary hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all duration-300 transform md:translate-x-2 group-hover:translate-x-0"
-                                            >
-                                                {deletingIds.has(String(file.id)) ? (
-                                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                                ) : (
-                                                    <Trash2 className="w-4 h-4" />
-                                                )}
-                                            </Button>
+                                            <div>
+                                                <p className="text-sm font-medium text-white/60">No citations</p>
+                                                <p className="text-xs text-text-secondary/40 mt-1 max-w-[200px]">
+                                                    Click the citations button on a message to see its sources.
+                                                </p>
+                                            </div>
                                         </div>
-                                    ))
-                                )}
+                                    ) : (
+                                        <>
+                                            <div className="flex items-center justify-between px-2 pb-2">
+                                                <span className="text-xs font-medium text-text-secondary/60 uppercase tracking-widest">Retrieved Chunks</span>
+                                            </div>
+                                            <AnimatePresence mode="popLayout">
+                                                {/* Sort citations: hovered one goes to top, BUT NOT if hovering from panel (avoids race condition) */}
+                                                {[...currentCitations]
+                                                    .map((citation, originalIndex) => ({ citation, originalIndex }))
+                                                    .filter(({ originalIndex }) => !citedIndices || citedIndices.length === 0 || citedIndices.includes(originalIndex))
+                                                    .sort((a, b) => {
+                                                        // Only sort if the hover came from the chat bubble
+                                                        // If hovering within panel, keep original order to prevent items jumping under cursor
+                                                        if (hoverSource === 'bubble') {
+                                                            if (hoveredCitationIndex === a.originalIndex) return -1;
+                                                            if (hoveredCitationIndex === b.originalIndex) return 1;
+                                                        }
+                                                        return a.originalIndex - b.originalIndex; // Otherwise keep original order
+                                                    })
+                                                    .map(({ citation, originalIndex }) => {
+                                                        const isHovered = hoveredCitationIndex === originalIndex;
 
+                                                        return (
+                                                            <motion.div
+                                                                key={citation.chunk_id || `citation-${originalIndex}`}
+                                                                layout
+                                                                layoutId={`citation-${citationsMessageId}-${originalIndex}`}
+                                                                initial={{ opacity: 0, y: 10 }}
+                                                                animate={{ opacity: 1, y: 0 }}
+                                                                exit={{ opacity: 0, scale: 0.95 }}
+                                                                transition={{
+                                                                    layout: { type: "spring", stiffness: 500, damping: 30 },
+                                                                    opacity: { duration: 0.15 }
+                                                                }}
+                                                                onMouseEnter={() => setHoveredCitationIndex(originalIndex, citationsMessageId, 'panel')}
+                                                                onMouseLeave={() => setHoveredCitationIndex(null, null)}
+                                                                className={`group/card rounded-2xl border transition-all duration-200 cursor-pointer ${isHovered
+                                                                    ? 'bg-accent/10 border-accent/40 shadow-[0_0_20px_rgba(var(--accent-rgb),0.15)] scale-[1.01] ring-1 ring-accent/20'
+                                                                    : 'bg-white/[0.02] border-white/[0.05] hover:bg-white/[0.04] opacity-60'
+                                                                    }`}
+                                                            >
+                                                                {/* Card Header: Metadata Bar */}
+                                                                <div className="px-4 py-3 border-b border-white/[0.03] bg-white/[0.02] flex flex-col gap-2">
+                                                                    {/* Top Row: Filename + Breadcrumbs */}
+                                                                    <div className="flex items-center justify-between gap-3">
+                                                                        <div className="flex items-center gap-2 min-w-0">
+                                                                            {/* Source number badge */}
+                                                                            <span className="shrink-0 inline-flex items-center justify-center w-5 h-5 text-[10px] font-bold rounded-full bg-surface-light border border-white/10 text-text-secondary">
+                                                                                {originalIndex + 1}
+                                                                            </span>
+                                                                            <div className="relative group flex-1 min-w-0">
+                                                                                <h4 className="text-sm font-medium text-white/90 truncate leading-none">
+                                                                                    {(citation as any).metadata?.extra?.breadcrumbs?.length > 0
+                                                                                        ? [citation.filename, ...(citation as any).metadata.extra.breadcrumbs].join(' / ')
+                                                                                        : citation.filename
+                                                                                    }
+                                                                                </h4>
+                                                                                <ActionTooltip
+                                                                                    label={(citation as any).metadata?.extra?.breadcrumbs?.length > 0
+                                                                                        ? [citation.filename, ...(citation as any).metadata.extra.breadcrumbs].join(' / ')
+                                                                                        : citation.filename
+                                                                                    }
+                                                                                    side="bottom"
+                                                                                    className="mt-1 pointer-events-none duration-0 whitespace-normal max-w-[450px] text-center leading-snug"
+                                                                                />
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
 
-                            </div>
+                                                                    {/* Bottom Row: Badges (Monochromatic) */}
+                                                                    <div className="flex items-center gap-2 text-[10px] text-white/50 font-mono min-w-0 overflow-visible">
+                                                                        {/* Page Badge */}
+                                                                        {(citation as any).metadata?.extra?.page_number && (
+                                                                            <div className="relative group flex items-center">
+                                                                                <span className="bg-white/5 text-white/60 px-1.5 py-0.5 rounded border border-white/5 whitespace-nowrap">
+                                                                                    Pg {(citation as any).metadata.extra.page_number}
+                                                                                </span>
+                                                                                <ActionTooltip
+                                                                                    label="Page in source document"
+                                                                                    side="top"
+                                                                                    className="mb-2 left-0 -translate-x-0"
+                                                                                />
+                                                                            </div>
+                                                                        )}
+
+                                                                        {/* Score Badge (Moved here) */}
+                                                                        {citation.rerank_score && (
+                                                                            <div className="relative group flex items-center">
+                                                                                <span className="bg-white/5 text-white/60 px-1.5 py-0.5 rounded border border-white/5 whitespace-nowrap">
+                                                                                    {Math.round(citation.rerank_score * 100)}%
+                                                                                </span>
+                                                                                <ActionTooltip
+                                                                                    label="Relevance to your query"
+                                                                                    side="top"
+                                                                                    className="mb-2"
+                                                                                />
+                                                                            </div>
+                                                                        )}
+
+                                                                        {/* Type Badge */}
+                                                                        {(citation as any).metadata?.extra?.content_type === "table" && (
+                                                                            <span className="bg-white/5 text-white/60 px-1.5 py-0.5 rounded border border-white/5 flex items-center gap-1 whitespace-nowrap">
+                                                                                <FileSpreadsheet className="w-3 h-3" /> Table
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Card Body: Content */}
+                                                                <div className="px-4 py-3">
+                                                                    <div className="text-sm text-text-secondary/80 leading-relaxed font-light prose prose-invert prose-sm max-w-none prose-p:my-1 prose-headings:my-1 prose-headings:text-sm prose-headings:font-semibold prose-ul:my-1 prose-pre:bg-black/20 prose-pre:p-2 prose-pre:rounded-md">
+                                                                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                                                            {citation.content_preview}
+                                                                        </ReactMarkdown>
+                                                                    </div>
+                                                                </div>
+                                                            </motion.div>
+                                                        )
+                                                    })}
+                                            </AnimatePresence>
+                                        </>
+                                    )}
+                                </div>
+                            )}
 
                             {/* Footer */}
                             <div className={`px-6 pt-6 relative ${isMobile ? 'pb-[150px] pb-safe' : 'pb-11'}`}>

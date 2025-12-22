@@ -69,7 +69,8 @@ class DBService:
         chunks: List[str], 
         chunk_hashes: List[str],
         new_embeddings_map: Dict[str, List[float]], 
-        user_id: str = None
+        user_id: str = None,
+        chunk_metadatas: List[Dict[str, Any]] = None
     ):
         """
         Advanced Ingestion with Race Condition Handling.
@@ -118,10 +119,12 @@ class DBService:
             # Let's collect items to insert.
             insert_data = []
             for i, h in enumerate(chunk_hashes):
+                metadata = chunk_metadatas[i] if chunk_metadatas and i < len(chunk_metadatas) else None
                 insert_data.append({
                     "global_file_hash": content_hash,
                     "chunk_hash": h,
-                    "chunk_index": i
+                    "chunk_index": i,
+                    "chunk_metadata": metadata 
                 })
             
             # Use 'min_rows' logic or just try/except integrity error?
@@ -171,6 +174,53 @@ class DBService:
                 }
                 for f in results
             ]
+
+    @staticmethod
+    def batch_delete_files(file_ids: List[str], user_id: str) -> Dict[str, List[str]]:
+        """
+        Delete multiple files by their IDs.
+        Returns dict with 'deleted' and 'failed' lists.
+        """
+        deleted = []
+        failed = []
+        
+        for file_id in file_ids:
+            try:
+                success = DBService.delete_file(file_id=file_id, user_id=user_id)
+                if success:
+                    deleted.append(file_id)
+                else:
+                    failed.append(file_id)
+            except Exception as e:
+                print(f"Failed to delete file {file_id}: {e}")
+                failed.append(file_id)
+        
+        return {"deleted": deleted, "failed": failed}
+
+    @staticmethod
+    def rename_file(file_id: str, new_filename: str, user_id: str) -> Optional[Dict]:
+        """
+        Rename a file.
+        Returns the updated file dict or None if not found.
+        """
+        with get_db_context() as db:
+            file = db.execute(
+                select(File).where(File.id == file_id, File.user_id == user_id)
+            ).scalar_one_or_none()
+            
+            if not file:
+                return None
+            
+            file.filename = new_filename
+            db.commit()
+            db.refresh(file)
+            
+            return {
+                "id": file.id,
+                "filename": file.filename,
+                "created_at": file.created_at,
+                "content_hash": file.content_hash
+            }
 
     @staticmethod
     def delete_file(file_id: str, user_id: str):
@@ -235,16 +285,22 @@ class DBService:
             return True
 
     @staticmethod
-    def search_similar_chunks(query_embedding: List[float], top_k: int = 5, user_id: str = None) -> List[Dict]:
+    def search_similar_chunks(query_embedding: List[float], top_k: int = 5, user_id: str = None, file_ids: List[str] = None) -> List[Dict]:
         """
         Search for chunks similar to the query embedding.
+        
+        Args:
+            query_embedding: The query vector
+            top_k: Number of results to return
+            user_id: Filter by user (required for security)
+            file_ids: Optional list of file IDs to filter by (for RAG source selection)
         """
         with get_db_context() as db:
             # Join GlobalChunk -> global_file_chunks -> GlobalFile -> File
             # This is a 4-table join.
             
             stmt = (
-                select(GlobalChunk, File)
+                select(GlobalChunk, File, global_file_chunks.c.chunk_metadata)
                 .join(global_file_chunks, GlobalChunk.hash == global_file_chunks.c.chunk_hash)
                 .join(GlobalFile, global_file_chunks.c.global_file_hash == GlobalFile.hash)
                 .join(File, File.content_hash == GlobalFile.hash)
@@ -254,23 +310,22 @@ class DBService:
 
             if user_id:
                 stmt = stmt.where(File.user_id == user_id)
-
-            # Deduplication of results?
-            # If "Intro" chunk appears in 5 of MY files, do I want it 5 times?
-            # Usually users want distinct chunks.
-            # But the metadata (which file) is different.
             
+            # Filter by specific file IDs if provided (RAG source whitelist)
+            if file_ids:
+                stmt = stmt.where(File.id.in_(file_ids))
+
             results = db.execute(stmt).all()
             
             output = []
-            for chunk, file_obj in results:
+            for chunk, file_obj, chunk_meta in results:
                 output.append({
                     "id": chunk.hash,
                     "document": chunk.content,
                     "metadata": {
                         "filename": file_obj.filename,
                         "file_id": file_obj.id,
-                        # "chunk_index": ... (Available in association table, not selected here)
+                        "extra": chunk_meta or {}
                     },
                     "distance": 0.0
                 })

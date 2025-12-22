@@ -4,30 +4,31 @@ export const filesCache = {
     /**
      * Get all cached files
      */
-    async getAll(): Promise<CachedFile[]> {
-        return await db.files.toArray();
+    async getAll(userId: string): Promise<CachedFile[]> {
+        return await db.files.where('userId').equals(userId).toArray();
     },
 
     /**
      * Get a single cached file by ID
      */
-    async get(id: string): Promise<CachedFile | null> {
-        return await db.files.get(id) ?? null;
+    async get(id: string, userId: string): Promise<CachedFile | null> {
+        return await db.files.get({ userId, id }) ?? null;
     },
 
     /**
      * Save multiple files to cache (for full sync)
      */
-    async saveAll(files: CachedFile[]): Promise<void> {
+    async saveAll(files: CachedFile[], userId: string): Promise<void> {
         const now = new Date().toISOString();
 
         await db.transaction('rw', [db.files, db.cacheMeta], async () => {
-            // Clear existing and replace with fresh data
-            await db.files.clear();
+            // Clear existing for THIS user
+            await db.files.where('userId').equals(userId).delete();
 
-            // Add cachedAt to all files
+            // Add cachedAt and userId
             const filesWithCachedAt = files.map(f => ({
                 ...f,
+                userId,
                 cachedAt: now
             }));
 
@@ -35,9 +36,10 @@ export const filesCache = {
                 await db.files.bulkPut(filesWithCachedAt);
             }
 
-            // Update last sync timestamp
+            // Update last sync timestamp (scoped by user ideally, but key is global string?)
+            // We should scope cacheMeta keys too -> 'files_last_sync_USERID'
             await db.cacheMeta.put({
-                key: 'files_last_sync',
+                key: `files_last_sync_${userId}`,
                 value: now
             });
         });
@@ -47,6 +49,7 @@ export const filesCache = {
      * Save a single file (write-through for uploads)
      */
     async saveFile(file: CachedFile): Promise<void> {
+        if (!file.userId) throw new Error("userId required for saveFile");
         await db.files.put({
             ...file,
             cachedAt: new Date().toISOString()
@@ -63,33 +66,41 @@ export const filesCache = {
     /**
      * Delete a file from cache
      */
-    async deleteFile(id: string): Promise<void> {
-        await db.files.delete(id);
+    async deleteFile(id: string, userId: string): Promise<void> {
+        // Use userId index + filter to be robust against schema versions (V2 vs V4)
+        // This avoids DataError if the PK schema migration hasn't fully propagated
+        await db.files.where('userId').equals(userId).filter(f => f.id === id).delete();
     },
 
     /**
      * Clear all cached files (for logout)
      */
-    async clear(): Promise<void> {
+    async clear(userId?: string): Promise<void> {
         await db.transaction('rw', [db.files, db.cacheMeta], async () => {
-            await db.files.clear();
-            await db.cacheMeta.delete('files_last_sync');
+            if (userId) {
+                await db.files.where('userId').equals(userId).delete();
+                await db.cacheMeta.delete(`files_last_sync_${userId}`);
+            } else {
+                await db.files.clear();
+                // Clear all sync meta keys
+                await db.cacheMeta.filter(item => item.key.startsWith('files_last_sync_')).delete();
+            }
         });
     },
 
     /**
      * Get last sync timestamp
      */
-    async getLastSync(): Promise<string | null> {
-        const meta = await db.cacheMeta.get('files_last_sync');
+    async getLastSync(userId: string): Promise<string | null> {
+        const meta = await db.cacheMeta.get(`files_last_sync_${userId}`);
         return meta?.value ?? null;
     },
 
     /**
      * Check if cache is stale (older than threshold)
      */
-    async isStale(maxAgeMs: number = 5 * 60 * 1000): Promise<boolean> {
-        const lastSync = await this.getLastSync();
+    async isStale(userId: string, maxAgeMs: number = 5 * 60 * 1000): Promise<boolean> {
+        const lastSync = await this.getLastSync(userId);
         if (!lastSync) return true;
 
         const age = Date.now() - new Date(lastSync).getTime();
@@ -106,7 +117,7 @@ export const filesCache = {
     /**
      * Find file by filename
      */
-    async findByFilename(filename: string): Promise<CachedFile | null> {
-        return await db.files.where('filename').equals(filename).first() ?? null;
+    async findByFilename(filename: string, userId: string): Promise<CachedFile | null> {
+        return await db.files.where('userId').equals(userId).filter(f => f.filename === filename).first() ?? null;
     }
 };

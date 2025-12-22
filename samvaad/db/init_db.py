@@ -12,26 +12,24 @@ from samvaad.db.models import (
     # Conversation tables
     Conversation,
     Message,
-    # Memory tables (in-chat memory system)
-    MessageEmbedding,
-    ConversationFact,
 )
 
 def init_db():
     """
     Create all database tables defined in models.py.
     
-    Tables created:
-    - users
-    - global_chunks, global_files, global_file_chunks
-    - files
-    - conversations, messages
-    - message_embeddings, conversation_facts (memory system)
+    Tables:
+    - users (id, email, name, created_at)
+    - global_chunks (id, file_id, content, chunk_index, embedding)
+    - global_files (id, filename, content_hash, metadata, created_at)
+    - files (id, user_id, filename, content_hash, created_at)
+    - conversations (id, user_id, title, summary, facts, is_pinned, created_at, updated_at)
+    - messages (id, conversation_id, role, content, sources, token_count, created_at)
     """
     print("Creating database tables...")
     Base.metadata.create_all(bind=engine)
     print("Tables created successfully.")
 
+
 if __name__ == "__main__":
     init_db()
-

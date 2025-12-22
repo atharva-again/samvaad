@@ -11,9 +11,10 @@ interface MessageListProps {
 export function MessageList({ messages, isLoading, onEdit }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // Scroll to bottom only when new messages are added, not on hover/re-renders
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isLoading]);
+  }, [messages.length, isLoading]);
 
   return (
     <div className="flex-1 w-full max-w-3xl mx-auto px-6 md:px-4 py-8 overflow-y-auto">
