@@ -200,7 +200,7 @@ async def ingest_file(request: Request, file: UploadFile = File(...), current_us
     logger.info(f"Processing file: {filename} for user {current_user.id}")
     # [FIX] Use asyncio.to_thread to avoid event loop conflicts with LlamaParse
     # LlamaParse uses async internally, and calling it from FastAPI's event loop can conflict
-    result = await asyncio.to_thread(ingest_file_pipeline, filename, content_type, contents, user_id=current_user.id)  # type: ignore
+    result = await asyncio.to_thread(ingest_file_pipeline, filename, content_type, contents, user_id=current_user.id)  # type: ignore[arg-type]
     logger.info(f"Processed {result['num_chunks']} chunks, embedded {result['new_chunks_embedded']} new chunks.")
 
     return result

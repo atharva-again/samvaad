@@ -276,7 +276,12 @@ class StructuralChunker:
                 # Hard chunking
                 # Use a simpler loop for char chunking
                 for i in range(0, len(text), limit - overlap):
-                    final_chunks.append(text[i:i + limit])
+                    c_part = text[i:i + limit]
+                    meta = {
+                        "page_number": page, "heading": breadcrumbs[-1] if breadcrumbs else None,
+                        "breadcrumbs": breadcrumbs, "content_type": ctype
+                    }
+                    chunks.append(Chunk(content=c_part, metadata=meta))
             else:
                 # Split
                 parts = text.split(best_sep)

@@ -100,8 +100,8 @@ class Conversation(Base):
     """
     __tablename__ = "conversations"
 
-    # UUID v7: time-sortable, efficient indexing (converted to str for psycopg2 compatibility)
-    id = Column(UUID(as_uuid=True), primary_key=True, default=lambda: str(uuid_utils.uuid7()))
+    # UUID v7: time-sortable, efficient indexing
+    id = Column(UUID(as_uuid=True), primary_key=True, default=lambda: uuid_utils.uuid7())
     user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
     title = Column(String, default="New Conversation")
     summary = Column(Text, nullable=True)  # Turn-range summary of older messages
@@ -126,8 +126,8 @@ class Message(Base):
     """
     __tablename__ = "messages"
 
-    # UUID v7: time-sortable, efficient indexing (converted to str for psycopg2 compatibility)
-    id = Column(UUID(as_uuid=True), primary_key=True, default=lambda: str(uuid_utils.uuid7()))
+    # UUID v7: time-sortable, efficient indexing
+    id = Column(UUID(as_uuid=True), primary_key=True, default=lambda: uuid_utils.uuid7())
     conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True)
     role = Column(String, nullable=False)  # "user", "assistant", "system"
     content = Column(Text, nullable=False)
