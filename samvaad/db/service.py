@@ -1,10 +1,12 @@
-from typing import List, Dict, Any, Optional
 import uuid
-from sqlalchemy import select, delete
-from sqlalchemy.orm import Session
-from samvaad.db.models import File, GlobalFile, GlobalChunk, global_file_chunks
+from typing import Any
+
+from sqlalchemy import delete, select
+
+from samvaad.db.models import File, GlobalChunk, GlobalFile, global_file_chunks
 from samvaad.db.session import get_db_context
-from samvaad.utils.hashing import generate_file_id, generate_chunk_id
+from samvaad.utils.hashing import generate_file_id
+
 
 class DBService:
     """
@@ -26,14 +28,14 @@ class DBService:
             return result is not None
 
     @staticmethod
-    def get_existing_chunk_hashes(chunk_hashes: List[str]) -> set[str]:
+    def get_existing_chunk_hashes(chunk_hashes: list[str]) -> set[str]:
         """
         Check which of the provided chunk hashes already exist in global_chunks.
         Returns a set of existing hashes.
         """
         if not chunk_hashes:
             return set()
-        
+
         with get_db_context() as db:
             # Chunking query in batches if list is huge? For now assume it fits.
             stmt = select(GlobalChunk.hash).where(GlobalChunk.hash.in_(chunk_hashes))
@@ -55,7 +57,7 @@ class DBService:
             )
             db.add(new_file)
             db.commit()
-            
+
             return {
                 "status": "linked",
                 "file_id": file_ptr_id,
@@ -64,13 +66,13 @@ class DBService:
 
     @staticmethod
     def add_smart_dedup_content(
-        filename: str, 
-        content: bytes, 
-        chunks: List[str], 
-        chunk_hashes: List[str],
-        new_embeddings_map: Dict[str, List[float]], 
+        filename: str,
+        content: bytes,
+        chunks: list[str],
+        chunk_hashes: list[str],
+        new_embeddings_map: dict[str, list[float]],
         user_id: str = None,
-        chunk_metadatas: List[Dict[str, Any]] = None
+        chunk_metadatas: list[dict[str, Any]] = None
     ):
         """
         Advanced Ingestion with Race Condition Handling.
@@ -80,42 +82,42 @@ class DBService:
 
         with get_db_context() as db:
             # 1. Create GlobalFile safely
-            # Using simple check-then-insert inside txn. 
+            # Using simple check-then-insert inside txn.
             # In purely concurrent scenario, ideally ON CONFLICT DO NOTHING.
             # But simple check is "good enough" for most low-traffic apps.
-            # db.merge checks PK and updates if exists, inserts if not. 
+            # db.merge checks PK and updates if exists, inserts if not.
             new_content = GlobalFile(
                 hash=content_hash,
                 size=len(content)
             )
             db.merge(new_content)
-            
+
             # 2. Add NEW GlobalChunks
             # Use merge to safely handle race conditions where another user uploads same chunk concurrently.
             for h, vec in new_embeddings_map.items():
                 try:
                     idx = chunk_hashes.index(h)
                     text_content = chunks[idx]
-                    
+
                     chunk_obj = GlobalChunk(
                         hash=h,
                         content=text_content,
                         embedding=vec
                     )
-                    db.merge(chunk_obj) 
+                    db.merge(chunk_obj)
                 except ValueError:
                     continue
 
             # Ensure all Content and Chunks are written to DB before linking them
-            db.flush() 
+            db.flush()
 
             # 3. Create Associations
-            
+
             # If the GlobalFile was just created/merged, we should ensure associations exist.
             # Checking each is slow.
             # Strategy: If DB says this GlobalFile ALREADY existed (logic in ingestion), we probably skipped this fn.
             # But if we are here, we think we need to add.
-            
+
             # Let's collect items to insert.
             insert_data = []
             for i, h in enumerate(chunk_hashes):
@@ -124,13 +126,13 @@ class DBService:
                     "global_file_hash": content_hash,
                     "chunk_hash": h,
                     "chunk_index": i,
-                    "chunk_metadata": metadata 
+                    "chunk_metadata": metadata
                 })
-            
+
             # Use 'min_rows' logic or just try/except integrity error?
             # Or better: "INSERT ... ON CONFLICT DO NOTHING".
             from sqlalchemy.dialects.postgresql import insert
-            
+
             if insert_data:
                 stmt = insert(global_file_chunks).values(insert_data)
                 stmt = stmt.on_conflict_do_nothing(index_elements=['global_file_hash', 'chunk_hash'])
@@ -144,9 +146,9 @@ class DBService:
                 content_hash=content_hash
             )
             db.add(new_file)
-            
+
             db.commit()
-            
+
             return {
                 "status": "created",
                 "file_id": file_ptr_id,
@@ -154,7 +156,7 @@ class DBService:
             }
 
     @staticmethod
-    def get_user_files(user_id: str) -> List[Dict]:
+    def get_user_files(user_id: str) -> list[dict]:
         """List all files belonging to a specific user."""
         with get_db_context() as db:
             results = db.execute(
@@ -163,7 +165,7 @@ class DBService:
                 .where(File.user_id == user_id)
                 .order_by(File.created_at.desc())
             ).all()
-            
+
             return [
                 {
                     "id": f.File.id,
@@ -176,14 +178,14 @@ class DBService:
             ]
 
     @staticmethod
-    def batch_delete_files(file_ids: List[str], user_id: str) -> Dict[str, List[str]]:
+    def batch_delete_files(file_ids: list[str], user_id: str) -> dict[str, list[str]]:
         """
         Delete multiple files by their IDs.
         Returns dict with 'deleted' and 'failed' lists.
         """
         deleted = []
         failed = []
-        
+
         for file_id in file_ids:
             try:
                 success = DBService.delete_file(file_id=file_id, user_id=user_id)
@@ -194,11 +196,11 @@ class DBService:
             except Exception as e:
                 print(f"Failed to delete file {file_id}: {e}")
                 failed.append(file_id)
-        
+
         return {"deleted": deleted, "failed": failed}
 
     @staticmethod
-    def rename_file(file_id: str, new_filename: str, user_id: str) -> Optional[Dict]:
+    def rename_file(file_id: str, new_filename: str, user_id: str) -> dict | None:
         """
         Rename a file.
         Returns the updated file dict or None if not found.
@@ -207,14 +209,14 @@ class DBService:
             file = db.execute(
                 select(File).where(File.id == file_id, File.user_id == user_id)
             ).scalar_one_or_none()
-            
+
             if not file:
                 return None
-            
+
             file.filename = new_filename
             db.commit()
             db.refresh(file)
-            
+
             return {
                 "id": file.id,
                 "filename": file.filename,
@@ -228,47 +230,48 @@ class DBService:
         Delete a file pointer AND cleanup orphaned chunks/content.
         Zero-leak guarantee.
         """
-        from samvaad.db.models import global_file_chunks, GlobalChunk, GlobalFile
         from sqlalchemy import func
+
+        from samvaad.db.models import GlobalChunk, GlobalFile, global_file_chunks
 
         with get_db_context() as db:
             file = db.execute(
                 select(File).where(File.id == file_id, File.user_id == user_id)
             ).scalar_one_or_none()
-            
+
             if not file:
                 return False
-                
+
             content_hash = file.content_hash
             db.delete(file)
-            db.flush() 
-            
+            db.flush()
+
             # 1. Check if GlobalFile is Orphaned
             ref_count = db.execute(
                 select(func.count(File.id)).where(File.content_hash == content_hash)
             ).scalar()
-            
+
             if ref_count == 0:
                 # This GlobalFile is no longer used by ANY user.
                 # We must delete it, AND clean up any GlobalChunks that become orphans.
-                
+
                 # A. Identify Chunks used by this GlobalFile
                 # Query: Get all chunk_hashes linked to this content
                 chunk_hashes_in_file = db.execute(
                     select(global_file_chunks.c.chunk_hash)
                     .where(global_file_chunks.c.global_file_hash == content_hash)
                 ).scalars().all()
-                
+
                 # B. Delete the GlobalFile
                 # This automatically removes rows in `global_file_chunks` via ON DELETE CASCADE
                 db.execute(delete(GlobalFile).where(GlobalFile.hash == content_hash))
                 db.flush() # Ensure association rows are gone
-                
+
                 # C. Check each chunk for orphan status
                 if chunk_hashes_in_file:
                     # Find chunks that have ZERO references in global_file_chunks
                     # Query: Select chunk_hash from global_chunks where hash IN (candidates) AND hash NOT IN (select chunk_hash from global_file_chunks)
-                    
+
                     # Alternatively, check counts.
                     # Efficient single query:
                     statement = delete(GlobalChunk).where(
@@ -285,7 +288,7 @@ class DBService:
             return True
 
     @staticmethod
-    def search_similar_chunks(query_embedding: List[float], top_k: int = 5, user_id: str = None, file_ids: List[str] = None) -> List[Dict]:
+    def search_similar_chunks(query_embedding: list[float], top_k: int = 5, user_id: str = None, file_ids: list[str] = None) -> list[dict]:
         """
         Search for chunks similar to the query embedding.
         
@@ -298,7 +301,7 @@ class DBService:
         with get_db_context() as db:
             # Join GlobalChunk -> global_file_chunks -> GlobalFile -> File
             # This is a 4-table join.
-            
+
             stmt = (
                 select(GlobalChunk, File, global_file_chunks.c.chunk_metadata)
                 .join(global_file_chunks, GlobalChunk.hash == global_file_chunks.c.chunk_hash)
@@ -310,13 +313,13 @@ class DBService:
 
             if user_id:
                 stmt = stmt.where(File.user_id == user_id)
-            
+
             # Filter by specific file IDs if provided (RAG source whitelist)
             if file_ids:
                 stmt = stmt.where(File.id.in_(file_ids))
 
             results = db.execute(stmt).all()
-            
+
             output = []
             for chunk, file_obj, chunk_meta in results:
                 output.append({

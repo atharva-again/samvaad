@@ -1,7 +1,8 @@
 """Test embedding functions using Voyage AI."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 
 @pytest.fixture(autouse=True)
@@ -108,7 +109,7 @@ class TestEmbeddingErrorHandling:
         # Import should work but embedding call may fail without key
         # This tests the graceful handling of missing credentials
         chunks = ["test chunk"]
-        
+
         # Depending on how voyageai handles missing keys, this may raise
         try:
             generate_embeddings(chunks)

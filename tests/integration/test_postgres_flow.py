@@ -1,7 +1,9 @@
 """Integration tests for PostgreSQL flow."""
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
+
 from samvaad.pipeline.retrieval.query import rag_query_pipeline
 
 
@@ -33,16 +35,16 @@ def test_ingestion_flow_mocks(mock_db_for_ingestion, mock_embedding):
     This ensures the pipeline orchestration is correct without needing a real DB.
     """
     from samvaad.pipeline.ingestion.ingestion import ingest_file_pipeline_with_progress
-    
+
     filename = "test_doc.txt"
     content = b"Content of the test document. " * 20
     content_type = "text/plain"
-    
+
     result = ingest_file_pipeline_with_progress(filename, content_type, content)
-    
+
     assert result["error"] is None
     assert result["num_chunks"] > 0
-    
+
     # Verify DB Service was called
     mock_db_for_ingestion.check_content_exists.assert_called_once()
     mock_db_for_ingestion.add_smart_dedup_content.assert_called_once()
@@ -58,16 +60,16 @@ def test_retrieval_flow_mocks(mock_gen, mock_rerank, mock_embed, mock_db):
     """
     # Setup mocks
     mock_embed.return_value = [0.1] * 1024
-    
+
     mock_db.search_similar_chunks.return_value = [
         {
-            "id": "1", 
-            "document": "chunk content", 
+            "id": "1",
+            "document": "chunk content",
             "metadata": {"filename": "test.txt"},
             "distance": 0.1
         }
     ]
-    
+
     # Mock rerank result
     mock_rerank_res = MagicMock()
     result_item = MagicMock()
@@ -75,12 +77,12 @@ def test_retrieval_flow_mocks(mock_gen, mock_rerank, mock_embed, mock_db):
     result_item.relevance_score = 0.9
     mock_rerank_res.results = [result_item]
     mock_rerank.return_value = mock_rerank_res
-    
+
     mock_gen.return_value = "Test Answer"
-    
+
     # Run
     result = rag_query_pipeline("test query")
-    
+
     assert result["success"] is True
     assert result["answer"] == "Test Answer"
     assert len(result["sources"]) == 1

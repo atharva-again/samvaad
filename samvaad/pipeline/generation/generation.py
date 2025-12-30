@@ -1,15 +1,15 @@
-from groq import Groq
-from typing import List, Dict
 import os
+
 from dotenv import load_dotenv
+from groq import Groq
 
 load_dotenv()
 
 
 def generate_answer_with_groq(
-    query: str, 
-    chunks: List[Dict], 
-    model: str = "llama-3.3-70b-versatile", 
+    query: str,
+    chunks: list[dict],
+    model: str = "llama-3.3-70b-versatile",
     conversation_context: str = "",
     persona: str = "default",
     strict_mode: bool = False,
@@ -27,7 +27,7 @@ def generate_answer_with_groq(
         rag_context: Pre-formatted RAG context (from context_manager)
                      If provided, chunks are ignored to avoid duplicate formatting
     """
-    
+
     groq_key = os.getenv("GROQ_API_KEY")
 
     if not groq_key:

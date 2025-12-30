@@ -1,17 +1,15 @@
 """
 Conversations Router - API endpoints for conversation management.
 """
-from typing import List, Optional
-from uuid import UUID
 from datetime import datetime
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from samvaad.api.deps import get_current_user
-from samvaad.db.models import User
 from samvaad.db.conversation_service import ConversationService
-
+from samvaad.db.models import User
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 conversation_service = ConversationService()
@@ -22,21 +20,21 @@ conversation_service = ConversationService()
 # ─────────────────────────────────────────────────────────────────────
 
 class ConversationCreate(BaseModel):
-    title: Optional[str] = "New Conversation"
+    title: str | None = "New Conversation"
 
 
 class ConversationUpdate(BaseModel):
-    title: Optional[str] = None
-    is_pinned: Optional[bool] = None
+    title: str | None = None
+    is_pinned: bool | None = None
 
 
 class MessageResponse(BaseModel):
     id: str
     role: str
     content: str
-    sources: List[dict] = []
+    sources: list[dict] = []
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
 
@@ -46,10 +44,10 @@ class ConversationResponse(BaseModel):
     title: str
     mode: str = "text"  # Hardcoded - mode column removed from DB
     created_at: datetime
-    updated_at: Optional[datetime]
+    updated_at: datetime | None
     is_pinned: bool = False
     message_count: int = 0
-    
+
     class Config:
         from_attributes = True
 
@@ -58,11 +56,11 @@ class ConversationDetailResponse(BaseModel):
     id: str
     title: str
     mode: str = "text"  # Hardcoded - mode column removed from DB
-    summary: Optional[str]
+    summary: str | None
     created_at: datetime
-    updated_at: Optional[datetime]
-    messages: List[MessageResponse] = []
-    
+    updated_at: datetime | None
+    messages: list[MessageResponse] = []
+
     class Config:
         from_attributes = True
 
@@ -81,7 +79,7 @@ def create_conversation(
         user_id=current_user.id,
         title=data.title or "New Conversation"
     )
-    
+
     return ConversationResponse(
         id=str(conversation.id),
         title=conversation.title,
@@ -91,7 +89,7 @@ def create_conversation(
     )
 
 
-@router.get("/", response_model=List[ConversationResponse])
+@router.get("/", response_model=list[ConversationResponse])
 def list_conversations(
     limit: int = 50,
     offset: int = 0,
@@ -103,7 +101,7 @@ def list_conversations(
         limit=limit,
         offset=offset
     )
-    
+
     result = []
     for conv in conversations:
         message_count = conversation_service.get_message_count(conv.id)
@@ -115,7 +113,7 @@ def list_conversations(
             is_pinned=conv.is_pinned,
             message_count=message_count
         ))
-    
+
     return result
 
 
@@ -129,10 +127,10 @@ def get_conversation(
         conversation_id=conversation_id,
         user_id=current_user.id
     )
-    
+
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    
+
     return ConversationDetailResponse(
         id=str(conversation.id),
         title=conversation.title,
@@ -152,10 +150,10 @@ def get_conversation(
     )
 
 
-@router.get("/{conversation_id}/messages", response_model=List[MessageResponse])
+@router.get("/{conversation_id}/messages", response_model=list[MessageResponse])
 def get_messages_since(
     conversation_id: UUID,
-    after: Optional[datetime] = None,
+    after: datetime | None = None,
     current_user: User = Depends(get_current_user)
 ):
     """Get messages created after a timestamp (for delta sync).
@@ -167,7 +165,7 @@ def get_messages_since(
         user_id=current_user.id,
         after=after
     )
-    
+
     return [
         MessageResponse(
             id=str(msg.id),
@@ -182,7 +180,7 @@ def get_messages_since(
 
 class TruncateMessagesRequest(BaseModel):
     """Request body for truncating messages."""
-    keep_message_ids: List[str]
+    keep_message_ids: list[str]
 
 
 class TruncateMessagesResponse(BaseModel):
@@ -205,7 +203,7 @@ def truncate_messages(
         user_id=current_user.id,
         keep_message_ids=request.keep_message_ids
     )
-    
+
     return TruncateMessagesResponse(deleted_count=deleted_count)
 
 
@@ -222,12 +220,12 @@ def update_conversation(
         title=data.title,
         is_pinned=data.is_pinned
     )
-    
+
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    
+
     message_count = conversation_service.get_message_count(conversation.id)
-    
+
     return ConversationResponse(
         id=str(conversation.id),
         title=conversation.title,
@@ -248,17 +246,17 @@ def delete_conversation(
         conversation_id=conversation_id,
         user_id=current_user.id
     )
-    
-    
+
+
     if not success:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    
+
     return {"success": True, "message": "Conversation deleted"}
 
 
 # [PHASE-3 #27] Bulk Delete Endpoint
 class BulkDeleteRequest(BaseModel):
-    conversation_ids: List[UUID]
+    conversation_ids: list[UUID]
 
 @router.delete("/batch", response_model=dict)
 def bulk_delete_conversations(
@@ -271,7 +269,7 @@ def bulk_delete_conversations(
     """
     if not data.conversation_ids:
         return {"deleted_count": 0}
-        
+
     count = conversation_service.delete_conversations(
         conversation_ids=data.conversation_ids,
         user_id=current_user.id

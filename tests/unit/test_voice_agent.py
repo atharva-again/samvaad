@@ -1,7 +1,8 @@
 """Tests for voice agent module."""
 
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
 
 
 class TestCreateDailyRoom:
@@ -10,9 +11,10 @@ class TestCreateDailyRoom:
     @pytest.mark.asyncio
     async def test_create_daily_room_success(self):
         """Test create_daily_room function exists and is async."""
-        from samvaad.interfaces.voice_agent import create_daily_room
         import asyncio
-        
+
+        from samvaad.interfaces.voice_agent import create_daily_room
+
         # Verify it's an async function
         assert asyncio.iscoroutinefunction(create_daily_room)
 
@@ -21,9 +23,9 @@ class TestCreateDailyRoom:
     async def test_create_daily_room_no_api_key(self, mock_getenv):
         """Test error when DAILY_API_KEY is missing."""
         from samvaad.interfaces.voice_agent import create_daily_room
-        
+
         mock_getenv.return_value = None
-        
+
         with pytest.raises(Exception):
             await create_daily_room()
 
@@ -34,9 +36,10 @@ class TestDeleteDailyRoom:
     @pytest.mark.asyncio
     async def test_delete_daily_room_success(self):
         """Test delete_daily_room function exists and is async."""
-        from samvaad.interfaces.voice_agent import delete_daily_room
         import asyncio
-        
+
+        from samvaad.interfaces.voice_agent import delete_daily_room
+
         # Verify it's an async function
         assert asyncio.iscoroutinefunction(delete_daily_room)
 

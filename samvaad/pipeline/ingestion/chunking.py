@@ -3,12 +3,11 @@ Document ingestion pipeline with Structural Chunking.
 Uses LlamaParse JSON mode for rich metadata (breadcrumbs, content types).
 """
 
+import json
 import os
 import tempfile
-import time
-import json
-from dataclasses import dataclass, field
-from typing import Tuple, List, Dict, Any, Optional
+from dataclasses import dataclass
+from typing import Any
 
 # Lazy parser import
 _parser = None
@@ -17,7 +16,7 @@ _parser = None
 class Chunk:
     """A structural chunk of text with rich metadata."""
     content: str
-    metadata: Dict[str, Any]
+    metadata: dict[str, Any]
     # Metadata includes: page_number, breadcrumbs (List[str]), content_type (str)
 
 def get_llama_parser():
@@ -28,7 +27,7 @@ def get_llama_parser():
         api_key = os.getenv("LLAMA_CLOUD_API_KEY")
         if not api_key:
             raise ValueError("LLAMA_CLOUD_API_KEY required")
-            
+
         _parser = LlamaParse(
             api_key=api_key,
             result_type="json",  # JSON mode!
@@ -38,7 +37,7 @@ def get_llama_parser():
         )
     return _parser
 
-def parse_file(filename: str, content_type: str, contents: bytes) -> Tuple[List[Dict], str]:
+def parse_file(filename: str, content_type: str, contents: bytes) -> tuple[list[dict], str]:
     """
     Parse a file into JSON pages using LlamaParse.
     Returns (pages_json, error).
@@ -46,7 +45,7 @@ def parse_file(filename: str, content_type: str, contents: bytes) -> Tuple[List[
     pages = []
     error = None
     ext = os.path.splitext(filename)[1].lower()
-    
+
     # Text types: fallback to manual "page" creation
     # [FIX] Allow .txt and .md to go through LlamaParse to get headings/structure if possible
     # Only bypass strictly unstructured data or config files
@@ -67,15 +66,15 @@ def parse_file(filename: str, content_type: str, contents: bytes) -> Tuple[List[
     # Docs/PDFs
     try:
         parser = get_llama_parser()
-        
+
         # [SECURITY-FIX #96] Use TemporaryDirectory for safer cleanup
         # This ensures the directory and all contents are removed even if crashes occur
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_file_path = os.path.join(temp_dir, f"upload{ext}")
-            
+
             with open(temp_file_path, "wb") as tf:
                 tf.write(contents)
-            
+
             # Try to use get_json_result (preferred for JSON mode)
             if hasattr(parser, "get_json_result"):
                  try:
@@ -85,11 +84,11 @@ def parse_file(filename: str, content_type: str, contents: bytes) -> Tuple[List[
                      json_objs = parser.load_data(temp_file_path)
             else:
                  json_objs = parser.load_data(temp_file_path)
-            
+
             # Determine format
             if json_objs:
                 first = json_objs[0]
-                
+
                 # Case A: It's a Document object with .text containing JSON string
                 if hasattr(first, 'text'):
                     try:
@@ -101,14 +100,14 @@ def parse_file(filename: str, content_type: str, contents: bytes) -> Tuple[List[
                     data = first
                 else:
                     data = {}
-                    
+
                 if isinstance(data, dict) and "pages" in data:
                     pages = data["pages"]
                 elif isinstance(data, list):
-                    pages = data 
+                    pages = data
                 else:
                     pages = []
-                     
+
             if not pages:
                  error = "LlamaParse returned no structured data."
 
@@ -116,7 +115,7 @@ def parse_file(filename: str, content_type: str, contents: bytes) -> Tuple[List[
         import traceback
         traceback.print_exc()
         error = f"LlamaParse extraction failed: {e}"
-        # Fallback to text decode if possible? 
+        # Fallback to text decode if possible?
         try:
             text = contents.decode("utf-8", errors='ignore')
             pages = [{"page": 1, "items": [{"type": "text", "md": text}]}]
@@ -135,10 +134,10 @@ def _cleanup_temp_file(path):
 
 class StructuralChunker:
     """Chunks documents based on layout and headings."""
-    
-    def chunk(self, pages_json: List[Dict]) -> List[Chunk]:
+
+    def chunk(self, pages_json: list[dict]) -> list[Chunk]:
         chunks = []
-        
+
         # State
         heading_stack = [] # List of (level, text)
         current_chunk_text = []
@@ -147,24 +146,24 @@ class StructuralChunker:
         current_size = 0
         limit = 1200 # Char limit approx
         overlap = 80 # ~20 tokens
-        
+
         for page in pages_json:
             page_num = page.get("page", 1)
             items = page.get("items", [])
-            
+
             for item in items:
                 itype = item.get("type", "text")
                 content = item.get("md") or item.get("value") or ""
                 # Try to get heading level, default to 1 if missing but is heading
                 level = item.get("lvl", item.get("level", None))
-                
+
                 if not content.strip():
                     continue
 
                 # Update current page if starting new chunk
                 if not current_chunk_text:
                     current_page = page_num
-                    
+
                 # HEADING: Updates breadcrumbs, starts new chunk
                 if itype == "heading":
                     # 1. Flush previous text using OLD stack context
@@ -183,15 +182,15 @@ class StructuralChunker:
                     else:
                         # Fallback
                         heading_stack = [(1, content.strip())]
-                    
+
                     # 3. Add heading to NEXT chunk metadata/context
                     # Note: We don't change breadcrumbs var here because we won't use it until next item or next flush
-                    
+
                     # Add heading text itself to the content flow
                     current_chunk_text.append(f"# {content}")
                     current_size += len(content)
                     current_chunk_type = "text"
-                    
+
                 # TABLE: Distinct chunk but check size
                 elif itype == "table":
                     # Flush pending text
@@ -200,21 +199,21 @@ class StructuralChunker:
                         self._finalize(chunks, current_chunk_text, current_chunk_type, current_page, breadcrumbs, limit, overlap)
                         current_chunk_text = []
                         current_size = 0
-                        
+
                     breadcrumbs = [h[1] for h in heading_stack]
                     if len(content) > limit:
                         # Treat large table as text to split it
                         self._recursive_split(chunks, content, limit, overlap, ["\n\n", "\n", "  "], "table", page_num, breadcrumbs)
                     else:
                         self._create_single(chunks, content, "table", page_num, breadcrumbs)
-                    
+
                 # TEXT / LIST / OTHER
                 else:
                     # Append
                     current_chunk_text.append(content)
                     current_size += len(content)
                     current_chunk_type = "text"
-                    
+
                     # Split if too big
                     if current_size > limit:
                         breadcrumbs = [h[1] for h in heading_stack]
@@ -225,23 +224,23 @@ class StructuralChunker:
                         # Simplified: _finalize splits correctly.
                         # But cross-chunk overlap (between items) is hard here.
                         # We'll rely on _finalize's internal splitting for overlap within the block.
-                        # For cross-block, we'd need a rolling buffer. 
+                        # For cross-block, we'd need a rolling buffer.
                         # Let's keep it simple: restart empty.
                         current_chunk_text = []
                         current_size = 0
-                        
+
         # Final flush
         if current_chunk_text:
             breadcrumbs = [h[1] for h in heading_stack]
             self._finalize(chunks, current_chunk_text, current_chunk_type, current_page, breadcrumbs, limit, overlap)
-            
+
         return chunks
 
     def _finalize(self, chunks, text_list, ctype, page, breadcrumbs, limit, overlap):
         full_text = "\n\n".join(text_list).strip()
         if not full_text:
             return
-            
+
         if len(full_text) > limit:
              self._recursive_split(chunks, full_text, limit, overlap, ["\n\n", "\n", ". ", " ", ""], ctype, page, breadcrumbs)
         else:
@@ -271,7 +270,7 @@ class StructuralChunker:
                     best_sep = sep
                     best_sep_idx = i
                     break
-            
+
             # If no separator found (Char split case)
             if best_sep == "":
                 # Hard chunking
@@ -283,7 +282,7 @@ class StructuralChunker:
                 parts = text.split(best_sep)
                 current_c = []
                 current_len = 0
-                
+
                 for part in parts:
                     part_len = len(part) + len(best_sep)
                     if current_len + part_len > limit:
@@ -317,7 +316,7 @@ class StructuralChunker:
                                     "breadcrumbs": breadcrumbs, "content_type": ctype
                                  }
                                  chunks.append(Chunk(content=chunk_txt, metadata=meta))
-                         
+
                          # Start new with OVERLAP?
                          # Text splitting overlap by token is hard with 'parts'.
                          # We'll overlap by keeping the last 'part'?
@@ -330,13 +329,13 @@ class StructuralChunker:
                          else:
                              current_c = []
                              current_len = 0
-                             
+
                          current_c.append(part)
                          current_len += part_len
                     else:
                         current_c.append(part)
                         current_len += part_len
-                
+
                 # Final flush loop
                 if current_c:
                     chunk_txt = best_sep.join(current_c)
@@ -359,8 +358,8 @@ class StructuralChunker:
                             "breadcrumbs": breadcrumbs, "content_type": ctype
                         }
                         chunks.append(Chunk(content=chunk_txt, metadata=meta))
-            return 
-        
+            return
+
         # If we hit base case len <= limit, append it (handled at top)
         for c in final_chunks:
             meta = {
@@ -380,5 +379,5 @@ class StructuralChunker:
         }
         chunks.append(Chunk(content=text, metadata=meta))
 
-def structural_chunk(pages_json: List[Dict]) -> List[Chunk]:
+def structural_chunk(pages_json: list[dict]) -> list[Chunk]:
     return StructuralChunker().chunk(pages_json)

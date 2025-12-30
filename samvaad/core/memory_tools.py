@@ -8,9 +8,6 @@ Tools:
 - search_history: Text search on archived messages
 - (RAG tool defined separately in voice_agent.py)
 """
-from typing import List, Dict
-from uuid import UUID
-
 
 # Tool definitions for LLM function calling
 MEMORY_TOOLS = [
@@ -34,7 +31,7 @@ MEMORY_TOOLS = [
 ]
 
 
-def search_history(query: str, archived_messages: List[Dict], limit: int = 5) -> str:
+def search_history(query: str, archived_messages: list[dict], limit: int = 5) -> str:
     """
     Simple text search on archived messages.
     
@@ -48,10 +45,10 @@ def search_history(query: str, archived_messages: List[Dict], limit: int = 5) ->
     """
     if not query or not archived_messages:
         return "No matching messages found in history."
-    
+
     query_lower = query.lower()
     matches = []
-    
+
     for msg in archived_messages:
         content = msg.get("content", "")
         if query_lower in content.lower():
@@ -59,20 +56,20 @@ def search_history(query: str, archived_messages: List[Dict], limit: int = 5) ->
             # Truncate long messages
             snippet = content[:200] + "..." if len(content) > 200 else content
             matches.append(f"{role}: {snippet}")
-    
+
     if not matches:
         return f"No messages found containing '{query}' in history."
-    
+
     # Limit results
     matches = matches[:limit]
-    
+
     return "Found in history:\n\n" + "\n\n".join(matches)
 
 
 async def execute_memory_tool(
     tool_name: str,
-    tool_args: Dict,
-    archived_messages: List[Dict]
+    tool_args: dict,
+    archived_messages: list[dict]
 ) -> str:
     """
     Execute a memory tool and return results as string for LLM context.
@@ -88,5 +85,5 @@ async def execute_memory_tool(
             archived_messages,
             tool_args.get("limit", 5)
         )
-    
+
     return "Unknown tool"

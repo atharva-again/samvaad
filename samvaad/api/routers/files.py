@@ -1,6 +1,8 @@
-from typing import List, Dict, Any
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+
 from samvaad.api.deps import get_current_user
 from samvaad.db.models import User
 from samvaad.db.service import DBService
@@ -9,14 +11,14 @@ router = APIRouter(prefix="/files", tags=["files"])
 
 
 class BatchDeleteRequest(BaseModel):
-    file_ids: List[str]
+    file_ids: list[str]
 
 
 class RenameRequest(BaseModel):
     filename: str
 
 
-@router.get("", response_model=List[Dict[str, Any]])
+@router.get("", response_model=list[dict[str, Any]])
 async def list_files(current_user: User = Depends(get_current_user)):
     """
     List all files uploaded by the current user.

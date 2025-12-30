@@ -6,12 +6,12 @@ This module encapsulates the common ingestion logic used by test.py and main.py.
 import os
 import time
 
+from samvaad.db.service import DBService
 from samvaad.pipeline.ingestion.chunking import (
-    structural_chunk,
     parse_file,
+    structural_chunk,
 )
 from samvaad.pipeline.ingestion.embedding import generate_embeddings
-from samvaad.db.service import DBService
 from samvaad.utils.hashing import generate_file_id
 
 
@@ -53,12 +53,12 @@ def ingest_file_pipeline_with_progress(
     # Generate file ID / Hash
     progress("Checking for duplicates...")
     content_hash = generate_file_id(contents)
-    
+
     # 1. Check if content exists globally
     if DBService.check_content_exists(content_hash):
         print(f"Content hash {content_hash} exists globally. Linking to user {user_id}.")
         result = DBService.link_existing_content(user_id, filename, content_hash)
-        
+
         progress("File linked successfully!", 100, 100)
         return {
             "file_id": result.get("file_id"), # Critical for Frontend
@@ -73,7 +73,7 @@ def ingest_file_pipeline_with_progress(
         }
 
     # 2. Check if user already has this specific file (Wait, logic in UI handles this, but backend safety ok)
-    # The global check above handles the 'content' check. 
+    # The global check above handles the 'content' check.
     # If user uploads same content with diff name -> linked.
     # If user uploads same content same name -> linked (and duplication in UI sources list? Allowed).
 
@@ -92,13 +92,13 @@ def ingest_file_pipeline_with_progress(
         }
 
     from samvaad.utils.hashing import generate_chunk_id
-    
+
     # Chunk the text structurally
     progress("Chunking text based on structure...")
     chunks_obj = structural_chunk(pages)
     chunks = [c.content for c in chunks_obj]
     chunk_metadatas = [c.metadata for c in chunks_obj]
-    
+
     if not chunks:
          return {
             "filename": filename,
@@ -112,41 +112,41 @@ def ingest_file_pipeline_with_progress(
 
     # Smart Deduplication Logic
     progress("Checking chunk duplicates...")
-    
+
     # 1. Calculate hashes for all chunks
     chunk_hashes = [generate_chunk_id(c) for c in chunks]
-    
+
     # 2. Check which exist in DB
     existing_hashes = DBService.get_existing_chunk_hashes(chunk_hashes)
-    
+
     # 3. Identify chunks that need embedding
     chunks_to_embed = [] # List of text
     chunks_to_embed_indices = [] # Indices to map back
-    
+
     for i, h in enumerate(chunk_hashes):
         if h not in existing_hashes:
             chunks_to_embed.append(chunks[i])
             chunks_to_embed_indices.append(i)
-            
+
     num_new = len(chunks_to_embed)
     num_skipped = len(chunks) - num_new
     print(f"Deduplication: {num_skipped} existing, {num_new} new chunks.")
 
     # 4. Embed only new chunks
     new_embeddings_map = {} # Hash -> Vector
-    
+
     if num_new > 0:
         progress(f"Embedding {num_new} new chunks...", 0, num_new)
         embed_start_time = time.time()
-        
+
         new_embeddings = generate_embeddings(chunks_to_embed)
-        
+
         # Map back to hashes
         for idx_in_subset, embedding in enumerate(new_embeddings):
             original_idx = chunks_to_embed_indices[idx_in_subset]
             h = chunk_hashes[original_idx]
             new_embeddings_map[h] = embedding
-            
+
         embed_end_time = time.time()
         print(
             f"Finished embedding {num_new} chunks in {embed_end_time - embed_start_time:.2f} sec."
@@ -157,7 +157,7 @@ def ingest_file_pipeline_with_progress(
     # Store in Postgres
     progress("Storing in database...")
     store_start_time = time.time()
-    
+
     # Use the SMART method
     result = DBService.add_smart_dedup_content(
         filename=os.path.basename(filename),
@@ -168,7 +168,7 @@ def ingest_file_pipeline_with_progress(
         user_id=user_id,
         chunk_metadatas=chunk_metadatas
     )
-    
+
     store_end_time = time.time()
     print(
         f"Finished storing in Postgres in {store_end_time - store_start_time:.2f} sec."

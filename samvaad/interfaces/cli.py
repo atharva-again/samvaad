@@ -2,30 +2,19 @@
 Main CLI interface for Samvaad - inspired by GitHub Copilot CLI and Gemini CLI design patterns.
 """
 
-import asyncio
 import glob
 import os
-import signal
-import sqlite3
 import sys
 import time
-from pathlib import Path
-from typing import Any, Dict, List, Optional
 
 import click
 from prompt_toolkit import PromptSession
-from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.formatted_text import HTML
-from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.shortcuts import print_formatted_text
 from rich import box
 from rich.console import Console
-from rich.layout import Layout
-from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
-from rich.prompt import Confirm, Prompt
 from rich.table import Table
 from rich.text import Text
 
@@ -185,11 +174,11 @@ class SamvaadInterface:
                     if i == 1:  # First line - brightest blue
                         inner_style = f"bold {Colors.PRIMARY}"
                     elif i == 2:  # Second line - medium blue
-                        inner_style = f"bold #3b82f6"
+                        inner_style = "bold #3b82f6"
                     elif i == 3:  # Third line - bright blue
                         inner_style = f"bold {Colors.TEXT_ACCENT}"
                     elif i == 4:  # Fourth line - medium blue
-                        inner_style = f"bold #3b82f6"
+                        inner_style = "bold #3b82f6"
                     elif i == 5:  # Fifth line - primary blue
                         inner_style = f"bold {Colors.PRIMARY}"
                     else:
@@ -433,7 +422,7 @@ class SamvaadInterface:
             time.sleep(0.5)  # Brief pause for visual feedback
 
     def format_ai_response(
-        self, response: str, sources: List[Dict] = None, query_time: float = None
+        self, response: str, sources: list[dict] = None, query_time: float = None
     ):
         """Format AI response with proper styling and enhanced information."""
         # Check terminal width for fixed design
@@ -622,12 +611,9 @@ class SamvaadInterface:
 
             try:
                 # Import heavy ingestion modules here to show loading progress
-                from samvaad.pipeline.ingestion.chunking import chunk_text, parse_file
-                from samvaad.pipeline.ingestion.embedding import generate_embeddings
                 from samvaad.pipeline.ingestion.ingestion import (
                     ingest_file_pipeline_with_progress,
                 )
-                from samvaad.utils.hashing import generate_file_id
 
                 # Mark loading complete
                 progress.update(load_task, completed=True, visible=False)
@@ -921,14 +907,13 @@ class SamvaadInterface:
         # This CLI command requires user_id which isn't available in standalone CLI mode.
         self.console.print(
             "⚠️  File removal is only supported via the web UI or API.",
-            style=Colors.WARNING
+            style=Colors.WARNING,
         )
         self.console.print(
-            "   Use the Knowledge Base panel to delete files.",
-            style=Colors.INFO
+            "   Use the Knowledge Base panel to delete files.", style=Colors.INFO
         )
         return
-        
+
         # Legacy code below kept for reference
         all_matches = []
 

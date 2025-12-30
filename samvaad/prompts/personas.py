@@ -1,6 +1,5 @@
-from typing import Dict
 
-PERSONAS: Dict[str, str] = {
+PERSONAS: dict[str, str] = {
     "default": "You are a helpful AI assistant. Be clear, concise, and informative.",
     "tutor": "You are a patient and knowledgeable tutor. Explain concepts step-by-step. Use analogies and examples. Check for understanding by asking follow-up questions.",
     "coder": "You are an expert senior software engineer. Provide precise, efficient solutions with clean code. Include code snippets when helpful. Explain technical tradeoffs.",

@@ -1,9 +1,19 @@
-import datetime
 import uuid_utils  # RFC 9562 compliant, 10x faster (Rust-backed)
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, BigInteger, Table, func, Boolean
-from sqlalchemy.dialects.postgresql import UUID, JSON
-from sqlalchemy.orm import relationship, declarative_base
 from pgvector.sqlalchemy import Vector
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Table,
+    Text,
+    func,
+)
+from sqlalchemy.dialects.postgresql import JSON, UUID
+from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
 
@@ -42,10 +52,10 @@ class GlobalChunk(Base):
 
     hash = Column(String, primary_key=True, index=True) # SHA-256 of text
     content = Column(Text, nullable=False)
-    
+
     # 1024 dimensions to match Voyage AI / standard embedding models
     embedding = Column(Vector(1024))
-    
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -73,12 +83,12 @@ class File(Base):
     id = Column(String, primary_key=True)  # UUID for this specific upload
     user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
     filename = Column(String, nullable=False)
-    
+
     # Pointer to the global content
     content_hash = Column(String, ForeignKey("global_files.hash"), nullable=False)
-    
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
+
     owner = relationship("User", back_populates="files")
     content_ref = relationship("GlobalFile", backref="references")
 
@@ -89,7 +99,7 @@ class Conversation(Base):
     Uses UUID v7 for time-ordered, efficient B-tree indexing.
     """
     __tablename__ = "conversations"
-    
+
     # UUID v7: time-sortable, efficient indexing (converted to str for psycopg2 compatibility)
     id = Column(UUID(as_uuid=True), primary_key=True, default=lambda: str(uuid_utils.uuid7()))
     user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
@@ -99,11 +109,11 @@ class Conversation(Base):
     is_pinned = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    
+
     owner = relationship("User", back_populates="conversations")
     messages = relationship(
-        "Message", 
-        back_populates="conversation", 
+        "Message",
+        back_populates="conversation",
         cascade="all, delete-orphan",
         order_by="Message.created_at"
     )
@@ -115,7 +125,7 @@ class Message(Base):
     Uses UUID v7 for time-ordered, efficient B-tree indexing.
     """
     __tablename__ = "messages"
-    
+
     # UUID v7: time-sortable, efficient indexing (converted to str for psycopg2 compatibility)
     id = Column(UUID(as_uuid=True), primary_key=True, default=lambda: str(uuid_utils.uuid7()))
     conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -124,6 +134,6 @@ class Message(Base):
     sources = Column(JSON, default=[])  # RAG sources for assistant messages
     token_count = Column(Integer, nullable=True)  # For context window management
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
+
     conversation = relationship("Conversation", back_populates="messages")
 

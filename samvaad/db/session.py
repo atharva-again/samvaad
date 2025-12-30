@@ -1,12 +1,11 @@
 import os
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Generator
-
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.pool import NullPool
 
 from dotenv import load_dotenv
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import NullPool
 
 # Load environment variables from .env
 load_dotenv()

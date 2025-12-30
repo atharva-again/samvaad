@@ -9,19 +9,24 @@ from pipecat.pipeline.base_task import PipelineTaskParams
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams
+from pipecat.processors.frameworks.rtvi import (
+    RTVIObserver,
+    RTVIProcessor,
+    RTVIServerMessageFrame,
+)
 from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.deepgram.tts import DeepgramTTSService
 from pipecat.services.groq.llm import GroqLLMService
 from pipecat.transports.daily.transport import DailyParams, DailyTransport
 from pipecat.utils.text.markdown_text_filter import MarkdownTextFilter
-from pipecat.processors.frameworks.rtvi import RTVIProcessor, RTVIObserver, RTVIServerMessageFrame
-from samvaad.utils.logger import logger
-
-# Import shared RAG logic
-from samvaad.pipeline.retrieval.query import rag_query_pipeline
 
 # Import unified context manager
 from samvaad.core.unified_context import SamvaadLLMContext
+
+# Import shared RAG logic
+from samvaad.pipeline.retrieval.query import rag_query_pipeline
+from samvaad.utils.logger import logger
+from samvaad.utils.text_filters import CitationTextFilter
 
 
 async def create_daily_room() -> tuple[str, str | None]:
@@ -42,13 +47,13 @@ async def create_daily_room() -> tuple[str, str | None]:
     # Create a room that expires in 1 hour to keep your account clean
     # [SECURITY-FIX #84] Force private room to prevent eavesdropping
     payload = {
-        "privacy": "private", 
+        "privacy": "private",
         "properties": {
             "exp": expiration_time,
             "enable_chat": False,
             "start_video_off": True,
             "permissions": {"canSend": ["audio"]},
-        }
+        },
     }
 
     async with aiohttp.ClientSession() as session:
@@ -58,16 +63,16 @@ async def create_daily_room() -> tuple[str, str | None]:
                 raise Exception(f"Failed to create room: {text}")
 
             data = await response.json()
-            
+
             # [SECURITY-FIX #84] Now that room is private, we MUST generate a token for the owner
             # The 'token' field in room creation response might be None if not requested or different API.
             # Best practice: Explicitly create a meeting token for the user.
-            
+
             # Actually, Daily's room creation response usually doesn't include a token unless requested?
             # Wait, the previous code expected `data.get("token")`.
             # If the room is private, we need a token to join.
             # Let's create a meeting token explicitly.
-            
+
             owner_token_url = "https://api.daily.co/v1/meeting-tokens"
             token_payload = {
                 "properties": {
@@ -76,15 +81,15 @@ async def create_daily_room() -> tuple[str, str | None]:
                     "exp": expiration_time,
                 }
             }
-            
+
             async with session.post(owner_token_url, headers=headers, json=token_payload) as token_res:
-                 if token_res.status != 200:
-                      # Fallback? If token fails, user can't join private room.
-                      token_text = await token_res.text()
-                      raise Exception(f"Room created but token generation failed: {token_text}")
-                 
-                 token_data = await token_res.json()
-                 return data["url"], token_data["token"]
+                if token_res.status != 200:
+                    # Fallback? If token fails, user can't join private room.
+                    token_text = await token_res.text()
+                    raise Exception(f"Room created but token generation failed: {token_text}")
+
+                token_data = await token_res.json()
+                return data["url"], token_data["token"]
 
 
 async def delete_daily_room(room_url: str) -> bool:
@@ -123,13 +128,13 @@ async def delete_daily_room(room_url: str) -> bool:
 
 
 async def start_voice_agent(
-    room_url: str, 
+    room_url: str,
     token: str | None,
     enable_tts: bool = True,
     persona: str = "default",
     strict_mode: bool = False,
     user_id: str = None,
-    conversation_id: str = None  # NEW: For unified context
+    conversation_id: str = None,  # NEW: For unified context
 ):
     """Entry point to start the bot in a specific Daily room"""
 
@@ -147,14 +152,7 @@ async def start_voice_agent(
     # - stop_secs=1.0: Allow 1 second of silence before considering speech complete
     #                  (higher value = fewer splits but slower response time)
     # - min_volume=0.7: Filter out quiet background noise
-    vad_analyzer = SileroVADAnalyzer(
-        params=VADParams(
-            confidence=0.8,
-            start_secs=0.5,
-            stop_secs=1.0,
-            min_volume=0.7
-        )
-    )
+    vad_analyzer = SileroVADAnalyzer(params=VADParams(confidence=0.8, start_secs=0.5, stop_secs=1.0, min_volume=0.7))
     transport = DailyTransport(
         room_url=room_url,
         token=token,
@@ -171,7 +169,7 @@ async def start_voice_agent(
 
     # 2. Create RTVI processor early (needed by fetch_context for citations)
     rtvi = RTVIProcessor()
-    
+
     # 3. Define Tools (The RAG Integration)
     RAG_TIMEOUT_SECONDS = 10.0
 
@@ -180,44 +178,48 @@ async def start_voice_agent(
             # [SECURITY-FIX #74] Strict validation of tool arguments
             args = function_call_params.arguments
             if not isinstance(args, dict):
-                 raise ValueError("Invalid arguments format")
-            
+                raise ValueError("Invalid arguments format")
+
             query = args.get("query")
             if not isinstance(query, str) or not query.strip():
-                 raise ValueError("Query must be a non-empty string")
-                 
+                raise ValueError("Query must be a non-empty string")
+
             # Sanitize length to prevent excessive processing
             if len(query) > 500:
                 query = query[:500]
-                
+
             logger.info(f"RAG Tool Triggered: {query} (user_id: {user_id})")
-    
+
             sources = []
             # Run blocking RAG code with timeout to avoid hanging
             result = await asyncio.wait_for(
                 asyncio.to_thread(
-                    rag_query_pipeline, query, generate_answer=False, user_id=user_id
+                    rag_query_pipeline, query, generate_answer=False, user_id=user_id, strict_mode=strict_mode
                 ),
-                timeout=RAG_TIMEOUT_SECONDS
+                timeout=RAG_TIMEOUT_SECONDS,
             )
             rag_text = result.get("answer", "No information found.")
-            
+
             # Extract sources for citations panel
             chunks = result.get("chunks", [])
             for chunk in chunks[:3]:
-                sources.append({
-                    "filename": chunk.get("filename", "document"),
-                    "content_preview": chunk.get("content", "")[:1000],
-                    "rerank_score": chunk.get("rerank_score"),
-                    "chunk_id": chunk.get("chunk_id")
-                })
+                # Pass full metadata - already includes extra.page_number, etc from DB
+                sources.append(
+                    {
+                        "filename": chunk.get("filename", "document"),
+                        "content_preview": chunk.get("content", "")[:1000],
+                        "rerank_score": chunk.get("rerank_score"),
+                        "chunk_id": chunk.get("chunk_id"),
+                        "metadata": chunk.get("metadata", {}),
+                    }
+                )
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(f"[voice_agent] RAG timeout after {RAG_TIMEOUT_SECONDS}s for query: {query}")
             rag_text = "Search timed out. Please try your question again."
         except ValueError as e:
-             logger.warning(f"[voice_agent] Tool validation error: {e}")
-             rag_text = f"Invalid search request: {e}"
+            logger.warning(f"[voice_agent] Tool validation error: {e}")
+            rag_text = f"Invalid search request: {e}"
         except Exception as e:
             logger.error(f"[voice_agent] RAG error: {e}")
             rag_text = "An error occurred while searching. Please try again."
@@ -225,16 +227,13 @@ async def start_voice_agent(
         # Send citations to frontend via RTVI custom message
         if sources:
             try:
-                frame = RTVIServerMessageFrame(data={
-                    "type": "citations",
-                    "sources": sources
-                })
+                frame = RTVIServerMessageFrame(data={"type": "citations", "sources": sources})
 
                 await rtvi.push_frame(frame)
                 logger.debug(f"[voice_agent] Sent {len(sources)} citations to frontend")
             except Exception as e:
                 logger.error(f"[voice_agent] Failed to send citations: {e}")
-        
+
         await function_call_params.result_callback(rag_text)
 
     # OpenAI-compatible tool format for Groq
@@ -259,15 +258,13 @@ async def start_voice_agent(
     ]
 
     # 3. Define Services (using EU endpoint for better connectivity from India)
-    stt = DeepgramSTTService(
-        api_key=deepgram_api_key,
-        base_url="wss://api.eu.deepgram.com/v1/listen"
-    )
+    stt = DeepgramSTTService(api_key=deepgram_api_key, base_url="wss://api.eu.deepgram.com/v1/listen")
     md_filter = MarkdownTextFilter()
-    
+    citation_filter = CitationTextFilter()
+
     # 4. Context & Persona - Use unified context manager for consistent prompts
     from samvaad.core.unified_context import UnifiedContextManager
-    
+
     # Build system prompt using unified manager (same structure as text mode)
     if conversation_id and user_id:
         unified_ctx = UnifiedContextManager(conversation_id, user_id)
@@ -278,37 +275,35 @@ async def start_voice_agent(
             conversation_history="",  # History managed by Pipecat context
             query="",  # Query comes from speech
             is_voice=True,  # Adds ~50 word limit instruction
-            has_tools=True   # Tool-based RAG - LLM will call fetch_context
+            has_tools=True,  # Tool-based RAG - LLM will call fetch_context
+        )
+        print(
+            f"[VoiceAgent] DEBUG: strict_mode={strict_mode}, prompt contains 'Strict Mode': {'### Strict Mode' in system_instruction}"
         )
     else:
         # Fallback for sessions without conversation_id
-        from samvaad.prompts.personas import get_persona_prompt
         from samvaad.core.unified_context import VOICE_STYLE_INSTRUCTION
+        from samvaad.prompts.personas import get_persona_prompt
+
         system_instruction = get_persona_prompt(persona) + VOICE_STYLE_INSTRUCTION
         if strict_mode:
             system_instruction += " CRITICAL: You are in Strict Mode. Answer ONLY based on information retrieved from tools. If no information is found via tools, state that you do not know. Do not use outside knowledge."
 
     # Use Groq with OpenAI gpt-oss-120b
-    llm = GroqLLMService(
-        api_key=groq_api_key, model="openai/gpt-oss-120b"
-    )
+    llm = GroqLLMService(api_key=groq_api_key, model="openai/gpt-oss-120b")
     llm.register_function("fetch_context", fetch_context)
 
     # Context Manager (Keeps track of conversation history)
     # Use SamvaadLLMContext for database persistence
     if conversation_id:
-        context = SamvaadLLMContext(
-            conversation_id=conversation_id,
-            user_id=user_id,
-            tools=tools,
-            tool_choice="auto"
-        )
+        context = SamvaadLLMContext(conversation_id=conversation_id, user_id=user_id, tools=tools, tool_choice="auto")
         context.load_history()  # Load existing messages from DB
     else:
         # Fallback to in-memory only (no persistence)
         from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
+
         context = OpenAILLMContext(tools=tools, tool_choice="auto")
-    
+
     context.add_message(
         {
             "role": "system",
@@ -325,7 +320,7 @@ async def start_voice_agent(
     # 6. The Pipeline (Data Flow)
     # RTVIProcessor handles RTVI protocol messages (BotReady, user/bot speaking, etc.)
     # (rtvi already created earlier for fetch_context access)
-    
+
     # Conditional pipeline construction based on enable_tts
     processors = [
         transport.input(),  # Microphone Audio in
@@ -335,52 +330,36 @@ async def start_voice_agent(
         llm,  # Groq thinks
     ]
 
-    # Create Custom Deepgram TTS Service to strip citations ONLY from audio
-    # leaving the transcript intact (which comes from TTSTextFrame)
-    from typing import AsyncGenerator
-    import re
-    from pipecat.frames.frames import Frame
-    from pipecat.services.deepgram.tts import DeepgramTTSService
-
-    class CustomDeepgramTTSService(DeepgramTTSService):
-        async def run_tts(self, text: str) -> AsyncGenerator[Frame, None]:
-            # Filter text for audio generation relative to the original text
-            # This ensures [1], [2] are not spoken, but they remain in the
-            # TTSTextFrame that populates the transcript.
-            filtered_text = re.sub(r'\[\d+(?:[,\s-]*\d+)*\]', '', text)
-            async for frame in super().run_tts(filtered_text):
-                yield frame
-
     if enable_tts:
-        tts = CustomDeepgramTTSService(
+        tts = DeepgramTTSService(
             api_key=deepgram_api_key,
             base_url="wss://api.eu.deepgram.com",  # EU endpoint for better connectivity
             voice="aura-2-asteria-en",
             encoding="linear16",
-            text_filters=[md_filter], # Only markdown filter here
+            text_filters=[md_filter, citation_filter],  # Strip markdown and citations from TTS
         )
         processors.append(tts)
-    
-    processors.append(transport.output()) # Audio out (or text frames if TTS missing)
-    processors.append(context_aggregator.assistant()) # Add bot answer to history
+
+    processors.append(transport.output())  # Audio out (or text frames if TTS missing)
+    processors.append(context_aggregator.assistant())  # Add bot answer to history
 
     pipeline = Pipeline(processors)
 
     # 6. RTVI Event Handler - Send bot-ready when client is ready
     # Track if transport has joined to avoid timing race
     transport_joined = False
-    
+
     @transport.event_handler("on_joined")
     async def on_joined(transport_obj, participant):
         nonlocal transport_joined
         transport_joined = True
         # Safe access - participant may be dict without 'id' or a different type
         if isinstance(participant, dict):
-            participant_id = participant.get('id', participant.get('session_id', 'unknown'))
+            participant_id = participant.get("id", participant.get("session_id", "unknown"))
         else:
             participant_id = str(participant)
         logger.info(f"[voice_agent] Successfully joined room as: {participant_id}")
-    
+
     @rtvi.event_handler("on_client_ready")
     async def on_client_ready(rtvi_processor):
         nonlocal transport_joined
@@ -417,7 +396,7 @@ async def start_voice_agent(
     # 8. Handle client disconnection (browser close, etc.)
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport_obj, client):
-        logger.info(f"[voice_agent] Client disconnected")
+        logger.info("[voice_agent] Client disconnected")
         await do_cleanup("client_disconnected")
 
     # 9. Handle transport errors explicitly - trigger cleanup on failure
@@ -435,7 +414,7 @@ async def start_voice_agent(
         enable_metrics=True,
     )
     task = PipelineTask(
-        pipeline, 
+        pipeline,
         params=pipeline_params,
         observers=[RTVIObserver(rtvi)],
         idle_timeout_secs=60,  # 1 minute idle timeout
@@ -443,4 +422,3 @@ async def start_voice_agent(
     )
     task_params = PipelineTaskParams(loop=asyncio.get_event_loop())
     await task.run(task_params)
-

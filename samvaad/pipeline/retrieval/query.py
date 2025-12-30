@@ -2,11 +2,12 @@
 RAG query pipeline module.
 """
 
-from typing import Any, Dict, List
+from typing import Any
+
 import tiktoken
 
-from samvaad.db.service import DBService
 from samvaad.core.voyage import embed_query, rerank_documents
+from samvaad.db.service import DBService
 from samvaad.pipeline.generation.generation import generate_answer_with_groq
 
 # Token counter (cl100k_base is compatible with GPT-4 and Groq's Llama models)
@@ -21,8 +22,8 @@ def _count_tokens(text: str) -> int:
 
 
 def search_similar_chunks(
-    query_emb: List[float], query_text: str, top_k: int = 3, user_id: str = None, file_ids: List[str] = None
-) -> List[Dict]:
+    query_emb: list[float], query_text: str, top_k: int = 3, user_id: str = None, file_ids: list[str] = None
+) -> list[dict]:
     """Search for similar chunks using dense semantic search with reranking.
     
     Args:
@@ -83,8 +84,8 @@ def rag_query_pipeline(
     user_id: str = None,
     persona: str = "default",
     strict_mode: bool = False,
-    file_ids: List[str] = None,
-) -> Dict[str, Any]:
+    file_ids: list[str] = None,
+) -> dict[str, Any]:
     """
     Complete RAG pipeline: embed query, search, generate answer.
 
@@ -110,12 +111,12 @@ def rag_query_pipeline(
     """
     import time
     start_time = time.time()
-    
+
     # Truncate query for logging
     query_preview = query_text[:60].replace('\n', ' ') + ('...' if len(query_text) > 60 else '')
     print(f"[RAG] ┌─ Query: \"{query_preview}\"")
     print(f"[RAG] │  user_id: {user_id[:8] if user_id else 'None'}..., strict: {strict_mode}, generate: {generate_answer}")
-    
+
     try:
         # Step 1: Embed the query
         embed_start = time.time()
@@ -127,7 +128,7 @@ def rag_query_pipeline(
         search_start = time.time()
         chunks = search_similar_chunks(query_emb, query_text, top_k, user_id=user_id, file_ids=file_ids)
         search_ms = (time.time() - search_start) * 1000
-        
+
         if chunks:
             top_scores = [f"{c.get('rerank_score', 0):.2f}" for c in chunks[:3]]
             filenames = list(set(c.get('filename', '?')[:20] for c in chunks))
@@ -139,7 +140,7 @@ def rag_query_pipeline(
         if not chunks:
             total_ms = (time.time() - start_time) * 1000
             print(f"[RAG] └─ No results ({total_ms:.0f}ms total)")
-            
+
             if strict_mode and generate_answer:
                 return {
                     "query": query_text,
@@ -166,7 +167,7 @@ def rag_query_pipeline(
                 f"Document {i} ({chunk['filename']}):\n{chunk.get('content', '')}\n"
             )
         context = "\n".join(context_parts)
-        
+
         # Token counting
         query_tokens = _count_tokens(query_text)
         context_tokens = _count_tokens(context)
@@ -177,9 +178,9 @@ def rag_query_pipeline(
         if generate_answer:
             gen_start = time.time()
             answer = generate_answer_with_groq(
-                query_text, 
-                chunks, 
-                model, 
+                query_text,
+                chunks,
+                model,
                 history_str,
                 persona=persona,
                 strict_mode=strict_mode
@@ -189,7 +190,7 @@ def rag_query_pipeline(
             print(f"[RAG] │  ✓ Generate: {gen_ms:.0f}ms ({output_tokens} tokens out)")
         else:
             answer = context
-            print(f"[RAG] │  ○ Generate: skipped (context-only mode)")
+            print("[RAG] │  ○ Generate: skipped (context-only mode)")
 
         # Step 4: Format sources for display
         sources = []
@@ -206,7 +207,7 @@ def rag_query_pipeline(
 
         total_ms = (time.time() - start_time) * 1000
         print(f"[RAG] └─ Done: {len(chunks)} chunks, {total_ms:.0f}ms total")
-        
+
         return {
             "query": query_text,
             "answer": answer,

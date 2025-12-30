@@ -1,7 +1,8 @@
 """Test generation functions using Groq."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 
 class TestGeneration:

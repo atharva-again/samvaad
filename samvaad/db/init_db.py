@@ -1,18 +1,12 @@
 from dotenv import load_dotenv
+
 load_dotenv()
 
-from samvaad.db.session import engine
 from samvaad.db.models import (
     Base,
-    # Core tables
-    User,
-    GlobalChunk,
-    GlobalFile,
-    File,
-    # Conversation tables
-    Conversation,
-    Message,
 )
+from samvaad.db.session import engine
+
 
 def init_db():
     """

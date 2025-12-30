@@ -4,12 +4,11 @@ Mode Instructions for Samvaad
 Provides mode-specific instructions (Strict vs Hybrid) for the LLM.
 Used by unified_context.py to build system prompts.
 """
-from typing import Optional
 
 
 def get_mode_instruction(
-    persona_intro: str, 
-    strict_mode: bool, 
+    persona_intro: str,
+    strict_mode: bool,
     is_voice: bool = False
 ) -> str:
     """
@@ -31,7 +30,7 @@ def get_mode_instruction(
 - If asking follow-up questions, remember the previous context."""
 
         if is_voice:
-            return base_instruction + "\n\n### Output Format\nSpeak naturally. Short answers. No markdown."
+            return base_instruction + "\n\n### Output Format\nSpeak naturally. Say citation numbers naturally, e.g. 'According to document one' or 'as shown in source two.' Always include `[1]`, `[2]` in your text when citing. Short answers. No markdown."
         else:
             return base_instruction + "\n\n### Output Format\nUse markdown. Cite sources using [1], [2] format. No references section."
 
@@ -50,17 +49,17 @@ def get_mode_instruction(
 - Maintain context across turns."""
 
         if is_voice:
-            return base_instruction + "\n\n### Output Format\nSpeak naturally. Complete sentences. No markdown."
+            return base_instruction + "\n\n### Output Format\nSpeak naturally. When citing tool results, include `[1]`, `[2]` markers. Complete sentences. No markdown."
         else:
             return base_instruction + "\n\n### Output Format\nUse markdown. Cite sources using [1], [2] format. No references section."
 
 
 def get_unified_system_prompt(
-    persona_intro: str, 
-    context: str, 
-    mode_instruction: str, 
-    conversation_history: Optional[str] = None, 
-    query: Optional[str] = None
+    persona_intro: str,
+    context: str,
+    mode_instruction: str,
+    conversation_history: str | None = None,
+    query: str | None = None
 ) -> str:
     """
     Constructs the final system prompt with XML-structured input data.
