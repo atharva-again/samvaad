@@ -1,17 +1,16 @@
-from typing import Generator, Optional
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from samvaad.db.session import get_db
+from samvaad.core.auth import AuthError, verify_supabase_token
 from samvaad.db.models import User
-from samvaad.core.auth import verify_supabase_token, AuthError
+from samvaad.db.session import get_db
 
 security = HTTPBearer()
 
+
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: Session = Depends(get_db)
+    credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db)
 ) -> User:
     """
     Validates the bearer token and returns the current user.
@@ -25,15 +24,15 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=e.message,
             headers={"WWW-Authenticate": "Bearer"},
-        )
-    
+        ) from e
+
     user_id = payload.get("sub")
     if not user_id:
-         raise HTTPException(
+        raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials (missing sub)",
         )
-         
+
     email = payload.get("email")
 
     # Check if user exists in local DB
@@ -45,5 +44,5 @@ def get_current_user(
         db.add(user)
         db.commit()
         db.refresh(user)
-        
+
     return user

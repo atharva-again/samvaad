@@ -1,7 +1,8 @@
 """Test query functions using Voyage AI and PostgreSQL."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 
 @pytest.fixture(autouse=True)
@@ -133,7 +134,7 @@ class TestQueryErrorHandling:
         mock_rerank.side_effect = Exception("Rerank API error")
 
         query_emb = [0.1] * 1024
-        
+
         # Should handle error gracefully or raise - assuming raise for now based on implementation
         try:
             results = search_similar_chunks(query_emb, "test", top_k=3)

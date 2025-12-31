@@ -1,7 +1,8 @@
 """Test deletion functions using DBService."""
 
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 
 class TestDeletion:

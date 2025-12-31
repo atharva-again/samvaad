@@ -44,6 +44,7 @@ interface InputBarProps {
   defaultMessage?: string | null;
   onMessageConsumed?: () => void;
   onVoiceMessage?: (message: ChatMessage) => void;
+  conversationId?: string | null;
 }
 
 export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onMessageConsumed, onVoiceMessage }: InputBarProps) {
@@ -349,19 +350,18 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
     setVoiceDuration(0);
   };
 
-  // Latency measurement via RTT to backend health endpoint
-  // Listen for RTVI metrics to get real voice pipeline latency
-  useRTVIClientEvent(RTVIEvent.Metrics, (metrics: any) => {
+  useRTVIClientEvent(RTVIEvent.Metrics, (metrics) => {
     console.debug("[InputBar] RTVIEvent.Metrics:", metrics);
 
     // Extract TTFB (Time To First Byte) values from services
     // Metrics format: { ttfb: [{ processor: "DeepgramSTTService", value: 123 }, ...], processing: [...] }
     try {
+      const m = metrics as any; // Cast to any to access dynamic properties
       let totalLatency = 0;
 
       // Sum up TTFB from all services (STT + LLM + TTS)
-      if (metrics?.ttfb && Array.isArray(metrics.ttfb)) {
-        for (const ttfbItem of metrics.ttfb) {
+      if (m?.ttfb && Array.isArray(m.ttfb)) {
+        for (const ttfbItem of m.ttfb) {
           if (ttfbItem?.value && typeof ttfbItem.value === 'number') {
             totalLatency += ttfbItem.value;
           }
@@ -522,31 +522,6 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
     currentUserTranscriptRef.current = "";
   });
 
-  // Send user message when they stop speaking - ensures transcript is captured
-  // even during interruptions (where BotLlmStarted might fire before UserTranscript)
-  useRTVIClientEvent(RTVIEvent.UserStoppedSpeaking, () => {
-    console.debug("[InputBar] RTVIEvent.UserStoppedSpeaking");
-
-    // Helper to send message if transcript exists
-    const trySendMessage = (attempt: number) => {
-      const fullUserMessage = currentUserTranscriptRef.current.trim();
-      if (fullUserMessage) {
-        console.debug(`[InputBar] Sending user message (attempt ${attempt}):`, fullUserMessage);
-        onVoiceMessage?.({ role: "user", content: fullUserMessage });
-        currentUserTranscriptRef.current = "";
-      } else if (attempt < 3) {
-        // Retry - transcript events may still be arriving
-        console.debug(`[InputBar] No transcript yet, retry ${attempt + 1}/3`);
-        setTimeout(() => trySendMessage(attempt + 1), 200);
-      } else {
-        console.debug("[InputBar] No transcript captured after retries");
-      }
-    };
-
-    // Initial delay to let transcript events arrive
-    setTimeout(() => trySendMessage(1), 200);
-  });
-
   useRTVIClientEvent(RTVIEvent.BotStartedSpeaking, (evt?: any) => {
     console.debug("[InputBar] RTVIEvent.BotStartedSpeaking", evt);
     setVoiceState("answering");
@@ -582,12 +557,18 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
     }
   });
 
-  // When bot starts its LLM processing, update UI state
-  // Note: User message is sent via UserStoppedSpeaking handler to avoid race conditions
+  // When bot starts its LLM processing, send the aggregated user message
+  // This ensures we capture all user speech segments before displaying
   useRTVIClientEvent(RTVIEvent.BotLlmStarted, () => {
     console.debug("[InputBar] RTVIEvent.BotLlmStarted");
     // Set processing state - shows in UI while LLM/RAG is running
     setVoiceState("processing");
+    const fullUserMessage = currentUserTranscriptRef.current.trim();
+    if (fullUserMessage) {
+      console.debug("[InputBar] Sending aggregated user message:", fullUserMessage);
+      onVoiceMessage?.({ role: "user", content: fullUserMessage });
+      currentUserTranscriptRef.current = "";
+    }
   });
 
   // Capture bot's spoken output - aggregate sentences and send when bot stops speaking

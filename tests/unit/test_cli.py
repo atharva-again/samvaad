@@ -1,14 +1,9 @@
-import os
-import sqlite3
-import sys
-import tempfile
-from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 # Import the new CLI interface
-from samvaad.interfaces.cli import Colors, SamvaadInterface
+from samvaad.interfaces.cli import SamvaadInterface
 
 
 class TestSamvaadInterface:

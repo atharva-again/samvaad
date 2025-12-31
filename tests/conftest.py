@@ -1,12 +1,13 @@
 """Shared pytest fixtures for Samvaad tests."""
 
 import os
+import shutil
 import sys
 import tempfile
-import shutil
-import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 # Add tests/utils to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -40,7 +41,7 @@ def sample_texts():
     return [
         "First sample text for testing.",
         "Second sample text with different content.",
-        "Third sample text to verify batch processing."
+        "Third sample text to verify batch processing.",
     ]
 
 
@@ -64,7 +65,7 @@ More content in section 2. This section discusses different aspects of the syste
 @pytest.fixture
 def mock_groq_api():
     """Mock Groq API for testing."""
-    with patch('groq.Groq') as mock_client:
+    with patch("groq.Groq") as mock_client:
         mock_instance = MagicMock()
         mock_response = MagicMock()
         mock_choice = MagicMock()
@@ -79,13 +80,13 @@ def mock_groq_api():
 def mock_env_vars():
     """Mock environment variables for testing."""
     original_env = os.environ.copy()
-    
+
     # Set test environment variables
-    os.environ['GROQ_API_KEY'] = 'test_api_key'
-    os.environ['HF_TOKEN'] = 'test_hf_token'
-    
+    os.environ["GROQ_API_KEY"] = "test_api_key"
+    os.environ["HF_TOKEN"] = "test_hf_token"
+
     yield
-    
+
     # Restore original environment
     os.environ.clear()
     os.environ.update(original_env)
@@ -96,12 +97,31 @@ def setup_test_environment():
     """Set up test environment before each test."""
     # Suppress warnings during tests
     import warnings
+
     warnings.filterwarnings("ignore", category=UserWarning)
     warnings.filterwarnings("ignore", category=DeprecationWarning)
-    
+
     yield
-    
-    # Cleanup if needed
+
+
+@pytest.fixture
+def bypass_security_middleware():
+    """Override security settings for tests."""
+    import os
+
+    # Save original env
+    original_env = os.environ.copy()
+
+    # Set test-specific values
+    os.environ.update(
+        {"ALLOWED_HOSTS": "localhost,testserver,127.0.0.1", "ENVIRONMENT": "test"}
+    )
+
+    yield
+
+    # Restore
+    os.environ.clear()
+    os.environ.update(original_env)
 
 
 @pytest.fixture
@@ -109,21 +129,21 @@ def sample_chunks():
     """Provide sample chunks for testing."""
     return [
         {
-            'chunk_id': 'chunk_1',
-            'file_id': 'file_1',
-            'text': 'First chunk of text for testing retrieval.',
-            'metadata': {'source': 'test_doc.txt', 'page': 1}
+            "chunk_id": "chunk_1",
+            "file_id": "file_1",
+            "text": "First chunk of text for testing retrieval.",
+            "metadata": {"source": "test_doc.txt", "page": 1},
         },
         {
-            'chunk_id': 'chunk_2',
-            'file_id': 'file_1',
-            'text': 'Second chunk with different content about AI.',
-            'metadata': {'source': 'test_doc.txt', 'page': 1}
+            "chunk_id": "chunk_2",
+            "file_id": "file_1",
+            "text": "Second chunk with different content about AI.",
+            "metadata": {"source": "test_doc.txt", "page": 1},
         },
         {
-            'chunk_id': 'chunk_3',
-            'file_id': 'file_2',
-            'text': 'Third chunk from a different document.',
-            'metadata': {'source': 'test_doc2.txt', 'page': 1}
-        }
+            "chunk_id": "chunk_3",
+            "file_id": "file_2",
+            "text": "Third chunk from a different document.",
+            "metadata": {"source": "test_doc2.txt", "page": 1},
+        },
     ]

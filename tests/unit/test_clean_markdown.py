@@ -1,6 +1,5 @@
 """Tests for clean_markdown utility."""
 
-import pytest
 from samvaad.utils.clean_markdown import strip_markdown
 
 

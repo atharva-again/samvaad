@@ -1,7 +1,19 @@
-import datetime
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, BigInteger, Table, func
-from sqlalchemy.orm import relationship, declarative_base
+import uuid_utils  # RFC 9562 compliant, 10x faster (Rust-backed)
 from pgvector.sqlalchemy import Vector
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Table,
+    Text,
+    func,
+)
+from sqlalchemy.dialects.postgresql import JSON, UUID
+from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
 
@@ -12,9 +24,11 @@ class User(Base):
     # Supabase uses UUID strings for user IDs
     id = Column(String, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
+    has_seen_walkthrough = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     files = relationship("File", back_populates="owner", cascade="all, delete-orphan")
+    conversations = relationship("Conversation", back_populates="owner", cascade="all, delete-orphan")
 
 
 # Association Table for Many-to-Many between GlobalFile and GlobalChunk
@@ -24,7 +38,8 @@ global_file_chunks = Table(
     Base.metadata,
     Column("global_file_hash", String, ForeignKey("global_files.hash", ondelete="CASCADE"), primary_key=True),
     Column("chunk_hash", String, ForeignKey("global_chunks.hash", ondelete="CASCADE"), primary_key=True),
-    Column("chunk_index", Integer, nullable=False)
+    Column("chunk_index", Integer, nullable=False),
+    Column("chunk_metadata", JSON, nullable=True)  # Store page_number, heading, etc.
 )
 
 
@@ -37,10 +52,10 @@ class GlobalChunk(Base):
 
     hash = Column(String, primary_key=True, index=True) # SHA-256 of text
     content = Column(Text, nullable=False)
-    
+
     # 1024 dimensions to match Voyage AI / standard embedding models
     embedding = Column(Vector(1024))
-    
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -66,15 +81,59 @@ class File(Base):
     __tablename__ = "files"
 
     id = Column(String, primary_key=True)  # UUID for this specific upload
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
     filename = Column(String, nullable=False)
-    
+
     # Pointer to the global content
     content_hash = Column(String, ForeignKey("global_files.hash"), nullable=False)
-    
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
+
     owner = relationship("User", back_populates="files")
     content_ref = relationship("GlobalFile", backref="references")
 
-# Deleted old Chunk class as it is replaced by GlobalChunk + Association
+
+class Conversation(Base):
+    """
+    Persistent conversation storage.
+    Uses UUID v7 for time-ordered, efficient B-tree indexing.
+    """
+    __tablename__ = "conversations"
+
+    # UUID v7: time-sortable, efficient indexing (converted to str for psycopg2 compatibility)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=lambda: str(uuid_utils.uuid7()))
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    title = Column(String, default="New Conversation")
+    summary = Column(Text, nullable=True)  # Turn-range summary of older messages
+    facts = Column(Text, nullable=True)    # User preferences, progress state (inline in prompt)
+    is_pinned = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    owner = relationship("User", back_populates="conversations")
+    messages = relationship(
+        "Message",
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        order_by="Message.created_at"
+    )
+
+
+class Message(Base):
+    """
+    Individual message within a conversation.
+    Uses UUID v7 for time-ordered, efficient B-tree indexing.
+    """
+    __tablename__ = "messages"
+
+    # UUID v7: time-sortable, efficient indexing (converted to str for psycopg2 compatibility)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=lambda: str(uuid_utils.uuid7()))
+    conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True)
+    role = Column(String, nullable=False)  # "user", "assistant", "system"
+    content = Column(Text, nullable=False)
+    sources = Column(JSON, default=[])  # RAG sources for assistant messages
+    token_count = Column(Integer, nullable=True)  # For context window management
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    conversation = relationship("Conversation", back_populates="messages")
+
