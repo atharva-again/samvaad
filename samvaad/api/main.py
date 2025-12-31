@@ -65,11 +65,15 @@ CORS_ORIGINS = [
     "http://127.0.0.1:3000",
 ]
 if FRONTEND_URL:
-    clean_url = FRONTEND_URL.strip().strip('"').strip("'")
+    clean_url = FRONTEND_URL.strip().strip('"').strip("'").rstrip("/")
     if clean_url not in CORS_ORIGINS:
         CORS_ORIGINS.append(clean_url)
 
-    if "samvaad.live" in clean_url and "www." not in clean_url:
+    if "www.samvaad.live" in clean_url:
+        base_url = clean_url.replace("www.", "")
+        if base_url not in CORS_ORIGINS:
+            CORS_ORIGINS.append(base_url)
+    elif "samvaad.live" in clean_url and "www." not in clean_url:
         www_url = clean_url.replace("://", "://www.")
         if www_url not in CORS_ORIGINS:
             CORS_ORIGINS.append(www_url)
