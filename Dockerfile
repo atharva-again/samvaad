@@ -1,62 +1,50 @@
-# Stage 1: Build stage with uv for fast dependency installation
 FROM python:3.11-slim AS builder
 
-# Install uv for fast package management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies needed for building packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy only requirements first for better caching
-COPY requirements.txt .
+COPY pyproject.toml README.md ./
 
-# Create virtual environment and install dependencies with uv (much faster than pip)
+RUN mkdir samvaad && touch samvaad/__init__.py
+
 RUN uv venv /app/.venv && \
     . /app/.venv/bin/activate && \
-    uv pip install --no-cache -r requirements.txt
+    uv pip install --no-cache .
 
-# Stage 2: Runtime stage (lean)
 FROM python:3.11-slim
 
-# Install only runtime dependencies (no build tools)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libsndfile1 \
     libportaudio2 \
     ffmpeg \
+    libpq5 \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
 WORKDIR /app
 
-# Copy virtual environment from builder
 COPY --from=builder /app/.venv /app/.venv
 
-# Copy application code
 COPY samvaad/ ./samvaad/
-COPY pyproject.toml .
+COPY pyproject.toml README.md ./
 
-# Install the package itself (fast, just metadata)
-RUN . /app/.venv/bin/activate && pip install -e . --no-deps
-
-# Set environment variables
 ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONPATH="/app"
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PORT=8000
 
-# Expose the API port (Railway will override with its own PORT)
+RUN . /app/.venv/bin/activate && pip install --no-deps -e .
+
 EXPOSE 8000
 
-# Health check - Railway handles this via healthcheckPath in railway.toml
-# This Docker healthcheck is for local development
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD python -c "import os; import urllib.request; urllib.request.urlopen(f'http://localhost:{os.getenv(\"PORT\", 8000)}/health')" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen(f'http://localhost:{os.getenv(\"PORT\", 8000)}/health')" || exit 1
 
-# Run the FastAPI server - use shell form for variable expansion
-CMD uvicorn samvaad.api.main:app --host 0.0.0.0 --port $PORT
+CMD python -m uvicorn samvaad.api.main:app --host 0.0.0.0 --port $PORT

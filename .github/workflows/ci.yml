@@ -41,7 +41,6 @@ jobs:
         run: |
           uv venv venv
           source venv/bin/activate
-          uv pip install -r requirements.txt
           uv pip install -e . --index-strategy unsafe-best-match
 
       - name: Run tests

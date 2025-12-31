@@ -11,21 +11,28 @@ from sqlalchemy.pool import NullPool
 load_dotenv()
 
 # Fetch variables with defaults to prevent URL construction errors if env is missing
-USER = os.getenv("user", "postgres")
-PASSWORD = os.getenv("password", "")
-HOST = os.getenv("host", "localhost")
-PORT = os.getenv("port", "5432")
-DBNAME = os.getenv("dbname", "postgres")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Construct the SQLAlchemy connection string
-DATABASE_URL = f"postgresql+psycopg2://{USER}:{PASSWORD}@{HOST}:{PORT}/{DBNAME}?sslmode=require"
+if not DATABASE_URL:
+    USER = os.getenv("user", "postgres")
+    PASSWORD = os.getenv("password", "")
+    HOST = os.getenv("host", "localhost")
+    PORT = os.getenv("port", "5432")
+    DBNAME = os.getenv("dbname", "postgres")
+    # Construct the SQLAlchemy connection string
+    DATABASE_URL = f"postgresql+psycopg2://{USER}:{PASSWORD}@{HOST}:{PORT}/{DBNAME}?sslmode=require"
+else:
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+    elif DATABASE_URL.startswith("postgresql://") and "psycopg2" not in DATABASE_URL:
+        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
 
 # Configure connection args based on deployment
 connect_args = {"connect_timeout": 30}
 
 # If using Supabase Transaction Pooler (port 6543), we must disable prepared statements
 if "6543" in DATABASE_URL:
-    connect_args["prepare_threshold"] = None
+    connect_args["prepare_threshold"] = 0
 
 engine = create_engine(
     DATABASE_URL,
