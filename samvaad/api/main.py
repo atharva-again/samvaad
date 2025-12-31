@@ -54,8 +54,10 @@ app.add_middleware(SlowAPIMiddleware)  # type: ignore
 # [SECURITY-FIX #91] Trusted Host Middleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
-# Get hosts from env, default to "*" to allow all hosts (Railway edge handles routing security)
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",")
+# Get hosts from env, default to your domains + localhost
+ALLOWED_HOSTS = os.getenv(
+    "ALLOWED_HOSTS", "localhost,127.0.0.1,samvaad.live,www.samvaad.live,samvaad.up.railway.app"
+).split(",")
 
 # CORS configuration - support both local and production frontend URLs
 frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
