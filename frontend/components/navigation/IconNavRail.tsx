@@ -590,6 +590,8 @@ export function IconNavRail() {
 								animate={{ opacity: 1, y: 0, scale: 1 }}
 								exit={{ opacity: 0, y: 8, scale: 0.95 }}
 								transition={{ duration: 0.12, ease: "easeOut" }}
+								onMouseEnter={handleAccountMouseEnter}
+								onMouseLeave={handleAccountMouseLeave}
 								className={cn(
 									"absolute bottom-full mb-2 z-[100]",
 									isExpanded ? "left-0 right-0" : "left-0",

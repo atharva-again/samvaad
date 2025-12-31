@@ -85,6 +85,8 @@ export const AttachmentButton: React.FC<AttachmentButtonProps> = ({
 						animate={{ opacity: 1, y: 0, scale: 1 }}
 						exit={{ opacity: 0, y: 5, scale: 0.95 }}
 						transition={{ duration: 0.2 }}
+						onMouseEnter={handleMouseEnter}
+						onMouseLeave={handleMouseLeave}
 						className="absolute bottom-full mb-3 left-0 bg-black/90 backdrop-blur-xl border border-white/10 rounded-2xl p-2 shadow-2xl min-w-[200px] flex flex-col gap-1 z-30"
 					>
 						<button
