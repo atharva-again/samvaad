@@ -54,7 +54,9 @@ IS_PRODUCTION = ENVIRONMENT == "production"
 # Trusted hosts for TrustedHostMiddleware
 # Allow wildcard in non-production for easier local/staging development
 DEFAULT_HOSTS = "localhost,127.0.0.1,samvaad.live,www.samvaad.live,samvaad.up.railway.app"
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", DEFAULT_HOSTS).split(",")
+ALLOWED_HOSTS = [
+    h.strip().strip('"').strip("'") for h in os.getenv("ALLOWED_HOSTS", DEFAULT_HOSTS).split(",") if h.strip()
+]
 
 # CORS origins
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
@@ -62,8 +64,16 @@ CORS_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 ]
-if FRONTEND_URL and FRONTEND_URL not in CORS_ORIGINS:
-    CORS_ORIGINS.append(FRONTEND_URL)
+if FRONTEND_URL:
+    clean_url = FRONTEND_URL.strip().strip('"').strip("'")
+    if clean_url not in CORS_ORIGINS:
+        CORS_ORIGINS.append(clean_url)
+
+    if "samvaad.live" in clean_url and "www." not in clean_url:
+        www_url = clean_url.replace("://", "://www.")
+        if www_url not in CORS_ORIGINS:
+            CORS_ORIGINS.append(www_url)
+
 
 # Request size limits
 MAX_JSON_BODY = 1 * 1024 * 1024  # 1MB for JSON payloads
@@ -154,13 +164,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)  # type: ignore
 # Railway's internal healthchecks may not send expected Host headers
 @app.middleware("http")
 async def trusted_host_with_health_bypass(request: Request, call_next):
-    """
-    Validate Host header for security, but allow /health endpoint through.
-    Railway's internal healthcheck infrastructure may send requests without
-    proper Host headers, causing TrustedHostMiddleware to reject them.
-    """
-    # Allow health checks through without host validation
-    if request.url.path == "/health":
+    if request.url.path == "/health" or request.method == "OPTIONS":
         return await call_next(request)
 
     host = request.headers.get("host", "").split(":")[0]
