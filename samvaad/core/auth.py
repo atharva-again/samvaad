@@ -34,29 +34,42 @@ class AuthError(Exception):
 
 
 def verify_supabase_token(token: str) -> dict[str, Any]:
-    """
-    Verifies a Supabase JWT token using ES256 and JWKS.
-    Fetches the public key from Supabase Auth JWKS endpoint.
-    """
-    try:
-        # Get cached client
-        jwks_client = get_jwks_client()
-        signing_key = jwks_client.get_signing_key_from_jwt(token)
+    from samvaad.utils.logger import logger
 
-        payload = jwt.decode(
-            token,
-            signing_key.key,
-            algorithms=["ES256"],  # Supabase uses ECDSA (ES256) for new signing keys
-            options={
-                "verify_aud": True,
-                "verify_exp": True,
-            },
-            audience="authenticated",
-        )
-        return payload
+    try:
+        try:
+            jwks_client = get_jwks_client()
+            signing_key = jwks_client.get_signing_key_from_jwt(token)
+
+            payload = jwt.decode(
+                token,
+                signing_key.key,
+                algorithms=["ES256"],
+                options={
+                    "verify_aud": True,
+                    "verify_exp": True,
+                },
+                audience="authenticated",
+            )
+            return payload
+        except (jwt.InvalidTokenError, jwt.PyJWKClientError) as es_err:
+            if isinstance(es_err, jwt.ExpiredSignatureError):
+                raise es_err
+
+            logger.error(f"[Auth] JWT verification failed: {str(es_err)}")
+
+            try:
+                unverified = jwt.decode(token, options={"verify_signature": False})
+                logger.info(f"[Auth] Token info - aud: {unverified.get('aud')}, sub: {unverified.get('sub')}")
+            except:
+                pass
+
+            raise AuthError(f"Invalid token: {str(es_err)}")
+
     except jwt.ExpiredSignatureError:
         raise AuthError("Token has expired") from None
-    except jwt.InvalidTokenError as e:
-        raise AuthError(f"Invalid token: {str(e)}") from None
     except Exception as e:
-        raise AuthError(f"Authentication failed: {str(e)}") from e
+        if not isinstance(e, AuthError):
+            logger.error(f"[Auth] Unexpected error during auth: {str(e)}")
+            raise AuthError(f"Authentication failed: {str(e)}") from e
+        raise e
