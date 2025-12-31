@@ -54,17 +54,8 @@ app.add_middleware(SlowAPIMiddleware)  # type: ignore
 # [SECURITY-FIX #91] Trusted Host Middleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)  # type: ignore
-
-# [PHASE-3 #93] GZip Compression
-from fastapi.middleware.gzip import GZipMiddleware
-
-app.add_middleware(GZipMiddleware, minimum_size=1000)  # type: ignore
-
-app.include_router(files.router)
-app.include_router(conversations.router)
-app.include_router(users.router)
+# Get hosts from env, default to "*" to allow all hosts (Railway edge handles routing security)
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",")
 
 # CORS configuration - support both local and production frontend URLs
 frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
@@ -76,6 +67,10 @@ cors_origins = [
 if frontend_url and frontend_url not in cors_origins:
     cors_origins.append(frontend_url)
 
+# Order: TrustedHostMiddleware is added first (runs later)
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)  # type: ignore
+
+# Order: CORSMiddleware is added last (runs first) to handle preflight OPTIONS requests
 app.add_middleware(
     CORSMiddleware,  # type: ignore
     allow_origins=cors_origins,
@@ -83,6 +78,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# [PHASE-3 #93] GZip Compression
+from fastapi.middleware.gzip import GZipMiddleware
+
+app.add_middleware(GZipMiddleware, minimum_size=1000)  # type: ignore
 
 
 # [SECURITY-FIX #89] Add security headers middleware
