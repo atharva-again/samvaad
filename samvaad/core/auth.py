@@ -37,39 +37,31 @@ def verify_supabase_token(token: str) -> dict[str, Any]:
     from samvaad.utils.logger import logger
 
     try:
-        try:
-            jwks_client = get_jwks_client()
-            signing_key = jwks_client.get_signing_key_from_jwt(token)
+        jwks_client = get_jwks_client()
+        signing_key = jwks_client.get_signing_key_from_jwt(token)
 
-            payload = jwt.decode(
-                token,
-                signing_key.key,
-                algorithms=["ES256"],
-                options={
-                    "verify_aud": True,
-                    "verify_exp": True,
-                },
-                audience="authenticated",
-            )
-            return payload
-        except (jwt.InvalidTokenError, jwt.PyJWKClientError) as es_err:
-            if isinstance(es_err, jwt.ExpiredSignatureError):
-                raise es_err
-
-            logger.error(f"[Auth] JWT verification failed: {str(es_err)}")
-
-            try:
-                unverified = jwt.decode(token, options={"verify_signature": False})
-                logger.info(f"[Auth] Token info - aud: {unverified.get('aud')}, sub: {unverified.get('sub')}")
-            except:
-                pass
-
-            raise AuthError(f"Invalid token: {str(es_err)}")
-
+        payload = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["ES256"],
+            options={
+                "verify_aud": True,
+                "verify_exp": True,
+            },
+            audience="authenticated",
+        )
+        return payload
     except jwt.ExpiredSignatureError:
         raise AuthError("Token has expired") from None
-    except Exception as e:
-        if not isinstance(e, AuthError):
-            logger.error(f"[Auth] Unexpected error during auth: {str(e)}")
-            raise AuthError(f"Authentication failed: {str(e)}") from e
-        raise e
+    except (jwt.InvalidTokenError, Exception) as e:
+        logger.error(f"[Auth] Verification failed: {str(e)}")
+
+        try:
+            unverified = jwt.decode(token, options={"verify_signature": False})
+            logger.info(f"[Auth] Token info for debugging - aud: {unverified.get('aud')}, sub: {unverified.get('sub')}")
+        except Exception:
+            pass
+
+        if isinstance(e, jwt.InvalidTokenError):
+            raise AuthError(f"Invalid token: {str(e)}") from None
+        raise AuthError(f"Authentication failed: {str(e)}") from e
