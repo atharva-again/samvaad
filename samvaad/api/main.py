@@ -28,6 +28,8 @@ from slowapi.util import get_remote_address
 # [PHASE-3 #88] Structured Logging
 from samvaad.utils.logger import logger
 
+logger.info("Samvaad API starting...")
+
 # Initialize limiter
 limiter = Limiter(key_func=get_remote_address)
 
@@ -47,6 +49,7 @@ docs_url = "/docs" if ENVIRONMENT != "production" else None
 redoc_url = "/redoc" if ENVIRONMENT != "production" else None
 
 app = FastAPI(title="Samvaad RAG Backend", docs_url=docs_url, redoc_url=redoc_url)
+logger.info("FastAPI app initialized")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore
 app.add_middleware(SlowAPIMiddleware)  # type: ignore
@@ -54,7 +57,7 @@ app.add_middleware(SlowAPIMiddleware)  # type: ignore
 # [SECURITY-FIX #91] Trusted Host Middleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",")
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)  # type: ignore
 
 # [PHASE-3 #93] GZip Compression
@@ -189,7 +192,7 @@ async def ingest_file(request: Request, file: UploadFile = File(...), current_us
     ]
     # Check mime type from header AND maybe python-magic later (dependency heavy)
     # For now, rely on content-type but reject generic 'application/octet-stream'
-    if content_type not in ALLOWED_MIME_TYPES:
+    if content_type and content_type not in ALLOWED_MIME_TYPES:
         # Be slightly permissive with text/ types if extension matches
         if not (content_type.startswith("text/") or (filename and filename.lower().endswith((".txt", ".md", ".csv")))):
             logger.warning(f"Rejected content-type: {content_type} for {filename}")
