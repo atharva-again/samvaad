@@ -27,12 +27,13 @@ else:
     elif DATABASE_URL.startswith("postgresql://") and "psycopg2" not in DATABASE_URL:
         DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
 
+    if "prepare_threshold" in DATABASE_URL:
+        import re
+
+        DATABASE_URL = re.sub(r"[?&]prepare_threshold=[^&]*", "", DATABASE_URL)
+
 # Configure connection args based on deployment
 connect_args = {"connect_timeout": 30}
-
-# If using Supabase Transaction Pooler (port 6543), we must disable prepared statements
-if "6543" in DATABASE_URL:
-    connect_args["prepare_threshold"] = 0
 
 engine = create_engine(
     DATABASE_URL,
