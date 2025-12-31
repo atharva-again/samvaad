@@ -14,10 +14,16 @@ interface MessageBubbleProps {
 	onEdit?: (index: number, content: string) => void;
 }
 
+// Props type with index signature for react-markdown compatibility
+type MarkdownProps = Record<string, unknown> & {
+	node?: unknown;
+	[key: string]: unknown;
+};
+
 const markdownComponents = {
-	code(props: Record<string, unknown>) {
+	code(props: MarkdownProps) {
 		const { node, inline, className, children, ...rest } = props;
-		const match = /language-(\w+)/.exec(className || "");
+		const match = /language-(\w+)/.exec((className as string) || "");
 		return match ? (
 			<SyntaxHighlighter
 				style={vscDarkPlus}
@@ -31,39 +37,39 @@ const markdownComponents = {
 			<code
 				className={cn(
 					"bg-white/10 rounded px-1.5 py-0.5 font-mono text-sm",
-					className,
+					className as string,
 				)}
 				{...rest}
 			>
-				{children}
+				{children as React.ReactNode}
 			</code>
 		);
 	},
-	h1: ({ node, ...props }: Record<string, unknown>) => (
+	h1: ({ node, ...props }: MarkdownProps) => (
 		<h1 className="text-2xl font-bold mb-4 mt-6 text-white" {...props} />
 	),
-	h2: ({ node, ...props }: Record<string, unknown>) => (
+	h2: ({ node, ...props }: MarkdownProps) => (
 		<h2 className="text-xl font-bold mb-3 mt-5 text-white" {...props} />
 	),
-	h3: ({ node, ...props }: Record<string, unknown>) => (
+	h3: ({ node, ...props }: MarkdownProps) => (
 		<h3 className="text-lg font-semibold mb-2 mt-4 text-white" {...props} />
 	),
-	ul: ({ node, ...props }: Record<string, unknown>) => (
+	ul: ({ node, ...props }: MarkdownProps) => (
 		<ul className="list-disc pl-6 mb-4 space-y-1" {...props} />
 	),
-	ol: ({ node, ...props }: Record<string, unknown>) => (
+	ol: ({ node, ...props }: MarkdownProps) => (
 		<ol className="list-decimal pl-6 mb-4 space-y-1" {...props} />
 	),
-	li: ({ node, ...props }: Record<string, unknown>) => (
+	li: ({ node, ...props }: MarkdownProps) => (
 		<li className="pl-1" {...props} />
 	),
-	p: ({ node, ...props }: Record<string, unknown>) => (
+	p: ({ node, ...props }: MarkdownProps) => (
 		<p className="mb-4 last:mb-0 leading-relaxed" {...props} />
 	),
-	strong: ({ node, ...props }: Record<string, unknown>) => (
+	strong: ({ node, ...props }: MarkdownProps) => (
 		<strong className="font-bold text-white" {...props} />
 	),
-	blockquote: ({ node, ...props }: Record<string, unknown>) => (
+	blockquote: ({ node, ...props }: MarkdownProps) => (
 		<blockquote
 			className="border-l-4 border-signal/50 pl-4 italic my-4 text-white/80"
 			{...props}
@@ -268,7 +274,7 @@ export function MessageBubble({ message, index, onEdit }: MessageBubbleProps) {
 							hasSources={hasSources || false}
 							sources={message.sources}
 							citedIndices={citedIndices}
-							openCitations={openCitations}
+							openCitations={openCitations as (messageId: string, citations: unknown[], citedIndices?: number[]) => void}
 							setHoveredCitationIndex={setHoveredCitationIndex}
 						/>
 					);
@@ -296,7 +302,7 @@ export function MessageBubble({ message, index, onEdit }: MessageBubbleProps) {
 
 		return {
 			...markdownComponents,
-			p: ({ node, children, ...props }: Record<string, unknown>) => {
+			p: ({ node, children, ...props }: MarkdownProps) => {
 				const processedChildren = React.Children.map(children, (child) => {
 					if (typeof child === "string") {
 						return renderWithCitations(child);
@@ -306,11 +312,11 @@ export function MessageBubble({ message, index, onEdit }: MessageBubbleProps) {
 
 				return (
 					<p className="mb-4 last:mb-0 leading-relaxed" {...props}>
-						{processedChildren}
+						{...(processedChildren as React.ReactNode[])}
 					</p>
 				);
 			},
-			li: ({ node, children, ...props }: Record<string, unknown>) => {
+			li: ({ node, children, ...props }: MarkdownProps) => {
 				const processedChildren = React.Children.map(children, (child) => {
 					if (typeof child === "string") {
 						return renderWithCitations(child);
@@ -319,7 +325,7 @@ export function MessageBubble({ message, index, onEdit }: MessageBubbleProps) {
 				});
 				return (
 					<li className="pl-1" {...props}>
-						{processedChildren}
+						{...(processedChildren as React.ReactNode[])}
 					</li>
 				);
 			},
@@ -411,7 +417,7 @@ export function MessageBubble({ message, index, onEdit }: MessageBubbleProps) {
 						if (message.id && message.sources) {
 							setCitations(
 								message.id,
-								message.sources as unknown,
+								message.sources as unknown as CitationItem[],
 								citedIndices,
 							);
 						}
@@ -472,7 +478,7 @@ export function MessageBubble({ message, index, onEdit }: MessageBubbleProps) {
 						isUser ? "" : "text-text-secondary",
 					)}
 				>
-					<ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+					<ReactMarkdown remarkPlugins={[remarkGfm]} components={components as any}>
 						{message.content}
 					</ReactMarkdown>
 				</div>

@@ -29,10 +29,30 @@ def mock_embedding():
         yield mock_embed
 
 
-def test_ingestion_flow_mocks(mock_db_for_ingestion, mock_embedding):
+@pytest.fixture
+def mock_parse_file():
+    """Mock file parsing to avoid external API calls."""
+    with patch("samvaad.pipeline.ingestion.ingestion.parse_file") as mock_parse:
+        # Return mock pages structure
+        mock_parse.return_value = (
+            [
+                {
+                    "page": 1,
+                    "items": [
+                        {"type": "text", "value": "Test content page 1", "md": "Test content page 1"},
+                        {"type": "text", "value": "More test content", "md": "More test content"},
+                    ],
+                }
+            ],
+            None,  # No error
+        )
+        yield mock_parse
+
+
+def test_ingestion_flow_mocks(mock_db_for_ingestion, mock_embedding, mock_parse_file):
     """
-    Test the ingestion pipeline logic with mocked DB and Embeddings.
-    This ensures the pipeline orchestration is correct without needing a real DB.
+    Test the ingestion pipeline logic with mocked DB, Embeddings, and Parsing.
+    This ensures the pipeline orchestration is correct without needing a real DB or external APIs.
     """
     from samvaad.pipeline.ingestion.ingestion import ingest_file_pipeline_with_progress
 
@@ -49,6 +69,9 @@ def test_ingestion_flow_mocks(mock_db_for_ingestion, mock_embedding):
     mock_db_for_ingestion.check_content_exists.assert_called_once()
     mock_db_for_ingestion.add_smart_dedup_content.assert_called_once()
 
+    # Verify parse_file was called
+    mock_parse_file.assert_called_once_with(filename, content_type, content)
+
 
 @patch("samvaad.pipeline.retrieval.query.DBService")
 @patch("samvaad.pipeline.retrieval.query.embed_query")
@@ -62,12 +85,7 @@ def test_retrieval_flow_mocks(mock_gen, mock_rerank, mock_embed, mock_db):
     mock_embed.return_value = [0.1] * 1024
 
     mock_db.search_similar_chunks.return_value = [
-        {
-            "id": "1",
-            "document": "chunk content",
-            "metadata": {"filename": "test.txt"},
-            "distance": 0.1
-        }
+        {"id": "1", "document": "chunk content", "metadata": {"filename": "test.txt"}, "distance": 0.1}
     ]
 
     # Mock rerank result
