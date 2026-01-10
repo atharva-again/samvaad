@@ -38,6 +38,7 @@ export async function middleware(request: NextRequest) {
 	// Protect all routes except public ones
 	if (
 		!user &&
+		request.nextUrl.pathname !== "/" &&
 		!request.nextUrl.pathname.startsWith("/login") &&
 		!request.nextUrl.pathname.startsWith("/auth") &&
 		!request.nextUrl.pathname.startsWith("/_next") &&
