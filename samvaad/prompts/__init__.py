@@ -29,13 +29,11 @@ def get_system_prompt(
         for i, chunk in enumerate(context_chunks, 1):
             content = chunk.get("content", "")
             filename = chunk.get("filename", f"doc_{i}")
-            context_parts.append(
-                f'<document id="{i}" source="{filename}">\n{content}\n</document>'
-            )
+            context_parts.append(f'<document id="{i}" source="{filename}">\n{content}\n</document>')
         full_context = "\n".join(context_parts)
 
     # 3. Get Mode Instruction
-    mode_inst = get_mode_instruction(persona_intro, strict_mode, is_voice=False)
+    mode_inst = get_mode_instruction(strict_mode, is_voice=False)
 
     # 4. Combine
     return get_unified_system_prompt(

@@ -66,7 +66,8 @@ export function PipecatProvider({ children }: PipecatProviderProps) {
 						},
 						// Handle custom server messages (e.g., citations from voice RAG)
 						onServerMessage: (data: unknown) => {
-							const msg = data as { type?: string; sources?: CitationItem[] };
+							const msg = data as { type?: string; sources?: CitationItem[]; text?: string };
+							
 							if (msg.type === "citations" && msg.sources) {
 								console.debug(
 									"[PipecatProvider] Received citations:",
@@ -75,6 +76,13 @@ export function PipecatProvider({ children }: PipecatProviderProps) {
 								// Store citations and optionally open the panel
 								setCitations("voice-response", msg.sources);
 								setSourcesPanelTab("citations");
+							} else if (msg.type === "transcript" && msg.text) {
+								console.debug(
+									"[PipecatProvider] Received transcript with citation markers:",
+									msg.text.substring(0, 100),
+								);
+								// Store transcript in UI store for InputBar to use
+								useUIStore.getState().setVoiceTranscript(msg.text);
 							}
 						},
 					},

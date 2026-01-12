@@ -82,7 +82,8 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const currentRoomUrlRef = useRef<string | null>(null); // Ref for event handler access
-  const currentBotResponseRef = useRef<string>(""); // Ref to aggregate bot sentences
+  const currentBotResponseRef = useRef<string>(""); // Ref to aggregate bot sentences (filtered, for fallback)
+  const currentBotLlmTextRef = useRef<string>(""); // Ref to aggregate raw LLM text (with citation markers)
   const currentUserTranscriptRef = useRef<string>(""); // Ref to aggregate user transcripts
   const { processFiles } = useFileProcessor();
 
@@ -289,7 +290,7 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
     try {
       const transport = client?.transport as any;
       // DailyTransport exposes roomUrl via different paths depending on version
-      const roomUrl =
+      const rocuomUrl =
         transport?.roomUrl ||
         transport?._roomUrl ||
         transport?.daily?.roomUrl ||
@@ -460,13 +461,23 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
     console.debug("[InputBar] RTVIEvent.BotStoppedSpeaking", evt);
     setVoiceState("listening");
 
-    // Send the complete aggregated response as a single message
-    const fullResponse = currentBotResponseRef.current.trim();
-    if (fullResponse) {
-      console.debug("[InputBar] Sending aggregated bot response:", fullResponse);
-      onVoiceMessage?.({ role: "assistant", content: fullResponse });
-      currentBotResponseRef.current = "";
+    // Use raw LLM text (with citation markers) for transcript display
+    const rawLlmText = currentBotLlmTextRef.current.trim();
+    
+    if (rawLlmText) {
+      console.debug("[InputBar] Sending raw LLM text with citation markers:", rawLlmText.substring(0, 100));
+      onVoiceMessage?.({ role: "assistant", content: rawLlmText });
+    } else {
+      // Fallback to aggregated BotOutput if raw LLM text not available
+      const fullResponse = currentBotResponseRef.current.trim();
+      if (fullResponse) {
+        console.debug("[InputBar] Fallback: Sending filtered bot response:", fullResponse);
+        onVoiceMessage?.({ role: "assistant", content: fullResponse });
+      }
     }
+    
+    currentBotLlmTextRef.current = "";
+    currentBotResponseRef.current = "";
   });
 
   // Voice transcript handlers - capture transcripts to display in chat
@@ -484,12 +495,13 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
     }
   });
 
-  // When bot starts its LLM processing, send the aggregated user message
-  // This ensures we capture all user speech segments before displaying
   useRTVIClientEvent(RTVIEvent.BotLlmStarted, () => {
     console.debug("[InputBar] RTVIEvent.BotLlmStarted");
-    // Set processing state - shows in UI while LLM/RAG is running
     setVoiceState("processing");
+    
+    // Reset LLM text aggregator for new response
+    currentBotLlmTextRef.current = "";
+    
     const fullUserMessage = currentUserTranscriptRef.current.trim();
     if (fullUserMessage) {
       console.debug("[InputBar] Sending aggregated user message:", fullUserMessage);
@@ -498,23 +510,26 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
     }
   });
 
-  // Capture bot's spoken output - aggregate sentences and send when bot stops speaking
+  // Capture raw LLM output (with citation markers) - this is the unfiltered text
+  useRTVIClientEvent(RTVIEvent.BotLlmText, (data: any) => {
+    const text = data?.text || data?.data?.text;
+    if (text) {
+      currentBotLlmTextRef.current += text;
+      console.debug("[InputBar] RTVIEvent.BotLlmText - aggregated raw LLM text:", currentBotLlmTextRef.current.substring(0, 100));
+    }
+  });
+
+  // Capture bot's spoken output (filtered, no markers) - used as fallback
   useRTVIClientEvent(RTVIEvent.BotOutput, (data: any) => {
-    console.debug("[InputBar] RTVIEvent.BotOutput received:", data);
-    // BotOutput data structure: { text: string, spoken: boolean, aggregated_by: string }
-    // Only capture sentences that have been spoken (spoken: true)
-    // This prevents duplicates (each sentence fires twice: spoken:false then spoken:true)
     const text = data?.text || data?.data?.text;
     const spoken = data?.spoken ?? data?.data?.spoken;
 
     if (spoken && text && text.trim()) {
-      // Aggregate the sentence - ensure proper spacing between sentences
       const trimmedText = text.trim();
       if (currentBotResponseRef.current && !currentBotResponseRef.current.endsWith(" ")) {
         currentBotResponseRef.current += " ";
       }
       currentBotResponseRef.current += trimmedText;
-      console.debug("[InputBar] Aggregated bot text:", currentBotResponseRef.current);
     }
   });
 

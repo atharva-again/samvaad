@@ -16,18 +16,14 @@ def test_get_persona_prompt_new_personas():
     assert get_persona_prompt("friend") == PERSONAS["friend"]
     assert get_persona_prompt("expert") == PERSONAS["expert"]
     assert get_persona_prompt("quizzer") == PERSONAS["quizzer"]
-    assert (
-        "human friend" in PERSONAS["friend"] or "friend" in PERSONAS["friend"].lower()
-    )
-    assert (
-        "domain expert" in PERSONAS["expert"] or "expert" in PERSONAS["expert"].lower()
-    )
+    assert "human friend" in PERSONAS["friend"] or "friend" in PERSONAS["friend"].lower()
+    assert "domain expert" in PERSONAS["expert"] or "expert" in PERSONAS["expert"].lower()
     assert "quiz" in PERSONAS["quizzer"].lower()
 
 
 def test_get_mode_instruction_strict():
     """Test strict mode instruction content."""
-    inst = get_mode_instruction("You are a helpful assistant.", strict_mode=True)
+    inst = get_mode_instruction(strict_mode=True)
     # Check for strict mode markers in current implementation
     assert "Strict Mode" in inst
     # Check for key phrase variations
@@ -36,7 +32,7 @@ def test_get_mode_instruction_strict():
 
 def test_get_mode_instruction_hybrid():
     """Test hybrid mode instruction content."""
-    inst = get_mode_instruction("You are a helpful assistant.", strict_mode=False)
+    inst = get_mode_instruction(strict_mode=False)
     # Hybrid mode should have different content than strict mode
     assert "Hybrid Mode" in inst
     # Strict mode marker should not be present

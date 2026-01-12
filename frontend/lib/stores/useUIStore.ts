@@ -42,6 +42,11 @@ interface UIState {
 	setVoiceSessionActive: (active: boolean, conversationId?: string | null) => void;
 	toggleSidebar: () => void;
 
+	// Voice Transcript (for citation markers in voice mode)
+	voiceTranscript: string | null;
+	setVoiceTranscript: (transcript: string | null) => void;
+	consumeVoiceTranscript: () => string | null;
+
 	// Universal Search Modal
 	isSearchOpen: boolean;
 	toggleSearch: () => void;
@@ -134,6 +139,14 @@ export const useUIStore = create<UIState>()(
 				}),
 			toggleSidebar: () =>
 				set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
+
+			voiceTranscript: null,
+			setVoiceTranscript: (transcript) => set({ voiceTranscript: transcript }),
+			consumeVoiceTranscript: () => {
+				const transcript = _get().voiceTranscript;
+				set({ voiceTranscript: null });
+				return transcript;
+			},
 
 			// Universal Search Modal
 			isSearchOpen: false,

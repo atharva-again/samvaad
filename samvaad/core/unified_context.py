@@ -498,7 +498,7 @@ class UnifiedContextManager:
         persona_intro = get_persona_prompt(persona)
 
         # Get mode instruction based on whether tools are available and if it's voice mode
-        mode_instruction = get_mode_instruction(persona_intro=persona_intro, strict_mode=strict_mode, is_voice=is_voice)
+        mode_instruction = get_mode_instruction(strict_mode=strict_mode, is_voice=is_voice)
         print(
             f"[UnifiedContext] DEBUG: strict_mode={strict_mode}, is_voice={is_voice}, mode_instruction starts with: {mode_instruction[:100]}..."
         )
@@ -506,8 +506,6 @@ class UnifiedContextManager:
         # Voice mode: Use lean format without XML placeholders
         # Pipecat manages conversation context as separate messages
         if is_voice:
-            persona_intro += VOICE_STYLE_INSTRUCTION
-            # Lean voice prompt - no XML tags, mode_instruction already has tool info
             return f"""{persona_intro}
 
 {mode_instruction}"""

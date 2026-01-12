@@ -10,9 +10,17 @@ from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams
 from pipecat.processors.frameworks.rtvi import (
-    RTVIObserver,
     RTVIProcessor,
     RTVIServerMessageFrame,
+    RTVIObserver,
+)
+from pipecat.processors.frame_processor import FrameProcessor
+from pipecat.frames.frames import (
+    Frame,
+    LLMFullResponseEndFrame,
+    LLMFullResponseStartFrame,
+    LLMTextFrame,
+    TextFrame,
 )
 from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.deepgram.tts import DeepgramTTSService
@@ -22,11 +30,65 @@ from pipecat.utils.text.markdown_text_filter import MarkdownTextFilter
 
 # Import unified context manager
 from samvaad.core.unified_context import SamvaadLLMContext
-
-# Import shared RAG logic
 from samvaad.pipeline.retrieval.query import rag_query_pipeline
+from samvaad.prompts.personas import get_persona_prompt
 from samvaad.utils.logger import logger
 from samvaad.utils.text_filters import CitationTextFilter
+
+
+class TranscriptCaptureProcessor(FrameProcessor):
+    """
+    Custom frame processor that captures LLM output text with citation markers
+    and sends it to the frontend via RTVI for display in chat transcript.
+
+    This solves the voice mode citation badge problem:
+    - LLM generates response with [1], [2] markers
+    - CitationTextFilter strips markers for clean TTS audio
+    - This processor captures the original text BEFORE filtering
+    - Sends it to frontend via RTVI message for display with badges
+    """
+
+    def __init__(self, rtvi_processor: RTVIProcessor):
+        super().__init__()
+        self.rtvi = rtvi_processor
+        self._aggregated_text = ""
+        self._is_aggregating = False
+
+    async def process_frame(self, frame: Frame, direction):
+        """Process frames and capture LLM text output."""
+        await super().process_frame(frame, direction)
+
+        # Start aggregating when LLM starts a full response
+        if isinstance(frame, LLMFullResponseStartFrame):
+            self._is_aggregating = True
+            self._aggregated_text = ""
+            logger.debug("[TranscriptCapture] Started aggregating LLM response")
+
+        # Capture LLM text frames (this is what the LLM outputs)
+        elif isinstance(frame, LLMTextFrame) and self._is_aggregating:
+            self._aggregated_text += frame.text
+            logger.debug(f"[TranscriptCapture] Aggregated: {self._aggregated_text[:100]}...")
+
+        # When LLM finishes, send the complete response via RTVI
+        elif isinstance(frame, LLMFullResponseEndFrame) and self._is_aggregating:
+            if self._aggregated_text.strip():
+                logger.info(
+                    f"[TranscriptCapture] Sending transcript ({len(self._aggregated_text)} chars): {self._aggregated_text[:100]}..."
+                )
+                # Send original text with citation markers to frontend
+                transcript_frame = RTVIServerMessageFrame(
+                    data={"type": "transcript", "text": self._aggregated_text.strip()}
+                )
+                await self.rtvi.push_frame(transcript_frame)
+            else:
+                logger.warning("[TranscriptCapture] No text to send (empty aggregation)")
+
+            # Reset for next response
+            self._aggregated_text = ""
+            self._is_aggregating = False
+
+        # Pass all frames through to next processor
+        await self.push_frame(frame, direction)
 
 
 async def create_daily_room() -> tuple[str, str | None]:
@@ -198,21 +260,31 @@ async def start_voice_agent(
                 ),
                 timeout=RAG_TIMEOUT_SECONDS,
             )
-            rag_text = result.get("answer", "No information found.")
 
-            # Extract sources for citations panel
             chunks = result.get("chunks", [])
-            for chunk in chunks[:3]:
-                # Pass full metadata - already includes extra.page_number, etc from DB
-                sources.append(
-                    {
-                        "filename": chunk.get("filename", "document"),
-                        "content_preview": chunk.get("content", "")[:1000],
-                        "rerank_score": chunk.get("rerank_score"),
-                        "chunk_id": chunk.get("chunk_id"),
-                        "metadata": chunk.get("metadata", {}),
-                    }
-                )
+            if chunks:
+                context_parts = []
+                for i, chunk in enumerate(chunks, 1):
+                    content = chunk.get("content", "")
+                    context_parts.append(f'<document id="{i}">\n{content}\n</document>')
+                rag_text = "\n\n".join(context_parts)
+
+                logger.info(f"[voice_agent] RAG formatted {len(chunks)} chunks with XML tags")
+                logger.debug(f"[voice_agent] RAG context preview: {rag_text[:300]}...")
+
+                for chunk in chunks[:3]:
+                    sources.append(
+                        {
+                            "filename": chunk.get("filename", "document"),
+                            "content_preview": chunk.get("content", "")[:1000],
+                            "rerank_score": chunk.get("rerank_score"),
+                            "chunk_id": chunk.get("chunk_id"),
+                            "metadata": chunk.get("metadata", {}),
+                        }
+                    )
+            else:
+                rag_text = "No relevant information found."
+                logger.warning("[voice_agent] RAG returned no chunks")
 
         except TimeoutError:
             logger.warning(f"[voice_agent] RAG timeout after {RAG_TIMEOUT_SECONDS}s for query: {query}")
@@ -281,16 +353,17 @@ async def start_voice_agent(
             f"[VoiceAgent] DEBUG: strict_mode={strict_mode}, prompt contains 'Strict Mode': {'### Strict Mode' in system_instruction}"
         )
     else:
-        # Fallback for sessions without conversation_id
         from samvaad.core.unified_context import VOICE_STYLE_INSTRUCTION
         from samvaad.prompts.personas import get_persona_prompt
+        from samvaad.prompts.modes import get_mode_instruction
 
-        system_instruction = get_persona_prompt(persona) + VOICE_STYLE_INSTRUCTION
-        if strict_mode:
-            system_instruction += " CRITICAL: You are in Strict Mode. Answer ONLY based on information retrieved from tools. If no information is found via tools, state that you do not know. Do not use outside knowledge."
+        mode_instruction_with_citations = get_mode_instruction(strict_mode=strict_mode, is_voice=True)
+        system_instruction = (
+            get_persona_prompt(persona) + "\n\n" + mode_instruction_with_citations + "\n\n" + VOICE_STYLE_INSTRUCTION
+        )
 
-    # Use Groq with OpenAI gpt-oss-120b
-    llm = GroqLLMService(api_key=groq_api_key, model="openai/gpt-oss-120b")
+    # Use Groq with llama-3.3-70b-versatile (same as text mode for consistent citation behavior)
+    llm = GroqLLMService(api_key=groq_api_key, model="llama-3.3-70b-versatile")
     llm.register_function("fetch_context", fetch_context)
 
     # Context Manager (Keeps track of conversation history)
@@ -321,13 +394,12 @@ async def start_voice_agent(
     # RTVIProcessor handles RTVI protocol messages (BotReady, user/bot speaking, etc.)
     # (rtvi already created earlier for fetch_context access)
 
-    # Conditional pipeline construction based on enable_tts
     processors = [
-        transport.input(),  # Microphone Audio in
-        rtvi,  # RTVI protocol handler
-        stt,  # Speech to Text
-        context_aggregator.user(),  # Add user text to history
-        llm,  # Groq thinks
+        transport.input(),
+        rtvi,
+        stt,
+        context_aggregator.user(),
+        llm,
     ]
 
     if enable_tts:
