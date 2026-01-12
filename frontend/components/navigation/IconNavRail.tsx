@@ -27,6 +27,7 @@ import {
 	type Conversation,
 	useConversationStore,
 } from "@/lib/stores/useConversationStore";
+import { useInputBarStore } from "@/lib/stores/useInputBarStore";
 import { useUIStore } from "@/lib/stores/useUIStore";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/utils/supabase/client";
@@ -88,6 +89,8 @@ export function IconNavRail() {
 		useUIStore.setState({
 			sources: [],
 			hasFetchedSources: false,
+		});
+		useInputBarStore.setState({
 			hasInteracted: false,
 		});
 

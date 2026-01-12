@@ -36,19 +36,9 @@ export interface CitationItem {
 }
 
 interface UIState {
-	mode: "text" | "voice";
 	isSidebarOpen: boolean;
-	hasInteracted: boolean;
-	strictMode: boolean; // Strict mode vs Hybrid mode
-	persona: string; // Selected persona
-	enableTTS: boolean; // Voice mode: TTS enabled
 	isVoiceSessionActive: boolean;
 	activeVoiceConversationId: string | null;
-	setMode: (mode: "text" | "voice") => void;
-	setHasInteracted: (hasInteracted: boolean) => void;
-	setStrictMode: (strictMode: boolean) => void;
-	setPersona: (persona: string) => void;
-	setEnableTTS: (enableTTS: boolean) => void;
 	setVoiceSessionActive: (active: boolean, conversationId?: string | null) => void;
 	toggleSidebar: () => void;
 
@@ -134,19 +124,9 @@ interface UIState {
 export const useUIStore = create<UIState>()(
 	persist(
 		(set, _get) => ({
-			mode: "text",
 			isSidebarOpen: false,
-			hasInteracted: false,
-			strictMode: false,
-			persona: "default",
-			enableTTS: true,
 			isVoiceSessionActive: false,
 			activeVoiceConversationId: null,
-			setMode: (mode) => set({ mode }),
-			setHasInteracted: (hasInteracted) => set({ hasInteracted }),
-			setStrictMode: (strictMode) => set({ strictMode }),
-			setPersona: (persona) => set({ persona }),
-			setEnableTTS: (enableTTS) => set({ enableTTS }),
 			setVoiceSessionActive: (active, conversationId) =>
 				set({
 					isVoiceSessionActive: active,
@@ -327,12 +307,7 @@ export const useUIStore = create<UIState>()(
 		}),
 		{
 			name: "samvaad-ui-store",
-			partialize: (state) => ({
-				strictMode: state.strictMode,
-				persona: state.persona,
-				enableTTS: state.enableTTS,
-				// Only persist user preferences, not runtime state
-			}),
+			partialize: () => ({}),
 		},
 	),
 );

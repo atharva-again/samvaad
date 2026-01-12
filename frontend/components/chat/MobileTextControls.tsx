@@ -8,25 +8,19 @@ import {
 	PopoverTrigger,
 } from "@/components/ui/popover";
 import { capitalize, PERSONAS } from "@/lib/constants";
+import { useInputBarStore } from "@/lib/stores/useInputBarStore";
 import { cn } from "@/lib/utils";
 
 interface MobileTextControlsProps {
 	className?: string;
 	sideOffset?: number;
-	strictMode: boolean;
-	setStrictMode: (value: boolean) => void;
-	persona: string;
-	setPersona: (value: string) => void;
 }
 
 export function MobileTextControls({
 	className,
 	sideOffset = 16,
-	strictMode,
-	setStrictMode,
-	persona,
-	setPersona,
 }: MobileTextControlsProps) {
+	const { strictMode, toggleStrictMode, persona, setPersona } = useInputBarStore();
 	return (
 		<Popover>
 			<PopoverTrigger asChild>
@@ -59,7 +53,7 @@ export function MobileTextControls({
 					<div className="grid grid-cols-1 gap-3">
 						<button
 							type="button"
-							onClick={() => setStrictMode(!strictMode)}
+							onClick={toggleStrictMode}
 							className={cn(
 								"flex flex-col items-start gap-2 p-3 rounded-xl border transition-all relative overflow-hidden",
 								strictMode
