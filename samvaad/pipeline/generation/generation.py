@@ -13,10 +13,10 @@ def generate_answer_with_groq(
     conversation_context: str = "",
     persona: str = "default",
     strict_mode: bool = False,
-    rag_context: str = ""  # Pre-formatted context from context_manager
+    rag_context: str = "",  # Pre-formatted context from context_manager
 ) -> str:
     """Generate answer using Groq with retrieved chunks as context.
-    
+
     Args:
         query: User's question
         chunks: Raw chunks (used if rag_context not provided)
@@ -33,35 +33,27 @@ def generate_answer_with_groq(
     if not groq_key:
         raise ValueError("GROQ_API_KEY environment variable not set")
 
-    from samvaad.prompts import get_system_prompt
+    from samvaad.prompts import PromptBuilder
 
-    # Use pre-formatted context if provided, otherwise format chunks
     if rag_context:
-        # Already formatted - pass directly without re-formatting
-        prompt = get_system_prompt(
-            persona=persona,
-            strict_mode=strict_mode,
-            context_chunks=[],  # Empty - we'll inject rag_context directly
-            conversation_history=conversation_context,
-            query=query,
-            preformatted_context=rag_context  # New param
-        )
+        context = rag_context
     else:
-        # Fallback: format chunks here (for backward compatibility)
-        safe_chunks = []
-        for chunk in chunks:
-            safe_chunks.append({
-                "content": chunk.get("content", ""),
-                "filename": chunk.get("filename", "unknown_document")
-            })
+        context_parts = []
+        for i, chunk in enumerate(chunks, 1):
+            content = chunk.get("content", "")
+            filename = chunk.get("filename", f"doc_{i}")
+            context_parts.append(f'<document id="{i}" source="{filename}">\n{content}\n</document>')
+        context = "\n".join(context_parts)
 
-        prompt = get_system_prompt(
-            persona=persona,
-            strict_mode=strict_mode,
-            context_chunks=safe_chunks,
-            conversation_history=conversation_context,
-            query=query
-        )
+    prompt = (
+        PromptBuilder()
+        .with_persona(persona)
+        .with_strict_mode(strict_mode)
+        .with_context(context)
+        .with_history(conversation_context)
+        .with_query(query)
+        .build()
+    )
 
     # Initialize Groq client
     client = Groq(api_key=groq_key)
@@ -69,10 +61,7 @@ def generate_answer_with_groq(
     # Generate response
     response = client.chat.completions.create(
         model=model,
-        messages=[
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": query}
-        ],
+        messages=[{"role": "system", "content": prompt}, {"role": "user", "content": query}],
         temperature=0.3,
         max_tokens=1024,
     )

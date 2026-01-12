@@ -24,22 +24,8 @@ import tiktoken
 from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 
 from samvaad.db.conversation_service import ConversationService
-from samvaad.prompts.modes import get_mode_instruction, get_unified_system_prompt
-from samvaad.prompts.personas import get_persona_prompt
+from samvaad.utils.logger import logger
 
-# Voice-specific style instructions for ~50 word responses
-VOICE_STYLE_INSTRUCTION = """
-
-VOICE CONVERSATION STYLE:
-1. Keep responses brief (2-3 sentences, ~50 words max).
-2. Speak naturally and conversationally. Use contractions.
-3. After answering, invite follow-up questions.
-4. Avoid bullet points, lists, or robotic phrasing.
-"""
-
-# Default sliding window size
-# Default sliding window size
-# [PHASE-3 #81] Configurable History Window
 SLIDING_WINDOW_SIZE = int(os.getenv("HISTORY_WINDOW_SIZE", "6"))
 
 
@@ -52,19 +38,19 @@ class SamvaadLLMContext(OpenAILLMContext):
     """
     Database-backed LLM context manager for Pipecat voice pipelines.
 
-    Extends OpenAILLMContext to automatically:
-    - Load existing conversation history from DB on init
-    - Persist new messages to DB when added
+    Extends OpenAILLMContext with:
+    - Sliding window context management (via UnifiedContextManager)
+    - Database persistence for messages
+    - Automatic fact extraction
 
-    This enables seamless switching between voice and text modes
-    within the same conversation.
+    Uses the same context logic as text mode for consistency.
     """
 
     def __init__(
         self, conversation_id: str, user_id: str, conversation_service: ConversationService | None = None, **kwargs
     ):
         """
-        Initialize context with database backing.
+        Initialize context with database backing and unified context management.
 
         Args:
             conversation_id: UUID of the conversation
@@ -76,21 +62,32 @@ class SamvaadLLMContext(OpenAILLMContext):
         self.conversation_id = conversation_id
         self.user_id = user_id
         self._db = conversation_service or ConversationService()
+        self._context_manager = UnifiedContextManager(conversation_id, user_id, conversation_service)
         self._initialized = False
 
     def load_history(self):
         """
-        Load existing messages from database into context.
-        Call this after initialization to populate history.
+        Load recent messages from database with sliding window.
+        Only loads messages within the window to prevent token explosion.
         """
         if self._initialized:
             return
 
-        messages = self._db.get_messages(UUID(self.conversation_id))
-        for msg in messages:
-            # Use parent's add_message to avoid re-persisting
-            super().add_message({"role": msg.role, "content": msg.content})
+        all_messages = self._db.get_messages(UUID(self.conversation_id))
+        messages = [{"role": msg.role, "content": msg.content} for msg in all_messages]
+
+        recent_messages, older_messages = self._context_manager.get_sliding_window(messages, SLIDING_WINDOW_SIZE)
+
+        for msg in recent_messages:
+            super().add_message(msg)
+
         self._initialized = True
+
+        if older_messages:
+            logger.info(
+                f"[VoiceContext] Loaded {len(recent_messages)} recent messages "
+                f"({len(older_messages)} older messages summarized)"
+            )
 
     def add_message(self, message):
         """
@@ -152,14 +149,18 @@ class SamvaadLLMContext(OpenAILLMContext):
                         break
 
                 if user_msg:
-                    # Fire-and-forget background task
                     import asyncio
 
                     try:
                         loop = asyncio.get_running_loop()
                         loop.create_task(self._extract_facts_async(user_msg, message.get("content", "")))
                     except RuntimeError:
-                        # No running loop - skip fact extraction
+                        pass
+
+                    try:
+                        loop = asyncio.get_running_loop()
+                        loop.create_task(self._trigger_summarization_if_needed())
+                    except RuntimeError:
                         pass
 
     async def _save_message_async(self, role: str, content: str, sources: list = None):
@@ -198,9 +199,52 @@ class SamvaadLLMContext(OpenAILLMContext):
                 updated_facts = ". ".join([f.get("fact", "") for f in merged_facts if f.get("fact")])
 
                 self._db.update_conversation(UUID(self.conversation_id), self.user_id, facts=updated_facts)
-                print(f"[Voice Memory] Updated facts for {self.conversation_id}")
+                logger.info(f"[Voice Memory] Updated facts for {self.conversation_id}")
         except Exception as e:
-            print(f"[Voice Memory] Fact extraction error: {e}")
+            logger.error(f"[Voice Memory] Fact extraction error: {e}")
+
+    async def _trigger_summarization_if_needed(self):
+        """
+        Check if summarization should run (batched every 4 messages outside window).
+        Mirrors text mode logic from main.py lines 409-431.
+        """
+        from samvaad.core.memory import update_conversation_summary
+
+        try:
+            all_messages_db = self._db.get_messages(UUID(self.conversation_id))
+            all_messages = [{"role": m.role, "content": m.content} for m in all_messages_db]
+            total_messages = len(all_messages)
+
+            SUMMARIZATION_BATCH_SIZE = 4
+
+            if total_messages > SLIDING_WINDOW_SIZE:
+                messages_in_window = SLIDING_WINDOW_SIZE
+                exited_count = total_messages - messages_in_window
+
+                if exited_count >= SUMMARIZATION_BATCH_SIZE and exited_count % SUMMARIZATION_BATCH_SIZE < 2:
+                    batch_start = max(0, exited_count - SUMMARIZATION_BATCH_SIZE)
+                    exiting_batch = all_messages[batch_start:exited_count] if batch_start < len(all_messages) else []
+
+                    if exiting_batch:
+                        conversation = self._db.get_conversation(UUID(self.conversation_id), self.user_id)
+                        existing_summary = conversation.summary if conversation else ""
+
+                        start_turn = batch_start + 1
+                        end_turn = exited_count
+
+                        new_summary = await update_conversation_summary(
+                            existing_summary,
+                            exiting_batch,
+                            start_turn=start_turn,
+                            end_turn=end_turn,
+                        )
+
+                        self._db.update_conversation(UUID(self.conversation_id), self.user_id, summary=new_summary)
+                        logger.info(
+                            f"[Voice Memory] Updated summary for {self.conversation_id} (turns {start_turn}-{end_turn})"
+                        )
+        except Exception as e:
+            logger.error(f"[Voice Memory] Summarization error: {e}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -468,69 +512,6 @@ class UnifiedContextManager:
     # ─────────────────────────────────────────────────────────────────────────
     # System Prompt Building
     # ─────────────────────────────────────────────────────────────────────────
-
-    def build_system_prompt(
-        self,
-        persona: str,
-        strict_mode: bool,
-        rag_context: str,
-        conversation_history: str,
-        query: str,
-        is_voice: bool = False,
-        has_tools: bool = False,
-    ) -> str:
-        """
-        Build unified system prompt for either text or voice mode.
-
-        Args:
-            persona: Persona name (default, tutor, coder, etc.)
-            strict_mode: Whether strict mode is enabled
-            rag_context: Pre-formatted RAG context (if pre-fetched)
-            conversation_history: Pre-formatted conversation history
-            query: Current user query
-            is_voice: If True, uses lean format (no XML placeholders) + voice constraints
-            has_tools: Whether LLM has access to fetch_context tool
-                       (True for tool-based RAG, False for pre-fetched context)
-
-        Returns:
-            Complete system prompt
-        """
-        persona_intro = get_persona_prompt(persona)
-
-        # Get mode instruction based on whether tools are available and if it's voice mode
-        mode_instruction = get_mode_instruction(strict_mode=strict_mode, is_voice=is_voice)
-        print(
-            f"[UnifiedContext] DEBUG: strict_mode={strict_mode}, is_voice={is_voice}, mode_instruction starts with: {mode_instruction[:100]}..."
-        )
-
-        # Voice mode: Use lean format without XML placeholders
-        # Pipecat manages conversation context as separate messages
-        if is_voice:
-            return f"""{persona_intro}
-
-{mode_instruction}"""
-
-        # Text mode with tools: Use lean format similar to voice (no empty XML tags)
-        if has_tools and not rag_context:
-            # [SECURITY-FIX #72] Do NOT interpolate query into system prompt.
-            # The query is passed as the last user message in the message list.
-            return f"""{persona_intro}
-
-{mode_instruction}
-
-### Conversation History
-{conversation_history if conversation_history else "No history yet."}
-
-Provide your answer:"""
-
-        # Text mode with pre-fetched context: Use full unified prompt with XML structure
-        return get_unified_system_prompt(
-            persona_intro=persona_intro,
-            context=rag_context,
-            mode_instruction=mode_instruction,
-            conversation_history=conversation_history,
-            query=query,
-        )
 
     # ─────────────────────────────────────────────────────────────────────────
     # Database Operations

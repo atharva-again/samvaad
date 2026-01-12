@@ -28,10 +28,9 @@ from pipecat.services.groq.llm import GroqLLMService
 from pipecat.transports.daily.transport import DailyParams, DailyTransport
 from pipecat.utils.text.markdown_text_filter import MarkdownTextFilter
 
-# Import unified context manager
 from samvaad.core.unified_context import SamvaadLLMContext
 from samvaad.pipeline.retrieval.query import rag_query_pipeline
-from samvaad.prompts.personas import get_persona_prompt
+from samvaad.prompts import PromptBuilder
 from samvaad.utils.logger import logger
 from samvaad.utils.text_filters import CitationTextFilter
 
@@ -337,30 +336,9 @@ async def start_voice_agent(
     # 4. Context & Persona - Use unified context manager for consistent prompts
     from samvaad.core.unified_context import UnifiedContextManager
 
-    # Build system prompt using unified manager (same structure as text mode)
-    if conversation_id and user_id:
-        unified_ctx = UnifiedContextManager(conversation_id, user_id)
-        system_instruction = unified_ctx.build_system_prompt(
-            persona=persona,
-            strict_mode=strict_mode,
-            rag_context="",  # RAG is fetched via tool call, not pre-loaded
-            conversation_history="",  # History managed by Pipecat context
-            query="",  # Query comes from speech
-            is_voice=True,  # Adds ~50 word limit instruction
-            has_tools=True,  # Tool-based RAG - LLM will call fetch_context
-        )
-        print(
-            f"[VoiceAgent] DEBUG: strict_mode={strict_mode}, prompt contains 'Strict Mode': {'### Strict Mode' in system_instruction}"
-        )
-    else:
-        from samvaad.core.unified_context import VOICE_STYLE_INSTRUCTION
-        from samvaad.prompts.personas import get_persona_prompt
-        from samvaad.prompts.modes import get_mode_instruction
-
-        mode_instruction_with_citations = get_mode_instruction(strict_mode=strict_mode, is_voice=True)
-        system_instruction = (
-            get_persona_prompt(persona) + "\n\n" + mode_instruction_with_citations + "\n\n" + VOICE_STYLE_INSTRUCTION
-        )
+    system_instruction = (
+        PromptBuilder().with_persona(persona).with_strict_mode(strict_mode).for_voice_mode().with_tools().build()
+    )
 
     # Use Groq with llama-3.3-70b-versatile (same as text mode for consistent citation behavior)
     llm = GroqLLMService(api_key=groq_api_key, model="llama-3.3-70b-versatile")

@@ -224,7 +224,6 @@ class TextMessageRequest(BaseModel):
 
 class VoiceModeRequest(BaseModel):
     conversation_id: str | None = None
-    session_id: str = "default"
     enable_tts: bool = True
     persona: str = "default"
     strict_mode: bool = False
@@ -618,7 +617,6 @@ async def voice_mode(
         return {
             "room_url": room_url,
             "token": token,
-            "session_id": request.session_id,
             "conversation_id": conversation_id,
             "success": True,
         }

@@ -55,13 +55,10 @@ def get_unified_system_prompt(
     context: str,
     mode_instruction: str,
     conversation_history: str | None = None,
-    query: str | None = None,
 ) -> str:
     """
     Constructs the final system prompt with XML-structured input data.
     Used for text mode where context is pre-fetched.
-
-    Note: query parameter kept for backward compatibility but not used in prompt.
     """
     return f"""{persona_intro}
 
