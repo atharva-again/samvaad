@@ -557,7 +557,7 @@ export const useConversationStore = create<ConversationState>()(
 						title: string;
 						created_at: string;
 						updated_at: string;
-					}>("/conversations", {
+					}>("/conversations/", {
 						title,
 						mode,
 					});
