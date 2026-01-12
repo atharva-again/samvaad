@@ -12,8 +12,6 @@ import {
 import { ActionTooltip } from "@/components/ui/action-tooltip";
 import { StrictModeToggle } from "@/components/chat/StrictModeToggle";
 import { PersonaSelector } from "@/components/chat/PersonaSelector";
-import { TTSToggle } from "@/components/chat/TTSToggle";
-import { LatencyIndicator } from "@/components/chat/LatencyIndicator";
 import { VoiceSettings } from "@/components/chat/VoiceSettings";
 import { MobileVoiceControls } from "@/components/chat/MobileVoiceControls";
 import { MobileTextControls } from "@/components/chat/MobileTextControls";
@@ -199,11 +197,9 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
 
   const [isConnecting, setIsConnecting] = useState(false);
 
-  // Power User State
   const [enableTTS, setEnableTTS] = useState(true); // True = Voice-to-Voice, False = Voice-to-Text
   const [persona, setPersona] = useState("default");
   const [strictMode, setStrictMode] = useState(false);
-  const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [isPTTActive, setIsPTTActive] = useState(false);
 
   // Voice settings state
@@ -317,72 +313,6 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
     setVoiceState("listening"); // Start in listening state
     toast.success("Voice agent ready");
   });
-
-  const handleDisconnect = async () => {
-    console.debug("[InputBar] handleDisconnect called, currentRoomUrl:", currentRoomUrl);
-
-    // If mocking, just return to base
-    if (USE_MOCK_BACKEND) {
-      setIsSessionActive(false);
-      return;
-    }
-
-    if (client) {
-      try {
-        await client.disconnect();
-        console.debug("[InputBar] Pipecat client disconnected");
-      } catch (err) {
-        console.warn("[InputBar] Error disconnecting client:", err);
-      }
-    }
-
-    // Clean up Daily room to save minutes (atomic check-and-clear to prevent duplicates)
-    const roomToCleanup = currentRoomUrlRef.current;
-    if (roomToCleanup) {
-      // Clear immediately to prevent duplicate cleanup from event handlers
-      updateRoomUrl(null);
-      console.debug("[InputBar] Cleaning up Daily room:", roomToCleanup);
-      const result = await endVoiceMode(roomToCleanup);
-      console.debug("[InputBar] endVoiceMode result:", result);
-    }
-
-    setIsSessionActive(false);
-    setVoiceDuration(0);
-  };
-
-  useRTVIClientEvent(RTVIEvent.Metrics, (metrics) => {
-    console.debug("[InputBar] RTVIEvent.Metrics:", metrics);
-
-    // Extract TTFB (Time To First Byte) values from services
-    // Metrics format: { ttfb: [{ processor: "DeepgramSTTService", value: 123 }, ...], processing: [...] }
-    try {
-      const m = metrics as any; // Cast to any to access dynamic properties
-      let totalLatency = 0;
-
-      // Sum up TTFB from all services (STT + LLM + TTS)
-      if (m?.ttfb && Array.isArray(m.ttfb)) {
-        for (const ttfbItem of m.ttfb) {
-          if (ttfbItem?.value && typeof ttfbItem.value === 'number') {
-            totalLatency += ttfbItem.value;
-          }
-        }
-      }
-
-      // If we got valid latency, update the indicator
-      if (totalLatency > 0) {
-        setLatencyMs(Math.round(totalLatency));
-      }
-    } catch (e) {
-      console.warn("[InputBar] Error parsing metrics:", e);
-    }
-  });
-
-  // Reset latency when session ends
-  useEffect(() => {
-    if (!isSessionActive) {
-      setLatencyMs(null);
-    }
-  }, [isSessionActive]);
 
   const handleStartSession = async () => {
     // If mocking
@@ -910,7 +840,7 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
             <div className="flex-1 flex items-center justify-center">
               <div
                 className={cn(
-                  "flex items-center gap-3 px-6 py-2 rounded-full transition-all duration-500 min-w-[240px] relative z-10",
+                  "flex items-center justify-center gap-3 px-6 py-2 rounded-full transition-all duration-500 min-w-[360px] relative z-10",
                   isConnecting
                     ? "bg-white/5 text-text-primary border border-white/5"
                     : voiceState === "listening"
@@ -1000,23 +930,16 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
           {/* Spacer - Only show when session active to push controls right. When inactive, let StartButton take full width to center. */}
           {/* Spacer - Removed because flex-1 wrapper on Status handles centering/pushing */}
 
-          {/* Controls */}
-          <div className="flex items-center gap-1 md:gap-2 pr-2 relative z-10 max-w-full justify-end">
-            <div className="w-px h-4 bg-white/10 mx-1" />
-            {/* Latency Indicator - show during connecting and active session, hide on mobile */}
-            {(isConnecting || isSessionActive) && (
-              <div className="hidden md:block">
-                <LatencyIndicator latencyMs={latencyMs} />
-              </div>
-            )}
+            {/* Controls */}
+            <div className="flex items-center gap-1 md:gap-2 pr-2 relative z-10 max-w-full justify-end">
+              <div className="w-px h-4 bg-white/10 mx-1" />
 
-            {/* Desktop Controls */}
-            <div className="hidden md:flex items-center gap-2">
-              <TTSToggle enableTTS={enableTTS} setEnableTTS={setEnableTTS} />
-              <StrictModeToggle strictMode={strictMode} setStrictMode={setStrictMode} />
-              <PersonaSelector persona={persona} setPersona={setPersona} />
-              <VoiceSettings outputVolume={outputVolume} onVolumeChange={setOutputVolume} />
-            </div>
+              {/* Desktop Controls */}
+              <div className="hidden md:flex items-center gap-2">
+                <StrictModeToggle strictMode={strictMode} setStrictMode={setStrictMode} />
+                <PersonaSelector persona={persona} setPersona={setPersona} />
+                <VoiceSettings outputVolume={outputVolume} onVolumeChange={setOutputVolume} />
+              </div>
 
             {/* Mobile Controls (Menu) */}
             <div className="flex md:hidden">
