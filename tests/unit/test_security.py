@@ -28,10 +28,7 @@ def test_scrub_pii_ssn():
 
 
 def test_rag_xml_sanitization():
-    from samvaad.core.unified_context import UnifiedContextManager
-
-    # Mock context manager
-    mgr = UnifiedContextManager("00000000-0000-0000-0000-000000000000", "user_id")
+    from samvaad.utils.citations import format_rag_context
 
     # Malicious content attempt
     chunks = [
@@ -42,7 +39,7 @@ def test_rag_xml_sanitization():
         },
     ]
 
-    formatted = mgr.format_rag_context(chunks)
+    formatted = format_rag_context(chunks)
 
     # Verify XML structure integrity
     # The malicious content should be escaped
@@ -59,7 +56,6 @@ def test_rag_xml_sanitization():
 
 def test_api_security_headers_middleware():
     from fastapi import Request, Response
-
 
     # Mock request and call_next
     async def mock_call_next(request):

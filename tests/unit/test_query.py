@@ -9,7 +9,9 @@ import pytest
 def reset_voyage_globals():
     """Reset global variables between tests to ensure clean state."""
     import samvaad.core.voyage
+
     samvaad.core.voyage._client = None
+
 
 class TestEmbedQuery:
     """Test query embedding functions."""
@@ -106,49 +108,25 @@ class TestSearchSimilarChunks:
 class TestQueryErrorHandling:
     """Test error handling in query functions."""
 
-    @patch("samvaad.pipeline.retrieval.query.generate_answer_with_groq")
     @patch("samvaad.pipeline.retrieval.query.search_similar_chunks")
     @patch("samvaad.pipeline.retrieval.query.embed_query")
-    def test_rag_query_pipeline_groq_failure(self, mock_embed, mock_search, mock_generate):
-        """Test RAG pipeline when Groq fails."""
+    def test_rag_query_pipeline_failure(self, mock_embed, mock_search):
+        """Test RAG pipeline when embed fails."""
         from samvaad.pipeline.retrieval.query import rag_query_pipeline
 
-        mock_embed.return_value = [0.1] * 1024
-        mock_search.return_value = [{"content": "Test", "filename": "test.txt", "rerank_score": 0.9}]
-        mock_generate.side_effect = Exception("Groq API error")
+        mock_embed.side_effect = Exception("Embed API error")
 
         result = rag_query_pipeline("test query")
 
         assert result["success"] is False
-        assert "Error" in result["answer"]
-
-    @patch("samvaad.pipeline.retrieval.query.rerank_documents")
-    @patch("samvaad.pipeline.retrieval.query.DBService")
-    def test_search_chunks_rerank_failure(self, mock_db_service, mock_rerank):
-        """Test handling of rerank failure."""
-        from samvaad.pipeline.retrieval.query import search_similar_chunks
-
-        mock_db_service.search_similar_chunks.return_value = [
-            {"id": "1", "document": "test", "metadata": {"filename": "test.txt"}, "distance": 0.1}
-        ]
-        mock_rerank.side_effect = Exception("Rerank API error")
-
-        query_emb = [0.1] * 1024
-
-        # Should handle error gracefully or raise - assuming raise for now based on implementation
-        try:
-            results = search_similar_chunks(query_emb, "test", top_k=3)
-        except Exception:
-            pass
 
 
 class TestRAGQueryPipeline:
     """Test the complete RAG query pipeline."""
 
-    @patch("samvaad.pipeline.retrieval.query.generate_answer_with_groq")
     @patch("samvaad.pipeline.retrieval.query.search_similar_chunks")
     @patch("samvaad.pipeline.retrieval.query.embed_query")
-    def test_rag_query_pipeline_success(self, mock_embed, mock_search, mock_generate):
+    def test_rag_query_pipeline_success(self, mock_embed, mock_search):
         """Test a successful full RAG pipeline run."""
         from samvaad.pipeline.retrieval.query import rag_query_pipeline
 
@@ -158,92 +136,10 @@ class TestRAGQueryPipeline:
             {"content": "Chunk B content", "filename": "B.pdf", "distance": 0.2, "rerank_score": 0.8},
         ]
         mock_search.return_value = mock_chunks
-        mock_generate.return_value = "The answer is in the documents."
 
         query_text = "What is A?"
         result = rag_query_pipeline(query_text)
 
         assert result["success"] is True
-        assert result["answer"] == "The answer is in the documents."
-        assert result["retrieval_count"] == 2
-        assert len(result["sources"]) == 2
-
-        # Verify sources format
-        assert result["sources"][0]["filename"] == "A.pdf"
-        assert result["sources"][0]["rerank_score"] == 0.9
-
-    @patch("samvaad.pipeline.retrieval.query.search_similar_chunks", return_value=[])
-    @patch("samvaad.pipeline.retrieval.query.embed_query")
-    def test_rag_query_pipeline_no_retrieval(self, mock_embed, mock_search):
-        """Test query pipeline when search returns no results."""
-        from samvaad.pipeline.retrieval.query import rag_query_pipeline
-
-        mock_embed.return_value = [0.1] * 1024
-
-        result = rag_query_pipeline("test query")
-
-        assert result["success"] is False
-        assert "No relevant documents" in result["answer"]
-        assert result["sources"] == []
-        assert result["retrieval_count"] == 0
-
-    @patch("samvaad.pipeline.retrieval.query.search_similar_chunks", return_value=[])
-    @patch("samvaad.pipeline.retrieval.query.embed_query")
-    def test_rag_query_pipeline_strict_mode_no_chunks(self, mock_embed, mock_search):
-        """Test strict mode when no chunks are found."""
-        from samvaad.pipeline.retrieval.query import rag_query_pipeline
-
-        mock_embed.return_value = [0.1] * 1024
-
-        result = rag_query_pipeline("test query", strict_mode=True)
-
-        assert result["success"] is True  # Strict mode "I don't know" is a success
-        assert "don't know" in result["answer"].lower()
-
-    @patch("samvaad.pipeline.retrieval.query.embed_query")
-    def test_rag_query_pipeline_error_handling(self, mock_embed):
-        """Test query pipeline error handling."""
-        from samvaad.pipeline.retrieval.query import rag_query_pipeline
-
-        mock_embed.side_effect = Exception("Test error")
-
-        result = rag_query_pipeline("test query")
-
-        assert result["success"] is False
-        assert "Error processing query" in result["answer"]
-        assert result["sources"] == []
-        assert result["retrieval_count"] == 0
-
-    @patch("samvaad.pipeline.retrieval.query.generate_answer_with_groq")
-    @patch("samvaad.pipeline.retrieval.query.search_similar_chunks")
-    @patch("samvaad.pipeline.retrieval.query.embed_query")
-    def test_rag_query_pipeline_with_persona(self, mock_embed, mock_search, mock_generate):
-        """Test RAG pipeline with persona parameter."""
-        from samvaad.pipeline.retrieval.query import rag_query_pipeline
-
-        mock_embed.return_value = [0.1] * 1024
-        mock_search.return_value = [{"content": "Test", "filename": "test.txt", "rerank_score": 0.9}]
-        mock_generate.return_value = "Friendly response"
-
-        result = rag_query_pipeline("test query", persona="friend")
-
-        assert result["success"] is True
-        # Verify persona was passed to generate function
-        call_kwargs = mock_generate.call_args
-        assert call_kwargs is not None
-
-    @patch("samvaad.pipeline.retrieval.query.generate_answer_with_groq")
-    @patch("samvaad.pipeline.retrieval.query.search_similar_chunks")
-    @patch("samvaad.pipeline.retrieval.query.embed_query")
-    def test_rag_query_pipeline_with_history(self, mock_embed, mock_search, mock_generate):
-        """Test RAG pipeline with conversation history."""
-        from samvaad.pipeline.retrieval.query import rag_query_pipeline
-
-        mock_embed.return_value = [0.1] * 1024
-        mock_search.return_value = [{"content": "Test", "filename": "test.txt", "rerank_score": 0.9}]
-        mock_generate.return_value = "Contextual response"
-
-        history = "User: Hi\nAssistant: Hello!"
-        result = rag_query_pipeline("test query", history_str=history)
-
-        assert result["success"] is True
+        assert len(result["chunks"]) == 2
+        assert result["chunks"][0]["filename"] == "A.pdf"

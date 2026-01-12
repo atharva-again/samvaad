@@ -264,10 +264,9 @@ export function MessageBubble({ message, index, onEdit }: MessageBubbleProps) {
 					const citationNum = citationMatch[1] || citationMatch[2];
 					const index = parseInt(citationNum, 10) - 1; // 0-indexed
 
-					// CitationBadge component with local hover state for instant feedback
 					return (
 						<CitationBadge
-							key={`citation-${citationNum}`}
+							key={`citation-${keyCounter++}`}
 							index={index}
 							citationNum={citationNum}
 							messageId={message.id || ""}
