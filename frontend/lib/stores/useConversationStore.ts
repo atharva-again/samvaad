@@ -552,11 +552,23 @@ export const useConversationStore = create<ConversationState>()(
 
 			createConversation: async (title = "New Conversation", mode = "text") => {
 				try {
-					const response = await api.post<Conversation>("/conversations", {
+					const response = await api.post<{
+						id: string;
+						title: string;
+						created_at: string;
+						updated_at: string;
+					}>("/conversations", {
 						title,
 						mode,
 					});
-					const newConversation = response.data;
+					const newConversation = {
+						id: response.data.id,
+						title: response.data.title,
+						isPinned: false,
+						createdAt: response.data.created_at,
+						updatedAt: response.data.updated_at,
+						mode: mode || "text",
+					};
 
 					set((state) => ({
 						conversations: [newConversation, ...state.conversations],
