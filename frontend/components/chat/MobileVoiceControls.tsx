@@ -2,7 +2,6 @@
 
 import { Brain, Mic, Settings, Speaker, User, Volume2 } from "lucide-react";
 import type React from "react";
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Popover,
@@ -11,33 +10,26 @@ import {
 } from "@/components/ui/popover";
 import { useAudioDevices } from "@/hooks/useAudioDevices";
 import { capitalize, PERSONAS } from "@/lib/constants";
+import { useInputBarStore } from "@/lib/stores/useInputBarStore";
 import { cn } from "@/lib/utils";
 
 interface MobileVoiceControlsProps {
 	className?: string;
 	sideOffset?: number;
-	enableTTS: boolean;
-	setEnableTTS: (value: boolean) => void;
-	strictMode: boolean;
-	setStrictMode: (value: boolean) => void;
-	persona: string;
-	setPersona: (value: string) => void;
-	outputVolume?: number;
-	onVolumeChange?: (volume: number) => void;
 }
 
 export function MobileVoiceControls({
 	className,
 	sideOffset = 16,
-	enableTTS,
-	setEnableTTS,
-	strictMode,
-	setStrictMode,
-	persona,
-	setPersona,
-	outputVolume = 1.0,
-	onVolumeChange,
 }: MobileVoiceControlsProps) {
+	const {
+		strictMode,
+		toggleStrictMode,
+		persona,
+		setPersona,
+		outputVolume,
+		setOutputVolume,
+	} = useInputBarStore();
 	const {
 		mics,
 		speakers,
@@ -46,8 +38,6 @@ export function MobileVoiceControls({
 		updateMic,
 		setSelectedSpeakerId,
 	} = useAudioDevices();
-
-	const [localVolume, setLocalVolume] = useState(outputVolume);
 
 	const handleMicChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
 		updateMic(e.target.value);
@@ -59,11 +49,10 @@ export function MobileVoiceControls({
 
 	const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
 		const vol = parseFloat(e.target.value);
-		setLocalVolume(vol);
-		onVolumeChange?.(vol);
+		setOutputVolume(vol);
 	};
 
-	const getVolumePercentage = () => Math.round(localVolume * 100);
+	const getVolumePercentage = () => Math.round(outputVolume * 100);
 
 	return (
 		<Popover>
@@ -97,7 +86,7 @@ export function MobileVoiceControls({
 					<div className="grid grid-cols-2 gap-3">
 						{/* Strict Mode Toggle */}
 						<button
-							onClick={() => setStrictMode(!strictMode)}
+							onClick={toggleStrictMode}
 							className={cn(
 								"flex flex-col items-start gap-2 p-3 rounded-xl border transition-all relative overflow-hidden",
 								strictMode
@@ -265,7 +254,7 @@ export function MobileVoiceControls({
 								min="0"
 								max="1"
 								step="0.01"
-								value={localVolume}
+								value={outputVolume}
 								onChange={handleVolumeChange}
 								className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
 							/>

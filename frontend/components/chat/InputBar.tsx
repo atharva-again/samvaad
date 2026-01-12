@@ -12,8 +12,6 @@ import {
 import { ActionTooltip } from "@/components/ui/action-tooltip";
 import { StrictModeToggle } from "@/components/chat/StrictModeToggle";
 import { PersonaSelector } from "@/components/chat/PersonaSelector";
-import { TTSToggle } from "@/components/chat/TTSToggle";
-import { LatencyIndicator } from "@/components/chat/LatencyIndicator";
 import { VoiceSettings } from "@/components/chat/VoiceSettings";
 import { MobileVoiceControls } from "@/components/chat/MobileVoiceControls";
 import { MobileTextControls } from "@/components/chat/MobileTextControls";
@@ -21,7 +19,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   usePipecatClient,
   useRTVIClientEvent,
-  usePipecatClientTransportState,
   VoiceVisualizer,
 } from "@pipecat-ai/client-react";
 import { RTVIEvent, TranscriptData } from "@pipecat-ai/client-js";
@@ -29,8 +26,9 @@ import { ChatMessage, API_BASE_URL } from "@/lib/api";
 
 import { Button } from "@/components/ui/button";
 import { useUIStore } from "@/lib/stores/useUIStore";
+import { useInputBarStore } from "@/lib/stores/useInputBarStore";
 import { cn } from "@/lib/utils";
-import { startVoiceMode, endVoiceMode } from "@/lib/api";
+import { endVoiceMode } from "@/lib/api";
 import { toast } from "sonner";
 import { AttachmentButton } from "./AttachmentButton";
 import { usePlatform } from "@/hooks/usePlatform";
@@ -50,24 +48,48 @@ interface InputBarProps {
 export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onMessageConsumed, onVoiceMessage }: InputBarProps) {
   const USE_MOCK_BACKEND = false; // Toggle this to true for mock backend
   const {
-    mode,
-    setMode,
     toggleSourcesPanel,
-    setSourcesPanelOpen,
-    addSource,
-    updateSourceStatus,
-    hasInteracted,
-    setHasInteracted
   } = useUIStore();
 
+  const {
+    mode,
+    setMode,
+    hasInteracted,
+    setHasInteracted,
+    strictMode,
+    persona,
+    enableTTS,
+    isSessionActive,
+    setSessionActive,
+    isConnecting,
+    setConnecting,
+    voiceState,
+    setVoiceState,
+    errorMessage,
+    setErrorMessage,
+    voiceDuration,
+    setVoiceDuration,
+    incrementVoiceDuration,
+    isPTTActive,
+    setIsPTTActive,
+    currentRoomUrl,
+    setCurrentRoomUrl,
+    endSession,
+    setError,
+  } = useInputBarStore();
+
   const [message, setMessage] = useState("");
-  const [isSessionActive, setIsSessionActive] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const currentRoomUrlRef = useRef<string | null>(null); // Ref for event handler access
   const currentBotResponseRef = useRef<string>(""); // Ref to aggregate bot sentences
   const currentUserTranscriptRef = useRef<string>(""); // Ref to aggregate user transcripts
   const { processFiles } = useFileProcessor();
+
+  // Sync ref with store value for event handler access
+  useEffect(() => {
+    currentRoomUrlRef.current = currentRoomUrl;
+  }, [currentRoomUrl]);
 
   // Handle initial mode selection
   const handleModeSelect = (selectedMode: "text" | "voice") => {
@@ -187,32 +209,9 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
       }, 50);
     }
   }, [mode, hasInteracted]);
-  const [voiceDuration, setVoiceDuration] = useState(0);
-
-  // Voice state (Listening vs Processing vs Answering vs Error)
-  const [voiceState, setVoiceState] = useState<"listening" | "processing" | "answering" | "error">(
-    "listening",
-  );
-  const [errorMessage, setErrorMessage] = useState<string>("");
 
   const client = usePipecatClient();
 
-  const [isConnecting, setIsConnecting] = useState(false);
-
-  // Power User State
-  const [enableTTS, setEnableTTS] = useState(true); // True = Voice-to-Voice, False = Voice-to-Text
-  const [persona, setPersona] = useState("default");
-  const [strictMode, setStrictMode] = useState(false);
-  const [latencyMs, setLatencyMs] = useState<number | null>(null);
-  const [isPTTActive, setIsPTTActive] = useState(false);
-
-  // Voice settings state
-  const [selectedMicId, setSelectedMicId] = useState<string>();
-  const [selectedSpeakerId, setSelectedSpeakerId] = useState<string>();
-  const [outputVolume, setOutputVolume] = useState(1.0);
-  const [currentRoomUrl, setCurrentRoomUrl] = useState<string | null>(null);
-
-  // Helper to set both state and ref for room URL
   const updateRoomUrl = (url: string | null) => {
     setCurrentRoomUrl(url);
     currentRoomUrlRef.current = url;
@@ -313,85 +312,19 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
 
   useRTVIClientEvent(RTVIEvent.BotReady, () => {
     console.debug("[InputBar] RTVIEvent.BotReady - setting isConnecting to false");
-    setIsConnecting(false);
+    setConnecting(false);
     setVoiceState("listening"); // Start in listening state
     toast.success("Voice agent ready");
   });
-
-  const handleDisconnect = async () => {
-    console.debug("[InputBar] handleDisconnect called, currentRoomUrl:", currentRoomUrl);
-
-    // If mocking, just return to base
-    if (USE_MOCK_BACKEND) {
-      setIsSessionActive(false);
-      return;
-    }
-
-    if (client) {
-      try {
-        await client.disconnect();
-        console.debug("[InputBar] Pipecat client disconnected");
-      } catch (err) {
-        console.warn("[InputBar] Error disconnecting client:", err);
-      }
-    }
-
-    // Clean up Daily room to save minutes (atomic check-and-clear to prevent duplicates)
-    const roomToCleanup = currentRoomUrlRef.current;
-    if (roomToCleanup) {
-      // Clear immediately to prevent duplicate cleanup from event handlers
-      updateRoomUrl(null);
-      console.debug("[InputBar] Cleaning up Daily room:", roomToCleanup);
-      const result = await endVoiceMode(roomToCleanup);
-      console.debug("[InputBar] endVoiceMode result:", result);
-    }
-
-    setIsSessionActive(false);
-    setVoiceDuration(0);
-  };
-
-  useRTVIClientEvent(RTVIEvent.Metrics, (metrics) => {
-    console.debug("[InputBar] RTVIEvent.Metrics:", metrics);
-
-    // Extract TTFB (Time To First Byte) values from services
-    // Metrics format: { ttfb: [{ processor: "DeepgramSTTService", value: 123 }, ...], processing: [...] }
-    try {
-      const m = metrics as any; // Cast to any to access dynamic properties
-      let totalLatency = 0;
-
-      // Sum up TTFB from all services (STT + LLM + TTS)
-      if (m?.ttfb && Array.isArray(m.ttfb)) {
-        for (const ttfbItem of m.ttfb) {
-          if (ttfbItem?.value && typeof ttfbItem.value === 'number') {
-            totalLatency += ttfbItem.value;
-          }
-        }
-      }
-
-      // If we got valid latency, update the indicator
-      if (totalLatency > 0) {
-        setLatencyMs(Math.round(totalLatency));
-      }
-    } catch (e) {
-      console.warn("[InputBar] Error parsing metrics:", e);
-    }
-  });
-
-  // Reset latency when session ends
-  useEffect(() => {
-    if (!isSessionActive) {
-      setLatencyMs(null);
-    }
-  }, [isSessionActive]);
 
   const handleStartSession = async () => {
     // If mocking
     if (USE_MOCK_BACKEND) {
       setVoiceDuration(0);
-      setIsConnecting(true);
+      setConnecting(true);
       setTimeout(() => {
-        setIsConnecting(false);
-        setIsSessionActive(true);
+        setConnecting(false);
+        setSessionActive(true);
         toast.success("Voice agent ready (MOCK)");
       }, 1500);
       return;
@@ -402,7 +335,7 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
       return;
     }
 
-    setIsConnecting(true);
+    setConnecting(true);
     setVoiceDuration(0);
 
     try {
@@ -414,7 +347,7 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
           console.warn("[InputBar] microphone permission denied", permErr);
           toast.error("Microphone permission denied. Please enable the mic to use Voice Mode.");
           setMode("text");
-          setIsConnecting(false);
+          setConnecting(false);
           return;
         }
       }
@@ -445,29 +378,23 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
       // Note: With startBotAndConnect, room URL is managed internally
       // We'll extract it from the client if needed for cleanup
 
-      setIsSessionActive(true);
-      // BotReady should fire and set isConnecting(false) via hook
+      setSessionActive(true);
 
       // Safety timeout - if still connecting after 30 seconds, trigger error state
       setTimeout(() => {
-        setIsConnecting((isStillConnecting) => {
-          if (isStillConnecting) {
-            setErrorMessage("Connection timed out");
-            setVoiceState("error");
-            setVoiceDuration(0);
-            // Keep session active so error UI shows
-            return false;
-          }
-          return isStillConnecting;
-        });
-      }, 30000); // 30 second timeout (matches backend)
+        const isStillConnecting = useInputBarStore.getState().isConnecting;
+        if (isStillConnecting) {
+          setError("Connection timed out");
+          setVoiceDuration(0);
+        }
+      }, 30000);
 
     } catch (error) {
       console.error("[InputBar] Failed to connect voice mode:", error);
       // Show error in voice capsule if still in voice mode
       setErrorMessage("Failed to connect");
       setVoiceState("error");
-      setIsConnecting(false);
+      setConnecting(false);
       // Keep isSessionActive true so error UI shows - user can retry from there
     }
   };
@@ -496,11 +423,11 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
         try {
           if (client) await client.disconnect();
         } catch (err) { console.warn(err); }
-        setIsSessionActive(false);
-        setIsConnecting(false);
+        setSessionActive(false);
+        setConnecting(false);
       })();
     }
-  }, [mode, client, setMode]);
+  }, [mode, client, isSessionActive, setSessionActive, setConnecting]);
 
   // Debugging: log when the client object changes so we can trace readiness.
   useEffect(() => {
@@ -611,11 +538,11 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
     if (isSessionActive && voiceState !== "error") {
       setErrorMessage("Connection lost");
       setVoiceState("error");
-      setIsConnecting(false);
+      setConnecting(false);
       // Keep isSessionActive true so error UI shows
     } else {
-      setIsSessionActive(false);
-      setIsConnecting(false);
+      setSessionActive(false);
+      setConnecting(false);
       setVoiceDuration(0);
     }
   });
@@ -642,14 +569,27 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
 
     setErrorMessage(message);
     setVoiceState("error");
-    setIsConnecting(false);
+    setConnecting(false);
     // Keep session "active" so error UI shows in the voice bar
     // User can retry or close from there
   });
 
 
 
-  // Handle text submission
+  const handleDisconnect = async () => {
+    const roomUrl = currentRoomUrlRef.current;
+    if (roomUrl) {
+      updateRoomUrl(null);
+      await endVoiceMode(roomUrl);
+    }
+    try {
+      if (client) await client.disconnect();
+    } catch (err) {
+      console.warn("[InputBar] disconnect error:", err);
+    }
+    endSession();
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (message.trim() && !isLoading) {
@@ -663,11 +603,11 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
     let interval: NodeJS.Timeout;
     if (mode === "voice" && isSessionActive) {
       interval = setInterval(() => {
-        setVoiceDuration((prev) => prev + 1);
+        incrementVoiceDuration();
       }, 1000);
     }
     return () => clearInterval(interval);
-  }, [mode, isSessionActive]);
+  }, [mode, isSessionActive, incrementVoiceDuration]);
 
   // Format seconds to MM:SS
   const formatTime = (seconds: number) => {
@@ -834,18 +774,13 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
 
               {/* Desktop Controls */}
               <div className="hidden md:flex items-center gap-1">
-                <StrictModeToggle strictMode={strictMode} setStrictMode={setStrictMode} />
-                <PersonaSelector persona={persona} setPersona={setPersona} />
+                <StrictModeToggle />
+                <PersonaSelector />
               </div>
 
               {/* Mobile Controls */}
               <div className="flex md:hidden">
-                <MobileTextControls
-                  strictMode={strictMode}
-                  setStrictMode={setStrictMode}
-                  persona={persona}
-                  setPersona={setPersona}
-                />
+                <MobileTextControls />
               </div>
             </div>
           </form>
@@ -910,7 +845,7 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
             <div className="flex-1 flex items-center justify-center">
               <div
                 className={cn(
-                  "flex items-center gap-3 px-6 py-2 rounded-full transition-all duration-500 min-w-[240px] relative z-10",
+                  "flex items-center justify-center gap-3 px-6 py-2 rounded-full transition-all duration-500 min-w-[360px] relative z-10",
                   isConnecting
                     ? "bg-white/5 text-text-primary border border-white/5"
                     : voiceState === "listening"
@@ -968,7 +903,7 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
                           // Reset state and retry
                           setVoiceState("listening");
                           setErrorMessage("");
-                          setIsSessionActive(false);
+                          setSessionActive(false);
                           // Small delay then restart
                           setTimeout(() => {
                             handleStartSession();
@@ -1000,36 +935,20 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
           {/* Spacer - Only show when session active to push controls right. When inactive, let StartButton take full width to center. */}
           {/* Spacer - Removed because flex-1 wrapper on Status handles centering/pushing */}
 
-          {/* Controls */}
-          <div className="flex items-center gap-1 md:gap-2 pr-2 relative z-10 max-w-full justify-end">
-            <div className="w-px h-4 bg-white/10 mx-1" />
-            {/* Latency Indicator - show during connecting and active session, hide on mobile */}
-            {(isConnecting || isSessionActive) && (
-              <div className="hidden md:block">
-                <LatencyIndicator latencyMs={latencyMs} />
-              </div>
-            )}
+            {/* Controls */}
+            <div className="flex items-center gap-1 md:gap-2 pr-2 relative z-10 max-w-full justify-end">
+              <div className="w-px h-4 bg-white/10 mx-1" />
 
-            {/* Desktop Controls */}
-            <div className="hidden md:flex items-center gap-2">
-              <TTSToggle enableTTS={enableTTS} setEnableTTS={setEnableTTS} />
-              <StrictModeToggle strictMode={strictMode} setStrictMode={setStrictMode} />
-              <PersonaSelector persona={persona} setPersona={setPersona} />
-              <VoiceSettings outputVolume={outputVolume} onVolumeChange={setOutputVolume} />
-            </div>
+              {/* Desktop Controls */}
+              <div className="hidden md:flex items-center gap-2">
+                <StrictModeToggle />
+                <PersonaSelector />
+                <VoiceSettings />
+              </div>
 
             {/* Mobile Controls (Menu) */}
             <div className="flex md:hidden">
-              <MobileVoiceControls
-                enableTTS={enableTTS}
-                setEnableTTS={setEnableTTS}
-                strictMode={strictMode}
-                setStrictMode={setStrictMode}
-                persona={persona}
-                setPersona={setPersona}
-                outputVolume={outputVolume}
-                onVolumeChange={setOutputVolume}
-              />
+              <MobileVoiceControls />
             </div>
 
 

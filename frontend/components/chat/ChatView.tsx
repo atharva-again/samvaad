@@ -9,6 +9,7 @@ import { MessageList } from "@/components/chat/MessageList";
 import { WelcomeScreen } from "@/components/chat/WelcomeScreen";
 import { type ChatMessage, sendMessage } from "@/lib/api";
 import { useConversationStore } from "@/lib/stores/useConversationStore";
+import { useInputBarStore } from "@/lib/stores/useInputBarStore";
 import { useUIStore } from "@/lib/stores/useUIStore";
 import { cn } from "@/lib/utils";
 
@@ -58,12 +59,11 @@ export function ChatView({ conversationId }: ChatViewProps) {
 		setSourcesPanelOpen,
 		isSidebarOpen,
 		isSourcesPanelOpen,
-		setHasInteracted,
 		allowedSourceIds,
-		mode,
 		isVoiceSessionActive,
 		activeVoiceConversationId,
 	} = useUIStore();
+	const { setHasInteracted } = useInputBarStore();
 
 	// Reset to mode switcher ONLY when clicking on a DIFFERENT conversation in sidebar
 	// Do NOT reset when:

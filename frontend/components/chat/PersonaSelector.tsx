@@ -8,21 +8,19 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useInputBarStore } from "@/lib/stores/useInputBarStore";
 import { cn } from "@/lib/utils";
 
 interface PersonaSelectorProps {
-	persona: string;
-	setPersona: (value: string) => void;
 	className?: string;
 	sideOffset?: number;
 }
 
 export function PersonaSelector({
-	persona,
-	setPersona,
 	className,
 	sideOffset = 16,
 }: PersonaSelectorProps) {
+	const { persona, setPersona } = useInputBarStore();
 	const personas = ["default", "tutor", "coder", "friend", "expert"];
 
 	return (

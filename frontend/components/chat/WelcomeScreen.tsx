@@ -11,12 +11,14 @@ import type React from "react";
 import { useRef } from "react";
 import { useFileProcessor } from "@/hooks/useFileProcessor";
 import { usePlatform } from "@/hooks/usePlatform";
+import { useInputBarStore } from "@/lib/stores/useInputBarStore";
 import { useUIStore } from "@/lib/stores/useUIStore";
 import { cn } from "@/lib/utils";
 
 export function WelcomeScreen() {
 	const { modifier, isMobile } = usePlatform();
-	const { setMode, toggleSourcesPanel, setHasInteracted } = useUIStore();
+	const { toggleSourcesPanel } = useUIStore();
+	const { setMode, setHasInteracted } = useInputBarStore();
 	const { processFiles } = useFileProcessor();
 	const fileInputRef = useRef<HTMLInputElement>(null);
 

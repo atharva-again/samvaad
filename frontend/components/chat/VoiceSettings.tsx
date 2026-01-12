@@ -2,7 +2,6 @@
 
 import { Mic, Settings, Speaker, Volume2 } from "lucide-react";
 import type React from "react";
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Popover,
@@ -10,21 +9,19 @@ import {
 	PopoverTrigger,
 } from "@/components/ui/popover";
 import { useAudioDevices } from "@/hooks/useAudioDevices";
+import { useInputBarStore } from "@/lib/stores/useInputBarStore";
 import { cn } from "@/lib/utils";
 
 interface VoiceSettingsProps {
 	className?: string;
 	sideOffset?: number;
-	outputVolume?: number;
-	onVolumeChange?: (volume: number) => void;
 }
 
 export function VoiceSettings({
 	className,
 	sideOffset = 24,
-	outputVolume = 1.0,
-	onVolumeChange,
 }: VoiceSettingsProps) {
+	const { outputVolume, setOutputVolume } = useInputBarStore();
 	const {
 		mics,
 		speakers,
@@ -33,8 +30,6 @@ export function VoiceSettings({
 		updateMic,
 		setSelectedSpeakerId,
 	} = useAudioDevices();
-
-	const [localVolume, setLocalVolume] = useState(outputVolume);
 
 	const handleMicChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
 		updateMic(e.target.value);
@@ -46,11 +41,10 @@ export function VoiceSettings({
 
 	const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
 		const vol = parseFloat(e.target.value);
-		setLocalVolume(vol);
-		onVolumeChange?.(vol);
+		setOutputVolume(vol);
 	};
 
-	const getVolumePercentage = () => Math.round(localVolume * 100);
+	const getVolumePercentage = () => Math.round(outputVolume * 100);
 
 	return (
 		<Popover>
@@ -160,7 +154,7 @@ export function VoiceSettings({
 								min="0"
 								max="1"
 								step="0.01"
-								value={localVolume}
+								value={outputVolume}
 								onChange={handleVolumeChange}
 								className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
 							/>
@@ -176,13 +170,10 @@ export function VoiceSettings({
 								<button
 									type="button"
 									key={preset}
-									onClick={() => {
-										setLocalVolume(preset);
-										onVolumeChange?.(preset);
-									}}
+									onClick={() => setOutputVolume(preset)}
 									className={cn(
 										"flex-1 py-1.5 rounded-md text-xs font-medium transition-all",
-										Math.abs(localVolume - preset) < 0.05
+										Math.abs(outputVolume - preset) < 0.05
 											? "bg-accent/20 text-accent border border-accent/30"
 											: "bg-white/5 text-white/60 hover:bg-white/10 hover:text-white/80",
 									)}

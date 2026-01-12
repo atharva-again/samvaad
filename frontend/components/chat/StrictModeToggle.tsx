@@ -1,25 +1,21 @@
 import { Brain, Slash } from "lucide-react";
 import { ActionTooltip } from "@/components/ui/action-tooltip";
 import { Button } from "@/components/ui/button";
+import { useInputBarStore } from "@/lib/stores/useInputBarStore";
 import { cn } from "@/lib/utils";
 
 interface StrictModeToggleProps {
-	strictMode: boolean;
-	setStrictMode: (value: boolean) => void;
-	className?: string; // Allow overriding classes if needed
+	className?: string;
 }
 
-export function StrictModeToggle({
-	strictMode,
-	setStrictMode,
-	className,
-}: StrictModeToggleProps) {
+export function StrictModeToggle({ className }: StrictModeToggleProps) {
+	const { strictMode, toggleStrictMode } = useInputBarStore();
 	return (
 		<Button
 			size="icon"
 			type="button"
 			variant="ghost"
-			onClick={() => setStrictMode(!strictMode)}
+			onClick={toggleStrictMode}
 			className={cn(
 				"rounded-full w-10 h-10 transition-colors relative group hover:bg-white/10",
 				strictMode ? "text-text-primary" : "text-text-secondary",
