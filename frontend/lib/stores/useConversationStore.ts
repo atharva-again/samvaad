@@ -568,6 +568,7 @@ export const useConversationStore = create<ConversationState>()(
 						createdAt: response.data.created_at,
 						updatedAt: response.data.updated_at,
 						mode: mode || "text",
+						messageCount: 0,
 					};
 
 					set((state) => ({
