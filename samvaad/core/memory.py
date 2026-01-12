@@ -6,7 +6,7 @@ Provides:
 2. Fact extraction (background)
 3. Summarization (background)
 
-Note: Sliding window and message formatting moved to unified_context.py
+Note: Sliding window and message formatting are in utils/text.py
 """
 
 import os
@@ -15,7 +15,7 @@ import re
 from groq import AsyncGroq
 
 # Import from unified source of truth
-from samvaad.core.unified_context import format_messages_for_prompt
+from samvaad.utils.text import format_messages_for_prompt
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Complexity Detection (Heuristics)

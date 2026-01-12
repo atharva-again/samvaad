@@ -216,7 +216,6 @@ class TextMessageRequest(BaseModel):
     conversation_id: str | None = None
     user_message_id: str | None = None
     assistant_message_id: str | None = None
-    session_id: str = "default"  # Legacy, kept for backward compatibility
     persona: str = "default"
     strict_mode: bool = False
     allowed_file_ids: list[str] | None = None
@@ -309,11 +308,8 @@ async def text_mode(
     from uuid import UUID as UUIDType
 
     from samvaad.core.memory import detect_query_complexity
-    from samvaad.core.unified_context import (
-        SLIDING_WINDOW_SIZE,
-        UnifiedContextManager,
-        build_sliding_window_context,
-    )
+    from samvaad.core.unified_context import SLIDING_WINDOW_SIZE, UnifiedContextManager
+    from samvaad.utils.text import build_sliding_window_context
     from samvaad.db.conversation_service import ConversationService
 
     conversation_service = ConversationService()
@@ -371,73 +367,14 @@ async def text_mode(
         if result.get("used_tool"):
             logger.info("[TextAgent] Used fetch_context tool")
 
-        # Save messages to database
-        user_tokens = context_manager.count_tokens(request.message)
-        assistant_tokens = context_manager.count_tokens(response)
-
-        user_message_id = None
-        if request.user_message_id:
-            try:
-                user_message_id = UUIDType(request.user_message_id)
-            except ValueError:
-                pass
-
-        assistant_message_id = None
-        if request.assistant_message_id:
-            try:
-                assistant_message_id = UUIDType(request.assistant_message_id)
-            except ValueError:
-                pass
-
-        conversation_service.add_message(
-            conversation_id=conversation.id,
-            role="user",
-            content=request.message,
-            token_count=user_tokens,
-            message_id=user_message_id,
-        )
-        conversation_service.add_message(
-            conversation_id=conversation.id,
-            role="assistant",
-            content=response,
-            sources=sources,
-            token_count=assistant_tokens,
-            message_id=assistant_message_id,
-        )
-
-        # Background: Batched summarization every 4 messages
-        SUMMARIZATION_BATCH_SIZE = 4
-        total_messages = len(messages) + 2
-
-        if total_messages > SLIDING_WINDOW_SIZE:
-            messages_in_window = SLIDING_WINDOW_SIZE
-            exited_count = total_messages - messages_in_window
-
-            if exited_count >= SUMMARIZATION_BATCH_SIZE and exited_count % SUMMARIZATION_BATCH_SIZE < 2:
-                batch_start = max(0, exited_count - SUMMARIZATION_BATCH_SIZE)
-                exiting_batch = messages[batch_start:exited_count] if batch_start < len(messages) else []
-
-                if exiting_batch:
-                    start_turn = batch_start + 1
-                    end_turn = exited_count
-                    background_tasks.add_task(
-                        _update_summary_task,
-                        conversation.id,
-                        current_user.id,
-                        conversation.summary,
-                        exiting_batch,
-                        start_turn,
-                        end_turn,
-                    )
-
-        # Background: Extract facts from this exchange
+        # Trigger centralized background tasks
         background_tasks.add_task(
-            _update_facts_task,
-            conversation.id,
-            current_user.id,
-            conversation.facts or "",
-            request.message,
-            response,
+            context_manager.run_post_response_tasks,
+            user_message=request.message,
+            assistant_response=response,
+            current_summary=conversation.summary,
+            current_facts=conversation.facts,
+            sources=sources,
         )
 
         # Auto-generate title for new conversations
@@ -463,62 +400,6 @@ async def text_mode(
         logger.error(traceback.format_exc())
         # Return generic error to client (don't expose internals)
         return {"error": "An internal server error occurred.", "success": False}
-
-
-# =============================================================================
-# Background Task Helpers
-# =============================================================================
-
-
-async def _update_summary_task(
-    conversation_id,
-    user_id: str,
-    existing_summary: str,
-    exiting_messages: list,
-    start_turn: int = 1,
-    end_turn: int = 1,
-):
-    """Background task: Update conversation summary with turn-range format."""
-    from samvaad.core.memory import update_conversation_summary
-    from samvaad.db.conversation_service import ConversationService
-
-    try:
-        new_summary = await update_conversation_summary(
-            existing_summary,
-            exiting_messages,
-            start_turn=start_turn,
-            end_turn=end_turn,
-        )
-        ConversationService().update_conversation(conversation_id, user_id, summary=new_summary)
-        logger.debug(f"[Memory] Updated summary for {conversation_id} (turns {start_turn}-{end_turn})")
-    except Exception as e:
-        logger.error(f"[Memory] Summary update error: {e}")
-
-
-async def _update_facts_task(
-    conversation_id,
-    user_id: str,
-    existing_facts: str,
-    user_message: str,
-    assistant_message: str,
-):
-    """Background task: Extract and merge facts from exchange."""
-    from samvaad.core.memory import extract_facts_from_exchange
-    from samvaad.db.conversation_service import ConversationService
-
-    try:
-        merged_facts = await extract_facts_from_exchange(
-            user_message,
-            assistant_message,
-            existing_facts=existing_facts,
-        )
-
-        if merged_facts:
-            updated_facts = ". ".join([f.get("fact", "") for f in merged_facts if f.get("fact")])
-            ConversationService().update_conversation(conversation_id, user_id, facts=updated_facts)
-            logger.debug(f"[Memory] Updated facts for {conversation_id}")
-    except Exception as e:
-        logger.error(f"[Memory] Fact extraction error: {e}")
 
 
 # =============================================================================

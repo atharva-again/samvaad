@@ -290,7 +290,7 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
     try {
       const transport = client?.transport as any;
       // DailyTransport exposes roomUrl via different paths depending on version
-      const rocuomUrl =
+      const roomUrl =
         transport?.roomUrl ||
         transport?._roomUrl ||
         transport?.daily?.roomUrl ||

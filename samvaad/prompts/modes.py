@@ -20,9 +20,10 @@ def get_mode_instruction(strict_mode: bool, is_voice: bool = False) -> str:
 4. **Citations - CRITICAL**:
    - The tool returns content in `<document id="X">` tags where X is a number (1, 2, 3, etc.).
    - You MUST cite inline using `[1]`, `[2]`, `[3]` matching the document IDs.
-   - Example: "According to the research [1], workers are using AI [2]."
+   - Example: "The documents indicate [1] that workers are using AI tools [2] to automate tasks."
    - **NEVER** use filenames like `[file.pdf]` - only use numeric IDs.
    - **NEVER** add a references section at the end.
+5. **No Repetitive Openings**: Avoid starting every response with phrases like "According to the research" or "Based on the documents". Simply answer the question naturally while incorporating citations.
 
 ### Conversational Rules
 - Resolve pronouns (it, him, that) using the chat history before searching.
@@ -39,9 +40,10 @@ def get_mode_instruction(strict_mode: bool, is_voice: bool = False) -> str:
 4. **Citations - CRITICAL**:
    - When you use content from `fetch_context` results, you MUST cite using `[1]`, `[2]`, `[3]` inline.
    - Match citations to the `<document id="X">` tags in the tool response.
-   - Example: "According to the research [1], workers are using AI tools [2]."
+   - Example: "Based on the provided information [1], companies are adopting AI [2] rapidly."
    - **NEVER** use filenames like `[file.pdf]`.
    - **NEVER** add a references section at the end.
+5. **No Repetitive Openings**: Avoid starting every response with phrases like "According to the research" or "Based on the documents". Simply answer the question naturally while incorporating citations.
 
 ### Conversational Rules
 - Resolve pronouns using history.

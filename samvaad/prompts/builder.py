@@ -1,3 +1,4 @@
+from samvaad.core.types import ConversationMode
 from .modes import get_mode_instruction
 from .personas import get_persona_prompt
 from .styles import VOICE_STYLE_INSTRUCTION
@@ -9,29 +10,12 @@ class PromptBuilder:
 
     Single source of truth for prompt assembly logic.
     Replaces scattered prompt building code across text_agent, voice_agent, generation, etc.
-
-    Usage:
-        # Voice mode with tools
-        prompt = (PromptBuilder()
-            .with_persona("tutor")
-            .with_strict_mode(True)
-            .for_voice_mode()
-            .with_tools()
-            .build())
-
-        # Text mode with pre-fetched context
-        prompt = (PromptBuilder()
-            .with_persona("default")
-            .with_strict_mode(False)
-            .with_context(formatted_chunks)
-            .with_history(conversation_history)
-            .build())
     """
 
     def __init__(self):
         self.persona = "default"
         self.strict_mode = False
-        self.is_voice = False
+        self.mode = ConversationMode.TEXT
         self.has_tools = False
         self.context = ""
         self.history = ""
@@ -45,8 +29,8 @@ class PromptBuilder:
         self.strict_mode = enabled
         return self
 
-    def for_voice_mode(self) -> "PromptBuilder":
-        self.is_voice = True
+    def with_mode(self, mode: ConversationMode) -> "PromptBuilder":
+        self.mode = mode
         return self
 
     def with_tools(self) -> "PromptBuilder":
@@ -69,16 +53,12 @@ class PromptBuilder:
     def build(self) -> str:
         """
         Assemble the final system prompt based on configuration.
-
-        Logic:
-        1. Voice mode: Persona + Mode (with voice style baked in)
-        2. Text mode with tools: Persona + Mode + History
-        3. Text mode with pre-fetched context: Persona + Mode + XML structure (history, context)
         """
         persona_intro = get_persona_prompt(self.persona)
-        mode_instruction = get_mode_instruction(self.strict_mode, is_voice=self.is_voice)
+        is_voice = self.mode == ConversationMode.VOICE
+        mode_instruction = get_mode_instruction(self.strict_mode, is_voice=is_voice)
 
-        if self.is_voice:
+        if is_voice:
             base = f"{persona_intro}\n\n{mode_instruction}\n\n{VOICE_STYLE_INSTRUCTION}"
             if self.additional_sections:
                 base += "\n\n" + "\n\n".join(self.additional_sections)

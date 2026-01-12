@@ -1,6 +1,6 @@
 """Test prompt generation functions."""
 
-from samvaad.prompts import get_system_prompt
+from samvaad.prompts import PromptBuilder
 from samvaad.prompts.modes import get_mode_instruction
 from samvaad.prompts.personas import PERSONAS, get_persona_prompt
 
@@ -27,7 +27,7 @@ def test_get_mode_instruction_strict():
     # Check for strict mode markers in current implementation
     assert "Strict Mode" in inst
     # Check for key phrase variations
-    assert "i don't have information" in inst.lower()
+    assert "don't have information" in inst.lower()
 
 
 def test_get_mode_instruction_hybrid():
@@ -39,22 +39,22 @@ def test_get_mode_instruction_hybrid():
     assert "Strict Mode" not in inst
 
 
-def test_get_system_prompt_structure():
+def test_prompt_builder_structure():
     """Test that system prompt contains all key components."""
-    chunks = [{"content": "Doc content", "filename": "doc1.txt"}]
-    prompt = get_system_prompt(
-        persona="friend",
-        strict_mode=True,
-        context_chunks=chunks,
-        conversation_history="User said hi",
+    prompt = (
+        PromptBuilder()
+        .with_persona("friend")
+        .with_strict_mode(True)
+        .with_context("Doc content")
+        .with_history("User said hi")
+        .build()
     )
 
-    # Check for components - using markers from current implementation
+    # Check for components
     assert PERSONAS["friend"] in prompt
     assert "Doc content" in prompt
     assert "User said hi" in prompt
     assert "Strict Mode" in prompt
-    # Current implementation uses <context> tags, not "Instructions:"
     assert "<context>" in prompt
     assert "</context>" in prompt
     assert "Provide your answer:" in prompt

@@ -17,9 +17,11 @@ import os
 
 from groq import AsyncGroq
 
-from samvaad.core.unified_context import format_messages_for_prompt
+from samvaad.core.types import ConversationMode
+from samvaad.utils.text import format_messages_for_prompt
 from samvaad.pipeline.retrieval.query import rag_query_pipeline
 from samvaad.prompts import PromptBuilder
+from samvaad.utils.citations import format_rag_context
 from samvaad.utils.logger import logger
 
 # Tool definition (same as voice_agent.py)
@@ -59,41 +61,30 @@ async def _execute_rag(query: str, user_id: str, file_ids: list[str] = None, str
             asyncio.to_thread(
                 rag_query_pipeline,
                 query,
-                generate_answer=False,
                 user_id=user_id,
                 file_ids=file_ids,
-                strict_mode=strict_mode,
             ),
             timeout=RAG_TIMEOUT_SECONDS,
         )
 
-        # Format chunks as context
+        # Format chunks as context using unified utility
         chunks = result.get("chunks", [])
-        if not chunks:
-            return {"context": "No relevant information found in the knowledge base.", "sources": []}
+        context = format_rag_context(chunks)
 
-        # Format as simple text (not XML for tool response)
-        context_parts = []
+        # Build full source objects for citations panel
         sources = []
-        for i, chunk in enumerate(chunks[:3], 1):
-            content = chunk.get("content", "")
-            content_truncated = content[:500]  # Truncate for LLM context
-            filename = chunk.get("filename", "document")
-            # Use XML format to match system prompt instructions
-            context_parts.append(f'<document id="{i}">\n{content_truncated}\n</document>')
-
-            # Build full source object for citations panel
+        for chunk in chunks[:3]:
             sources.append(
                 {
-                    "filename": filename,
-                    "content_preview": content[:1000],  # More content for citations view
+                    "filename": chunk.get("filename", "document"),
+                    "content_preview": chunk.get("content", "")[:1000],
                     "rerank_score": chunk.get("rerank_score"),
                     "chunk_id": chunk.get("chunk_id"),
                     "metadata": chunk.get("metadata", {}),
                 }
             )
 
-        return {"context": "\n\n".join(context_parts), "sources": sources}
+        return {"context": context, "sources": sources}
 
     except TimeoutError:
         return {"context": "Search timed out. Please try again.", "sources": []}
@@ -136,10 +127,12 @@ async def text_agent_respond(
 
     client = AsyncGroq(api_key=groq_key)
 
+    # Build system prompt using unified builder
     builder = (
         PromptBuilder()
         .with_persona(persona)
         .with_strict_mode(strict_mode)
+        .with_mode(ConversationMode.TEXT)
         .with_tools()
         .with_history(format_messages_for_prompt(messages))
     )

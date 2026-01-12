@@ -76,8 +76,7 @@ def test_ingestion_flow_mocks(mock_db_for_ingestion, mock_embedding, mock_parse_
 @patch("samvaad.pipeline.retrieval.query.DBService")
 @patch("samvaad.pipeline.retrieval.query.embed_query")
 @patch("samvaad.pipeline.retrieval.query.rerank_documents")
-@patch("samvaad.pipeline.retrieval.query.generate_answer_with_groq")
-def test_retrieval_flow_mocks(mock_gen, mock_rerank, mock_embed, mock_db):
+def test_retrieval_flow_mocks(mock_rerank, mock_embed, mock_db):
     """
     Test the retrieval pipeline logic with mocked DB.
     """
@@ -96,12 +95,9 @@ def test_retrieval_flow_mocks(mock_gen, mock_rerank, mock_embed, mock_db):
     mock_rerank_res.results = [result_item]
     mock_rerank.return_value = mock_rerank_res
 
-    mock_gen.return_value = "Test Answer"
-
     # Run
     result = rag_query_pipeline("test query")
 
     assert result["success"] is True
-    assert result["answer"] == "Test Answer"
-    assert len(result["sources"]) == 1
-    assert result["sources"][0]["filename"] == "test.txt"
+    assert len(result["chunks"]) == 1
+    assert result["chunks"][0]["filename"] == "test.txt"

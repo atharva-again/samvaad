@@ -28,9 +28,11 @@ from pipecat.services.groq.llm import GroqLLMService
 from pipecat.transports.daily.transport import DailyParams, DailyTransport
 from pipecat.utils.text.markdown_text_filter import MarkdownTextFilter
 
+from samvaad.core.types import ConversationMode
 from samvaad.core.unified_context import SamvaadLLMContext
 from samvaad.pipeline.retrieval.query import rag_query_pipeline
 from samvaad.prompts import PromptBuilder
+from samvaad.utils.citations import format_rag_context
 from samvaad.utils.logger import logger
 from samvaad.utils.text_filters import CitationTextFilter
 
@@ -254,20 +256,14 @@ async def start_voice_agent(
             sources = []
             # Run blocking RAG code with timeout to avoid hanging
             result = await asyncio.wait_for(
-                asyncio.to_thread(
-                    rag_query_pipeline, query, generate_answer=False, user_id=user_id, strict_mode=strict_mode
-                ),
+                asyncio.to_thread(rag_query_pipeline, query, user_id=user_id, file_ids=None),
                 timeout=RAG_TIMEOUT_SECONDS,
             )
 
             chunks = result.get("chunks", [])
-            if chunks:
-                context_parts = []
-                for i, chunk in enumerate(chunks, 1):
-                    content = chunk.get("content", "")
-                    context_parts.append(f'<document id="{i}">\n{content}\n</document>')
-                rag_text = "\n\n".join(context_parts)
+            rag_text = format_rag_context(chunks)
 
+            if chunks:
                 logger.info(f"[voice_agent] RAG formatted {len(chunks)} chunks with XML tags")
                 logger.debug(f"[voice_agent] RAG context preview: {rag_text[:300]}...")
 
@@ -282,7 +278,6 @@ async def start_voice_agent(
                         }
                     )
             else:
-                rag_text = "No relevant information found."
                 logger.warning("[voice_agent] RAG returned no chunks")
 
         except TimeoutError:
@@ -334,10 +329,13 @@ async def start_voice_agent(
     citation_filter = CitationTextFilter()
 
     # 4. Context & Persona - Use unified context manager for consistent prompts
-    from samvaad.core.unified_context import UnifiedContextManager
-
     system_instruction = (
-        PromptBuilder().with_persona(persona).with_strict_mode(strict_mode).for_voice_mode().with_tools().build()
+        PromptBuilder()
+        .with_persona(persona)
+        .with_strict_mode(strict_mode)
+        .with_mode(ConversationMode.VOICE)
+        .with_tools()
+        .build()
     )
 
     # Use Groq with llama-3.3-70b-versatile (same as text mode for consistent citation behavior)
