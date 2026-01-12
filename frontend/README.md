@@ -1,36 +1,85 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Samvaad Frontend
 
-## Getting Started
+> **Premium Conversational UI for Dialogue-Based Learning**
 
-First, run the development server:
+This is the Next.js frontend for Samvaad, designed to provide a seamless, premium interface for both text-based RAG chat and real-time WebRTC voice sessions.
+
+## 🎨 UI/UX Philosophy
+
+- **Void Theme**: A custom-crafted dark mode experience using deep blacks (`bg-void`) and high-contrast typography.
+- **Glassmorphism**: Subtle use of transparency and blurs for a modern, layered feel.
+- **Responsive & Dynamic**: Fully adaptive layout with fluid animations powered by Framer Motion.
+- **Shadcn/ui**: Built on top of accessible, modular components with a custom "New York" style.
+
+## 🛠 Tech Stack
+
+- **Framework**: Next.js 15+ (App Router, Server Components)
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS
+- **State Management**: Zustand (UI state, chat session management)
+- **Real-time Voice**: Daily WebRTC SDK & Pipecat integration
+- **Linting/Formatting**: Biome (Fast, modern alternative to ESLint/Prettier)
+- **Auth**: Supabase Auth (SSR support)
+
+## 🚀 Getting Started
+
+### Prerequisites
+- pnpm (Recommended)
+- Running Samvaad Backend (FastAPI)
+- Supabase Project
+
+### Installation
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Environment Setup
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Create a `.env.local` file:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```env
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
 
-## Learn More
+### Development
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+pnpm dev
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Build & Lint
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+# Check for lint/format errors
+pnpm biome check .
 
-## Deploy on Vercel
+# Fix lint/format errors
+pnpm biome check --apply .
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+# Build for production
+pnpm build
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 🏗 Structure
+
+- `app/`: Next.js App Router (Routes, Layouts, Pages)
+- `components/`:
+  - `chat/`: Core chat interface components (InputBar, MessageList, SourcesPanel)
+  - `ui/`: Base Shadcn/ui components
+  - `navigation/`: Sidebar and header elements
+- `contexts/`: React Contexts for Auth and Global State
+- `hooks/`: Custom React hooks (Audio devices, Chat logic)
+- `lib/`: Shared utilities and store definitions (Zustand)
+- `utils/`: API clients and helper functions
+
+## 🧠 Developer Context
+
+For detailed information on frontend-specific conventions, anti-patterns, and file roles, see:
+👉 **[`app/AGENTS.md`](./app/AGENTS.md)**
+
+---
+
+Built with ❤️ for better learning.
