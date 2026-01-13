@@ -260,17 +260,7 @@ export function IconNavRail() {
 				isExpanded ? "w-60" : "w-14",
 			)}
 		>
-			{/* Logo */}
-			<div className="h-14 flex items-center justify-center border-b border-white/5 shrink-0">
-				<div
-					className={cn(
-						"font-bold text-white tracking-tight transition-all",
-						isExpanded ? "text-lg" : "text-xl",
-					)}
-				>
-					{isExpanded ? "Samvaad" : "S"}
-				</div>
-			</div>
+			<div className="h-14 border-b border-white/5 shrink-0" />
 
 			{/* Navigation */}
 			<nav

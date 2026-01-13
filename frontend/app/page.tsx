@@ -40,12 +40,6 @@ function LandingPage({ signInWithGoogle }: { signInWithGoogle: () => void }) {
 			<nav className="fixed top-0 left-0 right-0 z-[100] border-b border-white/[0.05] bg-void/60 backdrop-blur-xl px-4 sm:px-6">
 				<div className="flex items-center justify-between py-3 mx-auto max-w-6xl">
 					<div className="flex items-center gap-2.5 group cursor-pointer">
-						<div className="relative w-8 h-8">
-							<div className="absolute inset-0 bg-white/20 blur-md rounded-lg group-hover:bg-signal/20 transition-colors" />
-							<div className="relative w-full h-full rounded-lg bg-gradient-to-br from-white to-white/70 flex items-center justify-center border border-white/20 shadow-sm">
-								<div className="w-3.5 h-3.5 bg-void rounded-[3px]" />
-							</div>
-						</div>
 						<span className="text-lg font-bold tracking-tight">Samvaad</span>
 					</div>
 					<button
@@ -288,9 +282,6 @@ function LandingPage({ signInWithGoogle }: { signInWithGoogle: () => void }) {
 				<div className="flex flex-col md:flex-row justify-between items-start gap-12 mb-16 text-left antialiased">
 					<div className="max-w-xs space-y-4">
 						<div className="flex items-center gap-2.5">
-							<div className="w-7 h-7 rounded-lg bg-white flex items-center justify-center shadow-sm">
-								<div className="w-3 h-3 bg-void rounded-sm" />
-							</div>
 							<span className="text-lg font-bold tracking-tight">Samvaad</span>
 						</div>
 						<p className="text-base text-white/30 leading-relaxed italic text-left">
