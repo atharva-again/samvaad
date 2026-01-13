@@ -8,7 +8,7 @@ interface FeaturesProps {
 
 export function Features({ signInWithGoogle }: FeaturesProps) {
 	return (
-		<section className="px-6 py-20 mx-auto max-w-6xl">
+		<section id="features" className="px-6 py-20 mx-auto max-w-6xl">
 			<div className="grid grid-cols-1 gap-6 md:grid-cols-12 md:grid-rows-2 text-left">
 				<motion.div
 					whileHover={{ y: -3 }}
