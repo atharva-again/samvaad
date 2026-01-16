@@ -80,9 +80,9 @@ export function Navbar({ signInWithGoogle }: NavbarProps) {
 
 				<div className="flex items-center justify-end">
 					<Button
+						asChild
 						variant={scrolled ? "secondary" : "outline"}
 						size={scrolled ? "sm" : "default"}
-						onClick={signInWithGoogle}
 						className={cn(
 							"rounded-full transition-all duration-300 font-medium",
 							scrolled
@@ -90,7 +90,7 @@ export function Navbar({ signInWithGoogle }: NavbarProps) {
 								: "bg-white/5 hover:bg-white/10 border-white/10 text-text-primary",
 						)}
 					>
-						Launch App
+						<Link href="/login">Launch App</Link>
 					</Button>
 				</div>
 			</div>

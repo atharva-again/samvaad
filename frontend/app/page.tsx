@@ -2,6 +2,7 @@
 
 import { useScroll, useTransform } from "framer-motion";
 import { useRef } from "react";
+import { useRouter } from "next/navigation";
 import { ChatView } from "@/components/chat/ChatView";
 import { SourcesPanel } from "@/components/chat/SourcesPanel";
 import { AppMockup } from "@/components/landing/AppMockup";
@@ -12,7 +13,7 @@ import { Navbar } from "@/components/landing/Navbar";
 import { IconNavRail } from "@/components/navigation/IconNavRail";
 import { useAuth } from "@/contexts/AuthContext";
 
-function LandingPage({ signInWithGoogle }: { signInWithGoogle: () => void }) {
+function LandingPage({ onCTA }: { onCTA: () => void }) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const { scrollYProgress } = useScroll({
 		target: containerRef,
@@ -27,16 +28,16 @@ function LandingPage({ signInWithGoogle }: { signInWithGoogle: () => void }) {
 			ref={containerRef}
 			className="min-h-screen text-white selection:bg-signal/30 selection:text-white font-sans overflow-x-hidden antialiased"
 		>
-			<Navbar signInWithGoogle={signInWithGoogle} />
+			<Navbar signInWithGoogle={onCTA} />
 
 			<main className="relative z-10 bg-[#030303] mb-[500px] md:mb-[600px] shadow-2xl">
 				<Hero
-					signInWithGoogle={signInWithGoogle}
+					signInWithGoogle={onCTA}
 					opacity={opacity}
 					scale={scale}
 				/>
 				<AppMockup />
-				<Features signInWithGoogle={signInWithGoogle} />
+				<Features signInWithGoogle={onCTA} />
 			</main>
 
 			<Footer />
@@ -45,7 +46,8 @@ function LandingPage({ signInWithGoogle }: { signInWithGoogle: () => void }) {
 }
 
 export default function Home() {
-	const { user, isLoading, signInWithGoogle } = useAuth();
+	const { user, isLoading } = useAuth();
+	const router = useRouter();
 
 	if (isLoading) return null;
 
@@ -61,5 +63,5 @@ export default function Home() {
 		);
 	}
 
-	return <LandingPage signInWithGoogle={signInWithGoogle} />;
+	return <LandingPage onCTA={() => router.push("/login")} />;
 }
