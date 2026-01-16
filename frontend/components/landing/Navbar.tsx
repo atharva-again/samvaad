@@ -5,11 +5,9 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-interface NavbarProps {
-	signInWithGoogle: () => void;
-}
+interface NavbarProps {}
 
-export function Navbar({ signInWithGoogle }: NavbarProps) {
+export function Navbar({}: NavbarProps) {
 	const [scrolled, setScrolled] = useState(false);
 
 	useEffect(() => {
@@ -79,19 +77,20 @@ export function Navbar({ signInWithGoogle }: NavbarProps) {
 				</div>
 
 				<div className="flex items-center justify-end">
-					<Button
-						onClick={signInWithGoogle}
-						variant={scrolled ? "secondary" : "outline"}
-						size={scrolled ? "sm" : "default"}
-						className={cn(
-							"rounded-full transition-all duration-300 font-medium",
-							scrolled
-								? "h-8 px-4 text-xs bg-white/10 hover:bg-white/15 border-transparent text-white"
-								: "bg-white/5 hover:bg-white/10 border-white/10 text-text-primary",
-						)}
-					>
-						Launch App
-					</Button>
+					<Link href="/login">
+						<Button
+							variant={scrolled ? "secondary" : "outline"}
+							size={scrolled ? "sm" : "default"}
+							className={cn(
+								"rounded-full transition-all duration-300 font-medium",
+								scrolled
+									? "h-8 px-4 text-xs bg-white/10 hover:bg-white/15 border-transparent text-white"
+									: "bg-white/5 hover:bg-white/10 border-white/10 text-text-primary",
+							)}
+						>
+							Launch App
+						</Button>
+					</Link>
 				</div>
 			</div>
 		</nav>
