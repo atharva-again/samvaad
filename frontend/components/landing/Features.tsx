@@ -13,13 +13,13 @@ export function Features({ signInWithGoogle }: FeaturesProps) {
 		{
 			title: "Voice-Native",
 			description:
-				"Ultra-low latency voice mode makes learning as natural as a real conversation. Speak directly to your knowledge.",
+				"Ultra-low latency voice mode makes learning as natural as a real conversation. Speak directly to your knowledge base.",
 			graphic: <VoiceNativeGraphic />,
 		},
 		{
 			title: "Atomic Citations",
 			description:
-				"Trust but verify. Every claim is linked to specific sections in your source documents, ensuring transparency.",
+				"Cross-check all responses with sentence-level citations. Stay safe from hallucinated responses.",
 			graphic: <AtomicCitationsGraphic />,
 		},
 		{
@@ -37,13 +37,13 @@ export function Features({ signInWithGoogle }: FeaturesProps) {
 		{
 			title: "Adaptive Personas",
 			description:
-				"Instantly switch between specialized roles—from a patient tutor to a senior engineer—to match your learning style.",
+				"Instantly switch between specialized roles to match your learning style.",
 			graphic: <AdaptivePersonasGraphic />,
 		},
 		{
 			title: "Universal Search",
 			description:
-				"Instantly locate any conversation, document, or specific fact with fuzzy search and granular filtering.",
+				"Instantly locate any conversation or document with fuzzy search and granular filtering.",
 			graphic: <UniversalSearchGraphic />,
 		},
 	];
