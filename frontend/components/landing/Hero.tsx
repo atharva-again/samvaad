@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { type MotionValue, motion } from "framer-motion";
 import { Background } from "./Background";
+import { RotatingText } from "./RotatingText";
 
 interface HeroProps {
 	opacity: MotionValue<number>;
@@ -45,9 +46,35 @@ export function Hero({ opacity, scale }: HeroProps) {
 
 						<motion.h1
 							variants={itemVariants}
-							className="text-4xl font-bold tracking-tight leading-[1.15] md:text-6xl lg:text-7xl bg-clip-text text-transparent bg-gradient-to-b from-white via-white to-white/50 pb-4"
+							className="text-4xl tracking-tight leading-[1.15] md:text-6xl lg:text-7xl text-white pb-4"
 						>
-							Dialogue with <br className="hidden md:block" /> Intelligence.
+							<span className="font-bold">Dialogue for</span> <br className="hidden md:block" />
+							<RotatingText
+								words={[
+									"Intelligence.",
+									"Curiosity.",
+									"Creativity.",
+									"Insight.",
+									"Discovery.",
+									"Innovation.",
+									"Understanding.",
+									"Wisdom.",
+									"Precision.",
+									"Clarity.",
+								]}
+								fonts={[
+									"font-roboto-slab font-bold",
+									"font-ribeye font-normal text-3xl md:text-5xl lg:text-6xl",
+									"font-gloria font-normal text-3xl md:text-5xl lg:text-6xl tracking-widest",
+									"font-rowdies font-bold",
+									"font-goudy font-normal",
+									"font-playfair font-bold",
+									"font-outfit font-normal",
+									"font-cinzel font-bold",
+									"font-playfair font-bold italic",
+									"font-bai-jamjuree font-normal tracking-widest",
+								]}
+							/>
 						</motion.h1>
 
 						<motion.p

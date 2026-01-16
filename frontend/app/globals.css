@@ -11,6 +11,19 @@
     --color-text-primary: #f3f4f6;
     --color-text-secondary: #9ca3af;
 
+    --font-sans: var(--font-geist-sans), sans-serif;
+    --font-mono: var(--font-geist-mono), monospace;
+    --font-outfit: var(--font-outfit), sans-serif;
+    --font-playfair: var(--font-playfair), serif;
+    --font-gloria: var(--font-gloria), cursive;
+    --font-cinzel: var(--font-cinzel), serif;
+    --font-roboto-slab: var(--font-roboto-slab), serif;
+    --font-ribeye: var(--font-ribeye), cursive;
+    --font-rowdies: var(--font-rowdies), display;
+    --font-goudy: var(--font-goudy), serif;
+    --font-bai-jamjuree: var(--font-bai-jamjuree), sans-serif;
+    --font-dancing: var(--font-dancing-script), cursive;
+
     --animate-accordion-down: accordion-down 0.2s ease-out;
     --animate-accordion-up: accordion-up 0.2s ease-out;
 
