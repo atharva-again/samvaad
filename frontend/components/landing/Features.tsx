@@ -1,14 +1,15 @@
 "use client";
 
-import Link from "next/link";
 import React, { useState, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check } from "lucide-react";
 
 
-interface FeaturesProps {}
+interface FeaturesProps {
+	signInWithGoogle: () => void;
+}
 
-export function Features({}: FeaturesProps) {
+export function Features({ signInWithGoogle }: FeaturesProps) {
 	const features = [
 		{
 			title: "Voice-Native",
@@ -123,14 +124,13 @@ export function Features({}: FeaturesProps) {
 				<h3 className="text-2xl font-light mb-10 tracking-tight text-white/80">
 					Ready to start the <span className="italic">dialogue</span>?
 				</h3>
-				<Link href="/login">
-					<button
-						type="button"
-						className="px-12 py-4 rounded-full border border-white/20 text-white text-sm font-medium hover:bg-white hover:text-black transition-all duration-500 cursor-pointer"
-					>
-						Get Started Now
-					</button>
-				</Link>
+				<button
+					type="button"
+					onClick={signInWithGoogle}
+					className="px-12 py-4 rounded-full border border-white/20 text-white text-sm font-medium hover:bg-white hover:text-black transition-all duration-500 cursor-pointer"
+				>
+					Get Started Now
+				</button>
 			</motion.div>
 		</section>
 	);

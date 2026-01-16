@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { type MotionValue, motion } from "framer-motion";
 import { Background } from "./Background";
 import { RotatingText } from "./RotatingText";
@@ -6,9 +5,10 @@ import { RotatingText } from "./RotatingText";
 interface HeroProps {
 	opacity: MotionValue<number>;
 	scale: MotionValue<number>;
+	signInWithGoogle: () => void;
 }
 
-export function Hero({ opacity, scale }: HeroProps) {
+export function Hero({ opacity, scale, signInWithGoogle }: HeroProps) {
 	const itemVariants = {
 		hidden: { opacity: 0, y: 20 },
 		visible: {
@@ -61,6 +61,7 @@ export function Hero({ opacity, scale }: HeroProps) {
 									"Wisdom.",
 									"Precision.",
 									"Clarity.",
+									"Singularity.",
 								]}
 								fonts={[
 									"font-roboto-slab font-bold",
@@ -73,6 +74,7 @@ export function Hero({ opacity, scale }: HeroProps) {
 									"font-cinzel font-bold",
 									"font-playfair font-bold italic",
 									"font-bai-jamjuree font-normal tracking-widest",
+									"font-plus-jakarta font-bold",
 								]}
 							/>
 						</motion.h1>
@@ -90,15 +92,14 @@ export function Hero({ opacity, scale }: HeroProps) {
 							variants={itemVariants}
 							className="flex flex-col items-center justify-center gap-4 mt-10 sm:flex-row"
 						>
-							<Link href="/login">
-								<button
-									type="button"
-									className="group relative w-full px-7 h-[52px] text-base font-bold text-black transition-all bg-white rounded-xl sm:w-auto hover:bg-white/90 hover:shadow-[0_0_30px_rgba(255,255,255,0.2)] active:scale-[0.98] cursor-pointer"
-								>
-									Start Free
-									<div className="absolute inset-0 rounded-xl bg-white blur-md opacity-0 group-hover:opacity-20 transition-opacity pointer-events-none" />
-								</button>
-							</Link>
+							<button
+								type="button"
+								onClick={signInWithGoogle}
+								className="group relative w-full px-7 h-[52px] text-base font-bold text-black transition-all bg-white rounded-xl sm:w-auto hover:bg-white/90 hover:shadow-[0_0_30px_rgba(255,255,255,0.2)] active:scale-[0.98] cursor-pointer"
+							>
+								Start Free
+								<div className="absolute inset-0 rounded-xl bg-white blur-md opacity-0 group-hover:opacity-20 transition-opacity pointer-events-none" />
+							</button>
 							<div className="flex items-center px-4 h-[52px] rounded-xl bg-white/[0.03] border border-white/10 backdrop-blur-sm">
 								<div className="text-xs font-bold text-white/70">
 									Joined by <span className="text-signal">10+</span> learners
