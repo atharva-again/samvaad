@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { Check } from "lucide-react";
 
 
 interface FeaturesProps {
@@ -48,9 +49,47 @@ export function Features({ signInWithGoogle }: FeaturesProps) {
 		},
 	];
 
-	return (
-		<section id="features" className="border-t border-white/10 mt-20">
-			<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 border-l border-white/10 max-w-[1440px] mx-auto">
+			return (
+
+				<section id="features" className="mt-20">
+
+					<div className="border-l border-r border-b border-white/10 max-w-[1440px] mx-auto overflow-hidden">
+
+						<div className="py-24 px-6 md:px-12 text-center">
+
+							<motion.div
+
+								initial={{ opacity: 0, y: 20 }}
+
+								whileInView={{ opacity: 1, y: 0 }}
+
+								viewport={{ once: true }}
+
+								transition={{ duration: 0.5 }}
+
+							>
+
+																																								<h2 className="text-3xl md:text-5xl font-light tracking-tight text-white mb-6">
+
+																																									Features
+
+																																								</h2>
+
+																																								<p className="text-lg text-white/40 max-w-2xl mx-auto leading-relaxed font-light">
+
+																																									Engineered for the curious mind.
+
+																																								</p>
+
+							</motion.div>
+
+						</div>
+
+					</div>
+
+		
+
+					<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 border-l border-white/10 max-w-[1440px] mx-auto">
 				{features.map((feature, index) => (
 					<motion.div
 						key={feature.title}
@@ -246,6 +285,10 @@ function AtomicCitationsGraphic() {
 }
 
 function UniversalIngestGraphic() {
+	const randomOffsets = React.useMemo(() => ({
+		y: (Math.random() - 0.5) * 100,
+		rotate: Math.random() * 20 - 10,
+	}), []);
 	// "The Singularity" - Many inputs, one output
 	return (
 		<div className="w-full h-full relative flex items-center justify-center bg-void overflow-hidden">
@@ -265,7 +308,7 @@ function UniversalIngestGraphic() {
 				<motion.div
 					key={`file-${i}`}
 					className="absolute left-1/2 top-1/2 w-4 h-5 border border-purple-400/30 bg-purple-500/10 backdrop-blur-[1px] rounded-[2px]"
-					initial={{ x: -140, y: (Math.random() - 0.5) * 100, opacity: 0, scale: 0.8, rotate: Math.random() * 20 - 10 }}
+					initial={{ x: -140, y: randomOffsets.y, opacity: 0, scale: 0.8, rotate: randomOffsets.rotate }}
 					animate={{
 						x: 0,
 						y: 0,
@@ -370,7 +413,7 @@ function IntelligentReasoningGraphic() {
 	);
 }
 
-import { BookOpen, Check, Code2, GraduationCap, Heart, Terminal, User } from "lucide-react";
+
 
 
 
@@ -417,7 +460,7 @@ function AdaptivePersonasGraphic() {
 							<div className="p-3">
 					<div className="text-sm font-semibold mb-2">Agent Persona</div>
 					<div className="h-px bg-white/10 mb-2" /> {/* Separator */}
-					{personas.map((p, idx) => (
+					{personas.map((p, _idx) => (
 						<motion.div
 							key={p.id}
 							className="flex items-center justify-between py-1.5 px-2 rounded-lg text-sm transition-colors"
