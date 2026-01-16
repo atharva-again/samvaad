@@ -46,7 +46,11 @@
             height: 0
         }
     }
+
+
 }
+
+
 
 body {
     font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
@@ -54,7 +58,6 @@ body {
     -moz-osx-font-smoothing: grayscale;
 }
 
-/* Custom Scrollbar */
 ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -63,7 +66,6 @@ body {
 ::-webkit-scrollbar-track {
     background: transparent;
     margin-block: 6px;
-    /* Makes the scrollbar shorter vertically */
 }
 
 ::-webkit-scrollbar-thumb {
@@ -72,21 +74,17 @@ body {
     transition: background-color 0.2s ease;
 }
 
-/* Show scrollbar on any element hover (includes body/window if technically hovering it) */
 *:hover::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.1);
 }
 
-/* Make it more visible when directly hovering the scrollbar */
 ::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.3) !important;
 }
 
-/* Firefox support */
 * {
     scrollbar-width: thin;
     scrollbar-color: transparent transparent;
-    /* Thumb Track */
     transition: scrollbar-color 0.2s ease;
 }
 
