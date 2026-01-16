@@ -1,4 +1,5 @@
 import { type MotionValue, motion } from "framer-motion";
+import Link from "next/link";
 import { Background } from "./Background";
 import { RotatingText } from "./RotatingText";
 
@@ -92,14 +93,13 @@ export function Hero({ opacity, scale, signInWithGoogle }: HeroProps) {
 							variants={itemVariants}
 							className="flex flex-col items-center justify-center gap-4 mt-10 sm:flex-row"
 						>
-							<button
-								type="button"
-								onClick={signInWithGoogle}
-								className="group relative w-full px-7 h-[52px] text-base font-bold text-black transition-all bg-white rounded-xl sm:w-auto hover:bg-white/90 hover:shadow-[0_0_30px_rgba(255,255,255,0.2)] active:scale-[0.98] cursor-pointer"
+							<Link
+								href="/login"
+								className="group relative flex items-center justify-center w-full px-7 h-[52px] text-base font-bold text-black transition-all bg-white rounded-xl sm:w-auto hover:bg-white/90 hover:shadow-[0_0_30px_rgba(255,255,255,0.2)] active:scale-[0.98] cursor-pointer no-underline"
 							>
 								Start Free
 								<div className="absolute inset-0 rounded-xl bg-white blur-md opacity-0 group-hover:opacity-20 transition-opacity pointer-events-none" />
-							</button>
+							</Link>
 							<div className="flex items-center px-4 h-[52px] rounded-xl bg-white/[0.03] border border-white/10 backdrop-blur-sm">
 								<div className="text-xs font-bold text-white/70">
 									Joined by <span className="text-signal">10+</span> learners

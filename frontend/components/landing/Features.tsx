@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check } from "lucide-react";
 
@@ -124,13 +125,12 @@ export function Features({ signInWithGoogle }: FeaturesProps) {
 				<h3 className="text-2xl font-light mb-10 tracking-tight text-white/80">
 					Ready to start the <span className="italic">dialogue</span>?
 				</h3>
-				<button
-					type="button"
-					onClick={signInWithGoogle}
-					className="px-12 py-4 rounded-full border border-white/20 text-white text-sm font-medium hover:bg-white hover:text-black transition-all duration-500 cursor-pointer"
+				<Link
+					href="/login"
+					className="px-12 py-4 rounded-full border border-white/20 text-white text-sm font-medium hover:bg-white hover:text-black transition-all duration-500 cursor-pointer no-underline"
 				>
 					Get Started Now
-				</button>
+				</Link>
 			</motion.div>
 		</section>
 	);
