@@ -29,7 +29,7 @@ function LandingPage({ signInWithGoogle }: { signInWithGoogle: () => void }) {
 		>
 			<Navbar signInWithGoogle={signInWithGoogle} />
 
-			<main className="relative z-10">
+			<main className="relative z-10 bg-[#030303] mb-[500px] md:mb-[600px] shadow-2xl">
 				<Hero
 					signInWithGoogle={signInWithGoogle}
 					opacity={opacity}
