@@ -5,7 +5,6 @@ import { useRef } from "react";
 import { ChatView } from "@/components/chat/ChatView";
 import { SourcesPanel } from "@/components/chat/SourcesPanel";
 import { AppMockup } from "@/components/landing/AppMockup";
-import { Background } from "@/components/landing/Background";
 import { Features } from "@/components/landing/Features";
 import { Footer } from "@/components/landing/Footer";
 import { Hero } from "@/components/landing/Hero";
@@ -26,12 +25,11 @@ function LandingPage({ signInWithGoogle }: { signInWithGoogle: () => void }) {
 	return (
 		<div
 			ref={containerRef}
-			className="min-h-screen bg-void text-white selection:bg-signal/30 selection:text-white font-sans overflow-x-hidden antialiased"
+			className="min-h-screen text-white selection:bg-signal/30 selection:text-white font-sans overflow-x-hidden antialiased"
 		>
-			<Background />
 			<Navbar signInWithGoogle={signInWithGoogle} />
 
-			<main className="relative z-10 pt-16">
+			<main className="relative z-10">
 				<Hero
 					signInWithGoogle={signInWithGoogle}
 					opacity={opacity}

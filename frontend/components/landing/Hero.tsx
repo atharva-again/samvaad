@@ -1,6 +1,7 @@
 "use client";
 
 import { type MotionValue, motion } from "framer-motion";
+import { Background } from "./Background";
 
 interface HeroProps {
 	signInWithGoogle: () => void;
@@ -9,55 +10,81 @@ interface HeroProps {
 }
 
 export function Hero({ signInWithGoogle, opacity, scale }: HeroProps) {
+	const itemVariants = {
+		hidden: { opacity: 0, y: 20 },
+		visible: {
+			opacity: 1,
+			y: 0,
+			transition: {
+				duration: 0.8,
+				ease: [0.16, 1, 0.3, 1],
+			},
+		},
+	};
+
 	return (
-		<section className="px-6 py-16 mx-auto max-w-6xl md:py-24 lg:py-32 overflow-hidden text-center">
-			<motion.div
-				style={{ opacity, scale }}
-				className="relative max-w-4xl mx-auto"
-			>
-				<div className="inline-flex items-center gap-2 px-3 py-1 mb-8 text-[10px] font-bold uppercase tracking-[0.2em] border rounded-full bg-signal/5 border-signal/20 text-signal/80">
-					<span className="relative flex w-1.5 h-1.5">
-						<span className="absolute inline-flex w-full h-full rounded-full opacity-75 animate-ping bg-signal" />
-						<span className="relative inline-flex w-1.5 h-1.5 rounded-full bg-signal" />
-					</span>
-					Beta v1.0
-				</div>
-
-				<h1 className="text-4xl font-bold tracking-tight leading-[1.15] md:text-6xl lg:text-7xl bg-clip-text text-transparent bg-gradient-to-b from-white via-white to-white/50 pb-4">
-					Dialogue with <br className="hidden md:block" /> Intelligence.
-				</h1>
-
-				<p className="mt-6 text-base md:text-lg text-white/50 max-w-2xl mx-auto font-medium leading-relaxed">
-					Samvaad bridges the gap between static documents and fluid
-					conversations. Experience cited, multimodal intelligence designed for
-					the speed of curiosity.
-				</p>
-
-				<div className="flex flex-col items-center justify-center gap-4 mt-10 sm:flex-row">
-					<button
-						type="button"
-						onClick={signInWithGoogle}
-						className="w-full px-7 py-3.5 text-base font-bold text-black transition-all bg-white rounded-xl sm:w-auto hover:bg-white/90 hover:shadow-lg active:scale-[0.98]"
+		<section className="relative w-full overflow-hidden">
+			<Background />
+			<div className="px-6 pt-32 pb-16 mx-auto max-w-6xl md:pt-40 md:pb-24 lg:pt-48 lg:pb-32 text-center relative z-10">
+				<motion.div
+					style={{ opacity, scale }}
+					className="relative max-w-4xl mx-auto"
+				>
+					<motion.div
+						initial="hidden"
+						animate="visible"
+						transition={{ staggerChildren: 0.1 }}
 					>
-						Start Free Trial
-					</button>
-					<div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-white/[0.03] border border-white/10 backdrop-blur-sm">
-						<div className="flex -space-x-2">
-							{[1, 2, 3].map((i) => (
-								<div
-									key={i}
-									className="w-7 h-7 border-2 rounded-full border-void bg-surface-elevation-2 flex items-center justify-center overflow-hidden"
-								>
-									<div className="w-full h-full bg-gradient-to-tr from-white/10 to-white/5" />
+						<motion.div
+							variants={itemVariants}
+							className="inline-flex items-center gap-2 px-3 py-1 mb-8 text-[10px] font-bold uppercase tracking-[0.2em] border rounded-full bg-signal/5 border-signal/20 text-signal/80 shadow-[0_0_20px_rgba(16,185,129,0.1)]"
+						>
+							<span className="relative flex w-1.5 h-1.5">
+								<span className="absolute inline-flex w-full h-full rounded-full opacity-75 animate-ping bg-signal" />
+								<span className="relative inline-flex w-1.5 h-1.5 rounded-full bg-signal" />
+							</span>
+							Beta v1.0
+						</motion.div>
+
+						<motion.h1
+							variants={itemVariants}
+							className="text-4xl font-bold tracking-tight leading-[1.15] md:text-6xl lg:text-7xl bg-clip-text text-transparent bg-gradient-to-b from-white via-white to-white/50 pb-4"
+						>
+							Dialogue with <br className="hidden md:block" /> Intelligence.
+						</motion.h1>
+
+						<motion.p
+							variants={itemVariants}
+							className="mt-6 text-base md:text-lg text-white/50 max-w-2xl mx-auto font-medium leading-relaxed"
+						>
+							Samvaad bridges the gap between static documents and fluid
+							conversations. Experience cited, multimodal intelligence designed
+							for the speed of curiosity.
+						</motion.p>
+
+						<motion.div
+							variants={itemVariants}
+							className="flex flex-col items-center justify-center gap-4 mt-10 sm:flex-row"
+						>
+							<button
+								type="button"
+								onClick={signInWithGoogle}
+								className="group relative w-full px-7 h-[52px] text-base font-bold text-black transition-all bg-white rounded-xl sm:w-auto hover:bg-white/90 hover:shadow-[0_0_30px_rgba(255,255,255,0.2)] active:scale-[0.98]"
+							>
+								Start Free
+								<div className="absolute inset-0 rounded-xl bg-white blur-md opacity-0 group-hover:opacity-20 transition-opacity pointer-events-none" />
+							</button>
+							<div className="flex items-center px-4 h-[52px] rounded-xl bg-white/[0.03] border border-white/10 backdrop-blur-sm">
+								<div className="text-xs font-bold text-white/70">
+									Joined by <span className="text-signal">10+</span> learners
 								</div>
-							))}
-						</div>
-						<div className="text-xs font-bold text-white/70">
-							Joined by <span className="text-signal">2,400+</span> learners
-						</div>
-					</div>
-				</div>
-			</motion.div>
+							</div>
+						</motion.div>
+					</motion.div>
+				</motion.div>
+			</div>
+
+			<div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-void to-transparent pointer-events-none z-20" />
 		</section>
 	);
 }
