@@ -10,7 +10,8 @@ Samvaad is a sophisticated, full-stack Retrieval-Augmented Generation (RAG) plat
 - **Deep RAG Pipeline**: Advanced document ingestion supporting PDF, Docx, Images (OCR), and more via LlamaParse and Docling.
 - **Intelligent Deduplication**: Content-addressable storage (SHA-256) ensures zero-redundancy in document chunks across users.
 - **Multi-Model Intelligence**: Optimized for Gemini, Groq, and OpenAI, with high-quality embeddings via Voyage AI.
-- **Neural TTS & STT**: Crystal-clear speech synthesis using Kokoro and Deepgram for a human-like conversational experience.
+- **Neural TTS & STT**: Crystal-clear speech synthesis and high-accuracy transcription using Deepgram for a human-like conversational experience.
+- **Verified Citations**: Every claim is backed by atomic citations linked directly to your source documents to eliminate hallucinations.
 - **Modern Full-Stack Architecture**: A high-performance FastAPI backend paired with a premium Next.js 15+ frontend.
 
 ## Tech Stack
