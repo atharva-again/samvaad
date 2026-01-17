@@ -4,7 +4,7 @@ services:
   - name: api
     github:
       repo: atharva-again/samvaad
-      branch: deploy/digital-ocean
+      branch: main
       deploy_on_push: true
     dockerfile_path: Dockerfile
     http_port: 8000
