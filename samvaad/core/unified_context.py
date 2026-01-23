@@ -11,7 +11,7 @@ from typing import Any
 from uuid import UUID
 
 import tiktoken
-from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
+from pipecat.processors.aggregators.llm_context import LLMContext, NOT_GIVEN
 
 from samvaad.db.conversation_service import ConversationService
 from samvaad.utils.logger import logger
@@ -25,31 +25,52 @@ SLIDING_WINDOW_SIZE = int(os.getenv("HISTORY_WINDOW_SIZE", "6"))
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class SamvaadLLMContext(OpenAILLMContext):
+class SamvaadLLMContext(LLMContext):
     """
     Database-backed LLM context manager for Pipecat voice pipelines.
 
-    Extends OpenAILLMContext with:
+    Extends LLMContext with:
     - Sliding window context management (via UnifiedContextManager)
     - Database persistence for messages
     - Automatic fact extraction & summarization orchestration
 
     Uses the same context logic as text mode for consistency.
+
+    Migration Notes (2025-01):
+    - Migrated from deprecated OpenAILLMContext to LLMContext
+    - Updated to use LLMContextAggregatorPair instead of llm.create_context_aggregator
+    - Tools wrapped in ToolsSchema for compatibility
+    - conversation_id now optional (generates UUID if None)
     """
 
     def __init__(
-        self, conversation_id: str, user_id: str, conversation_service: ConversationService | None = None, **kwargs
+        self,
+        conversation_id: str | None,
+        user_id: str,
+        conversation_service: ConversationService | None = None,
+        tools=None,
+        tool_choice=None,
     ):
         """
         Initialize context with database backing and unified context management.
 
         Args:
-            conversation_id: UUID of the conversation
+            conversation_id: UUID string of the conversation (None to generate new)
             user_id: UUID of the user
             conversation_service: Optional injected service (for testing)
-            **kwargs: Passed to OpenAILLMContext (tools, tool_choice, etc.)
+            tools: Tools for the LLM
+            tool_choice: Tool choice setting
         """
-        super().__init__(**kwargs)
+        if conversation_id is None:
+            import uuid
+
+            conversation_id = str(uuid.uuid4())
+
+        super().__init__(
+            messages=[],
+            tools=tools if tools is not None else NOT_GIVEN,
+            tool_choice=tool_choice if tool_choice is not None else NOT_GIVEN,
+        )
         self.conversation_id = conversation_id
         self.user_id = user_id
         self._db = conversation_service or ConversationService()
@@ -70,7 +91,11 @@ class SamvaadLLMContext(OpenAILLMContext):
         recent_messages, older_messages = self._context_manager.get_sliding_window(messages, SLIDING_WINDOW_SIZE)
 
         for msg in recent_messages:
-            super().add_message(msg)
+            # Cast dict to expected type
+            from typing import cast
+            from openai.types.chat import ChatCompletionMessageParam
+
+            super().add_message(cast(ChatCompletionMessageParam, msg))
 
         self._initialized = True
 
@@ -84,17 +109,32 @@ class SamvaadLLMContext(OpenAILLMContext):
         """
         Override: Add message to in-memory context AND trigger background persistence/tasks.
         """
-        role = message.get("role", "")
+        role = ""
+        content = ""
+        sources = None
+
+        # Type guard for message access
+        if isinstance(message, dict):
+            role = message.get("role", "")
+            content = message.get("content", "")
+            sources = message.get("sources")
+        else:
+            # Fallback for non-dict messages (though we expect dict)
+            content = str(getattr(message, "content", ""))
+
         # Add to in-memory context (super().add_message handles system messages correctly)
-        super().add_message(message)
+        from typing import cast
+        from openai.types.chat import ChatCompletionMessageParam
+
+        super().add_message(cast(ChatCompletionMessageParam, message))
 
         if role == "assistant" and self.user_id and self.conversation_id:
             # Find the last user message to pair with this assistant response
             messages = self.get_messages()
             user_msg = ""
-            for m in reversed(messages[:-1]):
-                if m.get("role") == "user":
-                    user_msg = m.get("content", "")
+            for m in messages[:-1]:
+                if isinstance(m, dict) and m.get("role") == "user":
+                    user_msg = str(m.get("content", ""))
                     break
 
             # Trigger centralized orchestration for background tasks
@@ -106,14 +146,14 @@ class SamvaadLLMContext(OpenAILLMContext):
                     loop.create_task(
                         self._context_manager.run_post_response_tasks(
                             user_message=user_msg,
-                            assistant_response=message.get("content", ""),
-                            sources=message.get("sources"),
+                            assistant_response=str(content),
+                            sources=sources,
                         )
                     )
                 except RuntimeError:
                     # Fallback for sync environments
                     self._context_manager.save_message("user", user_msg)
-                    self._context_manager.save_message("assistant", message.get("content", ""))
+                    self._context_manager.save_message("assistant", str(content))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -280,7 +320,8 @@ class UnifiedContextManager:
             # Get latest facts from DB if not provided
             if existing_facts is None:
                 conversation = self._db.get_conversation(self.conversation_id, self.user_id)
-                existing_facts = conversation.facts if conversation else ""
+                existing_facts_str: str = str(conversation.facts or "") if conversation else ""
+                existing_facts = existing_facts_str
 
             # LLM merges existing + new facts
             merged_facts = await extract_facts_from_exchange(
@@ -317,7 +358,8 @@ class UnifiedContextManager:
                     if exiting_batch:
                         if existing_summary is None:
                             conversation = self._db.get_conversation(self.conversation_id, self.user_id)
-                            existing_summary = conversation.summary if conversation else ""
+                            existing_summary_str: str = str(conversation.summary or "") if conversation else ""
+                            existing_summary = existing_summary_str
 
                         start_turn = batch_start + 1
                         end_turn = exited_count

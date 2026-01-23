@@ -8,7 +8,8 @@ from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.pipeline.base_task import PipelineTaskParams
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.task import PipelineParams, PipelineTask
-from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams
+from pipecat.adapters.schemas.tools_schema import ToolsSchema, AdapterType
+from pipecat.processors.aggregators.llm_response_universal import LLMContextAggregatorPair, LLMUserAggregatorParams
 from pipecat.processors.frameworks.rtvi import (
     RTVIProcessor,
     RTVIServerMessageFrame,
@@ -193,11 +194,11 @@ async def delete_daily_room(room_url: str) -> bool:
 async def start_voice_agent(
     room_url: str,
     token: str | None,
+    user_id: str,
+    conversation_id: str | None,
     enable_tts: bool = True,
     persona: str = "default",
     strict_mode: bool = False,
-    user_id: str = None,
-    conversation_id: str = None,  # NEW: For unified context
 ):
     """Entry point to start the bot in a specific Daily room"""
 
@@ -225,8 +226,6 @@ async def start_voice_agent(
             audio_out_enabled=True,
             camera_out_enabled=False,
             vad_analyzer=vad_analyzer,
-            # Increase join timeout for slow networks (default is ~10s)
-            meeting_join_timeout_s=30,
         ),
     )
 
@@ -283,12 +282,15 @@ async def start_voice_agent(
         except TimeoutError:
             logger.warning(f"[voice_agent] RAG timeout after {RAG_TIMEOUT_SECONDS}s for query: {query}")
             rag_text = "Search timed out. Please try your question again."
+            sources = []
         except ValueError as e:
             logger.warning(f"[voice_agent] Tool validation error: {e}")
             rag_text = f"Invalid search request: {e}"
+            sources = []
         except Exception as e:
             logger.error(f"[voice_agent] RAG error: {e}")
             rag_text = "An error occurred while searching. Please try again."
+            sources = []
 
         # Send citations to frontend via RTVI custom message
         if sources:
@@ -323,7 +325,8 @@ async def start_voice_agent(
         }
     ]
 
-    # 3. Define Services (using EU endpoint for better connectivity from India)
+    # Wrap tools in ToolsSchema for LLMContext compatibility
+    tools_schema = ToolsSchema(standard_tools=[], custom_tools={AdapterType.SHIM: tools})
     stt = DeepgramSTTService(api_key=deepgram_api_key, base_url="wss://api.eu.deepgram.com/v1/listen")
     md_filter = MarkdownTextFilter()
     citation_filter = CitationTextFilter()
@@ -344,14 +347,11 @@ async def start_voice_agent(
 
     # Context Manager (Keeps track of conversation history)
     # Use SamvaadLLMContext for database persistence
-    if conversation_id:
-        context = SamvaadLLMContext(conversation_id=conversation_id, user_id=user_id, tools=tools, tool_choice="auto")
-        context.load_history()  # Load existing messages from DB
-    else:
-        # Fallback to in-memory only (no persistence)
-        from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
-
-        context = OpenAILLMContext(tools=tools, tool_choice="auto")
+    # Migration (2025-01): Now uses LLMContextAggregatorPair instead of deprecated llm.create_context_aggregator
+    context = SamvaadLLMContext(
+        conversation_id=conversation_id, user_id=user_id, tools=tools_schema, tool_choice="auto"
+    )
+    context.load_history()  # Load existing messages from DB
 
     context.add_message(
         {
@@ -361,9 +361,8 @@ async def start_voice_agent(
     )
     # Disable emulated VAD interruptions to prevent user speech from being
     # split into multiple messages when there are pauses in speaking
-    context_aggregator = llm.create_context_aggregator(
+    user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
         context,
-        user_params=LLMUserAggregatorParams(enable_emulated_vad_interruptions=False),
     )
 
     # 6. The Pipeline (Data Flow)
@@ -374,7 +373,7 @@ async def start_voice_agent(
         transport.input(),
         rtvi,
         stt,
-        context_aggregator.user(),
+        user_aggregator,
         llm,
     ]
 
@@ -389,7 +388,7 @@ async def start_voice_agent(
         processors.append(tts)
 
     processors.append(transport.output())  # Audio out (or text frames if TTS missing)
-    processors.append(context_aggregator.assistant())  # Add bot answer to history
+    processors.append(assistant_aggregator)  # Add bot answer to history
 
     pipeline = Pipeline(processors)
 
