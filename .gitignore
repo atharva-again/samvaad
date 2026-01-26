@@ -1,5 +1,5 @@
-# ChromaDB vector database directory
-chroma_db/
+# oh my opencode artifacts
+*.sisyphus/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
