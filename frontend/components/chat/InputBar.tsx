@@ -489,7 +489,7 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
     let sources = pendingCitations.length > 0 ? pendingCitations : undefined;
 
     if (!sources) {
-      const hasMarkers = /\[\d+\]|【\d+】/.test(rawLlmText || transcriptText || "");
+      const hasMarkers = /\[\d+\]/.test(rawLlmText || transcriptText || "");
       if (hasMarkers && lastVoiceCitations.length > 0) {
         sources = lastVoiceCitations;
       }
@@ -545,7 +545,7 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
       const pendingCitations = consumePendingVoiceCitations();
       let sources = pendingCitations.length > 0 ? pendingCitations : undefined;
       if (!sources) {
-        const hasMarkers = /\[\d+\]|【\d+】/.test(message.text);
+        const hasMarkers = /\[\d+\]/.test(message.text);
         if (hasMarkers && lastVoiceCitations.length > 0) {
           sources = lastVoiceCitations;
         }
