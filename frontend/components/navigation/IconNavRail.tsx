@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 import React, { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -259,7 +260,19 @@ export function IconNavRail() {
 				isExpanded ? "w-60" : "w-14",
 			)}
 		>
-			<div className="h-14 border-b border-white/5 shrink-0" />
+			<Link
+				href="/"
+				className={cn(
+					"h-14 border-b border-white/5 shrink-0 flex items-center hover:bg-white/5 transition-colors",
+					isExpanded ? "px-5 justify-start" : "justify-center"
+				)}
+			>
+				{isExpanded ? (
+					<span className="text-white font-bold text-lg tracking-tight">Samvaad</span>
+				) : (
+					<span className="text-white font-bold text-xl">S</span>
+				)}
+			</Link>
 
 			{/* Navigation */}
 			<nav
