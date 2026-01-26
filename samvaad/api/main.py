@@ -213,7 +213,7 @@ def health_check():
 
 class TextMessageRequest(BaseModel):
     message: str
-    conversation_id: str | None = None
+    conversation_id: str
     user_message_id: str | None = None
     assistant_message_id: str | None = None
     persona: str = "default"
@@ -222,7 +222,7 @@ class TextMessageRequest(BaseModel):
 
 
 class VoiceModeRequest(BaseModel):
-    conversation_id: str | None = None
+    conversation_id: str
     enable_tts: bool = True
     persona: str = "default"
     strict_mode: bool = False
@@ -315,17 +315,12 @@ async def text_mode(
     conversation_service = ConversationService()
 
     try:
-        # Parse conversation ID if provided
-        conversation_id = None
-        if request.conversation_id:
-            try:
-                conversation_id = UUIDType(request.conversation_id)
-            except ValueError:
-                pass
+        # Parse conversation ID
+        conversation_id = UUIDType(request.conversation_id)
 
         # Get or create conversation
         conversation = conversation_service.get_or_create_conversation(
-            conversation_id=conversation_id,
+            conversation_id=str(conversation_id),
             user_id=current_user.id,  # type: ignore
         )
 
@@ -375,6 +370,8 @@ async def text_mode(
             current_summary=conversation.summary,
             current_facts=conversation.facts,
             sources=sources,
+            user_message_id=request.user_message_id,
+            assistant_message_id=request.assistant_message_id,
         )
 
         # Auto-generate title for new conversations
@@ -414,7 +411,7 @@ async def _run_voice_agent_wrapper(
     room_url: str,
     token: str | None,
     user_id: str,
-    conversation_id: str | None,
+    conversation_id: str,
     **kwargs,
 ):
     """Wrapper to run voice agent safely in background."""
@@ -440,28 +437,13 @@ async def _run_voice_agent_wrapper(
 async def _create_voice_session(
     request: VoiceModeRequest,
     user_id: str,
-) -> tuple[str, str | None, str | None]:
+) -> tuple[str, str | None, str]:
     """
-    Create Daily room, ensure conversation in DB, start voice agent.
+    Create Daily room and start voice agent.
     Returns (room_url, token, conversation_id).
     """
-    from uuid import UUID as UUIDType
-    from samvaad.db.conversation_service import ConversationService
-
-    conversation_service = ConversationService()
     room_url, token = await create_daily_room()
     conversation_id = request.conversation_id
-
-    if conversation_id:
-        try:
-            existing = conversation_service.get_conversation(
-                UUIDType(conversation_id),
-                user_id=user_id,
-            )
-            if existing:
-                logger.info(f"[VoiceSession] Continuing existing conversation {conversation_id}")
-        except Exception as e:
-            logger.warning(f"[VoiceSession] Error checking conversation: {e}")
 
     # Create and track the background task
     task = asyncio.create_task(

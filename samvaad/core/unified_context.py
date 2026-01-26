@@ -7,7 +7,7 @@ Single source of truth for context management across both text and voice modes.
 import os
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 import tiktoken
@@ -45,27 +45,12 @@ class SamvaadLLMContext(LLMContext):
 
     def __init__(
         self,
-        conversation_id: str | None,
+        conversation_id: str,
         user_id: str,
         conversation_service: ConversationService | None = None,
         tools=None,
         tool_choice=None,
     ):
-        """
-        Initialize context with database backing and unified context management.
-
-        Args:
-            conversation_id: UUID string of the conversation (None to generate new)
-            user_id: UUID of the user
-            conversation_service: Optional injected service (for testing)
-            tools: Tools for the LLM
-            tool_choice: Tool choice setting
-        """
-        if conversation_id is None:
-            import uuid
-
-            conversation_id = str(uuid.uuid4())
-
         super().__init__(
             messages=[],
             tools=tools if tools is not None else NOT_GIVEN,
@@ -76,6 +61,21 @@ class SamvaadLLMContext(LLMContext):
         self._db = conversation_service or ConversationService()
         self._context_manager = UnifiedContextManager(conversation_id, user_id, conversation_service)
         self._initialized = False
+        self._pending_sources: list[dict] | None = None
+        self._pending_raw_assistant_text: str | None = None
+        self._last_sources: list[dict] | None = None
+
+    def set_pending_sources(self, sources: list[dict]) -> None:
+        self._pending_sources = sources
+        self._last_sources = sources
+
+    def set_pending_raw_assistant_text(self, content: str) -> None:
+        self._pending_raw_assistant_text = content
+
+    def consume_pending_sources(self) -> list[dict] | None:
+        sources = self._pending_sources
+        self._pending_sources = None
+        return sources
 
     def load_history(self):
         """
@@ -115,9 +115,9 @@ class SamvaadLLMContext(LLMContext):
 
         # Type guard for message access
         if isinstance(message, dict):
-            role = message.get("role", "")
-            content = message.get("content", "")
-            sources = message.get("sources")
+            role = message["role"] if "role" in message else ""
+            content = message["content"] if "content" in message else ""
+            sources = message["sources"] if "sources" in message else None
         else:
             # Fallback for non-dict messages (though we expect dict)
             content = str(getattr(message, "content", ""))
@@ -128,14 +128,31 @@ class SamvaadLLMContext(LLMContext):
 
         super().add_message(cast(ChatCompletionMessageParam, message))
 
+        if role == "assistant":
+            is_tool_call = isinstance(message, dict) and "tool_calls" in message
+            if is_tool_call:
+                return
+            if self._pending_raw_assistant_text:
+                content = self._pending_raw_assistant_text
+                self._pending_raw_assistant_text = None
+            if not sources:
+                sources = self._pending_sources
+            if not sources and self._last_sources:
+                if "[" in str(content) or "【" in str(content):
+                    sources = self._last_sources
+            if not content or not str(content).strip():
+                return
+
         if role == "assistant" and self.user_id and self.conversation_id:
             # Find the last user message to pair with this assistant response
             messages = self.get_messages()
             user_msg = ""
-            for m in messages[:-1]:
-                if isinstance(m, dict) and m.get("role") == "user":
-                    user_msg = str(m.get("content", ""))
-                    break
+            for m in reversed(messages[:-1]):
+                if isinstance(m, dict) and (m["role"] if "role" in m else None) == "user":
+                    candidate = str(m["content"] if "content" in m else "")
+                    if candidate.strip():
+                        user_msg = candidate
+                        break
 
             # Trigger centralized orchestration for background tasks
             if user_msg:
@@ -150,10 +167,14 @@ class SamvaadLLMContext(LLMContext):
                             sources=sources,
                         )
                     )
+                    self._pending_sources = None
                 except RuntimeError:
                     # Fallback for sync environments
                     self._context_manager.save_message("user", user_msg)
-                    self._context_manager.save_message("assistant", str(content))
+                    self._context_manager.save_message("assistant", str(content), sources=sources)
+                    self._pending_sources = None
+                if sources:
+                    self._last_sources = sources
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -251,14 +272,22 @@ class UnifiedContextManager:
     # Database Operations
     # ─────────────────────────────────────────────────────────────────────────
 
-    def save_message(self, role: str, content: str) -> None:
+    def save_message(
+        self, role: str, content: str, message_id: str | None = None, sources: list[dict] | None = None
+    ) -> None:
         """
         Persist message to database with proper UUID handling.
         """
         try:
             # Ensure conversation exists before saving message
-            self._db.get_or_create_conversation(self.conversation_id, self.user_id)
-            self._db.add_message(conversation_id=self.conversation_id, role=role, content=content)
+            self._db.get_or_create_conversation(str(self.conversation_id), self.user_id)
+            self._db.add_message(
+                conversation_id=self.conversation_id,
+                role=role,
+                content=content,
+                sources=sources,
+                message_id=UUID(message_id) if message_id else None,
+            )
         except Exception as e:
             logger.error(f"[Context] Failed to persist message: {e}")
 
@@ -284,6 +313,8 @@ class UnifiedContextManager:
         current_summary: str | None = None,
         current_facts: str | None = None,
         sources: list[dict] | None = None,
+        user_message_id: str | None = None,
+        assistant_message_id: str | None = None,
     ) -> None:
         """
         Orchestrates background tasks after an assistant response.
@@ -293,8 +324,8 @@ class UnifiedContextManager:
         3. Triggering fact extraction
         """
         # 1. Save messages to database
-        self.save_message("user", user_message)
-        self.save_message("assistant", assistant_response)
+        self.save_message("user", user_message, user_message_id)
+        self.save_message("assistant", assistant_response, assistant_message_id, sources=sources)
 
         # 2. Extract facts from this exchange
         import asyncio

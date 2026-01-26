@@ -99,7 +99,11 @@ export function PopoverContent({
 			<div className="px-3 py-2 text-[11px] font-semibold text-white/60 uppercase tracking-wider border-b border-white/5 mb-1">
 				{title}
 			</div>
-			{grouped ? (
+			{totalItems === 0 ? (
+				<div className="px-3 py-4 text-[13px] text-white/30 text-center">
+					No items
+				</div>
+			) : grouped ? (
 				<>
 					{renderGroup("Today", (conversations as GroupedConversations).today)}
 					{renderGroup(
@@ -136,15 +140,11 @@ export function PopoverContent({
 						})
 						.map(([monthKey, convs]) => renderGroup(monthKey, convs))}
 				</>
-			) : (conversations as Conversation[]).length > 0 ? (
-				(conversations as Conversation[]).map(renderItem)
 			) : (
-				<div className="px-3 py-4 text-[13px] text-white/30 text-center">
-					No items
-				</div>
+				(conversations as Conversation[]).map(renderItem)
 			)}
 			{totalItems > 10 && (
-				<button className="w-[calc(100%-8px)] px-2 py-2 mx-1 rounded-md text-[13px] text-white/50 hover:text-white hover:bg-white/5 text-left border-t border-white/5 mt-1 cursor-pointer">
+				<button className="w-[calc(100%-8px)] px-2 py-2 mx-1 rounded-md text-[13px] text-white/50 hover:text-white hover:bg-white/5 text-left border-t border-white/5 mt-1 cursor-pointer" type="button">
 					See all
 				</button>
 			)}

@@ -3,7 +3,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { api } from "@/lib/api";
 import { conversationCache } from "@/lib/cache/conversationCache";
-import { isValidUUID, sanitizeInput } from "@/lib/utils";
+import { generateNewConversationId, isValidUUID, sanitizeInput } from "@/lib/utils";
 
 // ─────────────────────────────────────────────────────────────────────
 // Types
@@ -15,6 +15,7 @@ export interface Message {
 	content: string;
 	sources?: Record<string, unknown>[];
 	createdAt: string;
+	isEphemeral?: boolean;
 }
 
 export interface Conversation {
@@ -89,6 +90,8 @@ const transformMessage = (msg: BackendMessage): Message => ({
 interface ConversationState {
 	// Current conversation
 	currentConversationId: string | null;
+	pendingConversationId: string | null;
+	conversationStatus: "idle" | "pending" | "active";
 	messages: Message[];
 	isLoadingMessages: boolean;
 	isStreaming: boolean; // LLM response streaming in progress
@@ -105,7 +108,6 @@ interface ConversationState {
 	addMessage: (message: Message, conversationId?: string) => void;
 	addMessageToUI: (message: Message) => void; // UI-only, no cache (for voice mode)
 	updateMessage: (id: string, updates: Partial<Message>) => void;
-	clearMessages: () => void;
 	truncateMessagesAt: (index: number) => void;
 
 	// Actions - API
@@ -113,22 +115,20 @@ interface ConversationState {
 	createConversation: (
 		title?: string,
 		mode?: "text" | "voice",
+		id?: string,
 	) => Promise<string>;
 	loadConversation: (id: string) => Promise<void>;
 	deleteConversation: (id: string) => Promise<void>;
 	updateConversationTitle: (id: string, title: string) => Promise<void>;
 	togglePinConversation: (id: string) => Promise<void>;
+	prepareNewConversation: () => string;
+	activateConversation: (params: {
+		mode?: "text" | "voice";
+		title?: string;
+		id?: string;
+	}) => Promise<string>;
 
-	// New Chat
-	startNewChat: () => void;
-	addConversationOptimistic: (
-		id: string,
-		title: string,
-		mode?: "text" | "voice",
-	) => void;
-	updateConversationId: (tempId: string, realId: string) => void;
 	setUserId: (userId: string | null) => void; // Action to set user
-	migratingIds: Set<string>; // [SECURITY-FIX #02] Track actively migrating IDs to prevent race
 	reloadFromBackend: (id: string) => Promise<void>; // Full reload, no delta sync (for voice mode)
 
 	// Bulk Actions
@@ -150,11 +150,12 @@ export const useConversationStore = create<ConversationState>()(
 		(set, get) => ({
 			// Initial State
 			currentConversationId: null,
+			pendingConversationId: null,
+			conversationStatus: "idle",
 			messages: [],
 			isLoadingMessages: false,
 			isStreaming: false,
 			userId: null,
-			migratingIds: new Set(),
 			conversations: [],
 			isLoadingConversations: false,
 			hasFetchedConversations: false,
@@ -197,7 +198,11 @@ export const useConversationStore = create<ConversationState>()(
 				}
 
 				const safeContent = sanitizeInput(message.content);
-				const safeMessage = { ...message, content: safeContent };
+				const safeMessage = {
+					...message,
+					content: safeContent,
+					isEphemeral: true,
+				};
 				set((state) => ({ messages: [...state.messages, safeMessage] }));
 			},
 
@@ -243,8 +248,6 @@ export const useConversationStore = create<ConversationState>()(
 					),
 				})),
 
-			clearMessages: () => set({ messages: [], currentConversationId: null }),
-
 			truncateMessagesAt: (index) => {
 				const state = get();
 				// [RESILIENCE-FIX] Rollback support
@@ -279,90 +282,6 @@ export const useConversationStore = create<ConversationState>()(
 				}
 			},
 
-			startNewChat: () => {
-				set({
-					currentConversationId: null,
-					messages: [],
-				});
-			},
-
-			addConversationOptimistic: (id, title, mode = "text") => {
-				// Check if conversation already exists (prevent duplicates)
-				const state = get();
-				if (state.conversations.some((c) => c.id === id)) {
-					console.debug(
-						"[Store] Conversation already exists, skipping optimistic add:",
-						id,
-					);
-					return;
-				}
-
-				// Instantly add a new conversation to the top of the list (optimistic update)
-				const newConversation: Conversation = {
-					id,
-					title,
-					mode,
-					createdAt: new Date().toISOString(),
-					updatedAt: new Date().toISOString(),
-					isPinned: false,
-					messageCount: 0,
-				};
-				set((state) => ({
-					conversations: [newConversation, ...state.conversations],
-				}));
-
-				// Sync with cache
-				// Sync with cache
-				const userId = get().userId;
-				if (userId) {
-					conversationCache
-						.upsertConversation({
-							id: newConversation.id,
-							userId, // [SECURITY-FIX #01]
-							title: newConversation.title,
-							mode: newConversation.mode,
-							isPinned: newConversation.isPinned,
-							createdAt: newConversation.createdAt,
-							updatedAt: newConversation.updatedAt || newConversation.createdAt,
-						})
-						.catch((err) =>
-							console.warn("[Store] Failed to cache optimistic conv:", err),
-						);
-				}
-			},
-
-			updateConversationId: (tempId: string, realId: string) => {
-				// Replace temp ID with real ID from backend
-				set((state) => ({
-					conversations: state.conversations.map((c) =>
-						c.id === tempId ? { ...c, id: realId } : c,
-					),
-					currentConversationId:
-						state.currentConversationId === tempId
-							? realId
-							: state.currentConversationId,
-				}));
-
-				// Sync with cache
-				// Sync with cache
-				// [SECURITY-FIX #02] Prevent race condition in migrations
-				if (get().migratingIds.has(tempId)) return;
-
-				set((s) => ({ migratingIds: new Set(s.migratingIds).add(tempId) }));
-
-				conversationCache
-					.migrateId(tempId, realId)
-					.then(() => {
-						set((s) => {
-							const newSet = new Set(s.migratingIds);
-							newSet.delete(tempId);
-							return { migratingIds: newSet };
-						});
-					})
-					.catch((err) =>
-						console.warn("[Store] Failed to migrate cache ID:", err),
-					);
-			},
 
 			// ─────────────────────────────────────────────────────────────
 			// Bulk Actions
@@ -550,7 +469,7 @@ export const useConversationStore = create<ConversationState>()(
 				}
 			},
 
-			createConversation: async (title = "New Conversation", mode = "text") => {
+			createConversation: async (title = "New Conversation", mode = "text", id?: string) => {
 				try {
 					const response = await api.post<{
 						id: string;
@@ -558,6 +477,7 @@ export const useConversationStore = create<ConversationState>()(
 						created_at: string;
 						updated_at: string;
 					}>("/conversations/", {
+						id,
 						title,
 						mode,
 					});
@@ -573,15 +493,62 @@ export const useConversationStore = create<ConversationState>()(
 
 					set((state) => ({
 						conversations: [newConversation, ...state.conversations],
-						currentConversationId: newConversation.id,
-						messages: [],
 					}));
+
+					const userId = get().userId;
+					if (userId) {
+						conversationCache
+							.upsertConversation({
+								id: newConversation.id,
+								userId,
+								title: newConversation.title,
+								mode: newConversation.mode,
+								isPinned: newConversation.isPinned,
+								createdAt: newConversation.createdAt,
+								updatedAt: newConversation.updatedAt || newConversation.createdAt,
+							})
+							.catch((err) =>
+								console.warn("[Store] Failed to cache conversation:", err),
+							);
+					}
 
 					return newConversation.id;
 				} catch (error) {
 					console.error("Failed to create conversation:", error);
 					throw error;
 				}
+			},
+
+			prepareNewConversation: () => {
+				const pendingId = generateNewConversationId();
+				set({
+					pendingConversationId: pendingId,
+					conversationStatus: "pending",
+					currentConversationId: null,
+					messages: [],
+				});
+				return pendingId;
+			},
+
+			activateConversation: async ({ mode = "text", title = "New Conversation", id }) => {
+				const state = get();
+				const conversationId = id || state.pendingConversationId;
+				if (!conversationId) {
+					throw new Error("No pending conversation ID");
+				}
+				if (
+					state.currentConversationId === conversationId &&
+					state.conversationStatus === "active"
+				) {
+					return conversationId;
+				}
+				const newId = await get().createConversation(title, mode, conversationId);
+				set({
+					currentConversationId: newId,
+					pendingConversationId: null,
+					conversationStatus: "active",
+				});
+				return newId;
 			},
 
 			loadConversation: async (id) => {
@@ -593,6 +560,9 @@ export const useConversationStore = create<ConversationState>()(
 				}
 
 				const state = get();
+				if (state.messages.some((m) => m.isEphemeral)) {
+					set({ messages: state.messages.filter((m) => !m.isEphemeral) });
+				}
 				if (state.isLoadingMessages) return;
 
 				// If already loaded, we only do a background delta sync
@@ -617,6 +587,8 @@ export const useConversationStore = create<ConversationState>()(
 							lastSyncedAt = cached.conversation.cachedAt;
 							set({
 								currentConversationId: id,
+								pendingConversationId: null,
+								conversationStatus: "active",
 								messages: cached.messages.map((m) => ({
 									id: m.id,
 									role: m.role,
@@ -698,6 +670,8 @@ export const useConversationStore = create<ConversationState>()(
 
 						set({
 							currentConversationId: id,
+							pendingConversationId: null,
+							conversationStatus: "active",
 							messages: detail.messages.map(transformMessage),
 							isLoadingMessages: false,
 						});
@@ -709,13 +683,13 @@ export const useConversationStore = create<ConversationState>()(
 				}
 			},
 
-			reloadFromBackend: async (id) => {
-				if (!isValidUUID(id)) {
-					console.error("Invalid conversation ID format");
-					return;
-				}
+				reloadFromBackend: async (id) => {
+					if (!isValidUUID(id)) {
+						console.error("Invalid conversation ID format");
+						return;
+					}
 
-				set({ messages: [], isLoadingMessages: true });
+					set({ messages: [], isLoadingMessages: true });
 
 				try {
 					const response = await api.get<BackendConversationDetail>(`/conversations/${id}`);
@@ -744,6 +718,8 @@ export const useConversationStore = create<ConversationState>()(
 
 					set({
 						currentConversationId: id,
+						pendingConversationId: null,
+						conversationStatus: "active",
 						messages: detail.messages.map(transformMessage),
 						isLoadingMessages: false,
 					});
@@ -763,6 +739,8 @@ export const useConversationStore = create<ConversationState>()(
 					conversations: state.conversations.filter((c) => c.id !== id),
 					currentConversationId:
 						currentConversationId === id ? null : currentConversationId,
+					conversationStatus:
+						currentConversationId === id ? "idle" : state.conversationStatus,
 					messages: currentConversationId === id ? [] : state.messages,
 				}));
 

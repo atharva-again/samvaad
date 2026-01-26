@@ -243,6 +243,9 @@ export function MessageBubble({ message, index, onEdit }: MessageBubbleProps) {
 		return Array.from(indices).sort((a, b) => a - b);
 	}, [message.content, hasSources]);
 
+
+	const showCitations = hasSources && citedIndices && citedIndices.length > 0;
+
 	// Memoize markdown components - DO NOT depend on hover state to prevent DOM recreation on hover
 	// Hover highlighting is handled via data-attributes and CSS
 	const components = React.useMemo(() => {
@@ -403,7 +406,7 @@ export function MessageBubble({ message, index, onEdit }: MessageBubbleProps) {
 
 	// IntersectionObserver: Auto-update citations when scrolling with Citations tab open
 	React.useEffect(() => {
-		if (!hasSources || !messageRef.current) return;
+		if (!showCitations || !messageRef.current) return;
 
 		// Only observe if Citations tab is open
 		if (!isSourcesPanelOpen || sourcesPanelTab !== "citations") return;
@@ -434,7 +437,7 @@ export function MessageBubble({ message, index, onEdit }: MessageBubbleProps) {
 
 		return () => observer.disconnect();
 	}, [
-		hasSources,
+		showCitations,
 		isSourcesPanelOpen,
 		sourcesPanelTab,
 		message.id,
@@ -533,7 +536,7 @@ export function MessageBubble({ message, index, onEdit }: MessageBubbleProps) {
 								<Volume2 className="w-3.5 h-3.5" />
 							)}
 						</button>
-						{hasSources && (
+					{showCitations && (
 							<button
 								onClick={() =>
 									openCitations(

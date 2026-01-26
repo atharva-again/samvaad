@@ -52,9 +52,7 @@ class ConversationService:
             )
             return result.scalars().first()
 
-    def list_conversations(
-        self, user_id: str, limit: int = 50, offset: int = 0
-    ) -> list[Conversation]:
+    def list_conversations(self, user_id: str, limit: int = 50, offset: int = 0) -> list[Conversation]:
         """List conversations for a user, ordered by most recent."""
         with get_db_context() as db:
             result = db.execute(
@@ -107,9 +105,7 @@ class ConversationService:
         """Delete a conversation and all its messages (cascade)."""
         with get_db_context() as db:
             result = db.execute(
-                delete(Conversation)
-                .where(Conversation.id == conversation_id)
-                .where(Conversation.user_id == user_id)
+                delete(Conversation).where(Conversation.id == conversation_id).where(Conversation.user_id == user_id)
             )
             db.commit()
             return result.rowcount > 0
@@ -121,11 +117,8 @@ class ConversationService:
         """
         with get_db_context() as db:
             result = db.execute(
-                delete(Conversation)
-                .where(Conversation.id.in_(conversation_ids))
-                .where(Conversation.user_id == user_id)
+                delete(Conversation).where(Conversation.id.in_(conversation_ids)).where(Conversation.user_id == user_id)
             )
-            # Use result.rowcount to get deleted count
             count = result.rowcount
             db.commit()
             return count
@@ -164,9 +157,7 @@ class ConversationService:
 
             # Update conversation's updated_at timestamp
             db.execute(
-                update(Conversation)
-                .where(Conversation.id == conversation_id)
-                .values(updated_at=message.created_at)
+                update(Conversation).where(Conversation.id == conversation_id).values(updated_at=message.created_at)
             )
 
             db.commit()
@@ -176,11 +167,7 @@ class ConversationService:
     def get_messages(self, conversation_id: UUID, limit: int | None = None) -> list[Message]:
         """Get messages for a conversation, ordered by creation time."""
         with get_db_context() as db:
-            query = (
-                select(Message)
-                .where(Message.conversation_id == conversation_id)
-                .order_by(Message.created_at)
-            )
+            query = select(Message).where(Message.conversation_id == conversation_id).order_by(Message.created_at)
             if limit:
                 query = query.limit(limit)
 
@@ -192,9 +179,7 @@ class ConversationService:
         with get_db_context() as db:
             from sqlalchemy import func
 
-            result = db.execute(
-                select(func.count(Message.id)).where(Message.conversation_id == conversation_id)
-            )
+            result = db.execute(select(func.count(Message.id)).where(Message.conversation_id == conversation_id))
             return result.scalar() or 0
 
     def get_messages_since(
@@ -209,20 +194,14 @@ class ConversationService:
         with get_db_context() as db:
             # Verify ownership
             conv = db.execute(
-                select(Conversation.id)
-                .where(Conversation.id == conversation_id)
-                .where(Conversation.user_id == user_id)
+                select(Conversation.id).where(Conversation.id == conversation_id).where(Conversation.user_id == user_id)
             ).scalar()
 
             if not conv:
                 return []
 
             # Build query
-            query = (
-                select(Message)
-                .where(Message.conversation_id == conversation_id)
-                .order_by(Message.created_at)
-            )
+            query = select(Message).where(Message.conversation_id == conversation_id).order_by(Message.created_at)
 
             if after is not None:
                 query = query.where(Message.created_at > after)
@@ -230,65 +209,47 @@ class ConversationService:
             result = db.execute(query)
             return list(result.scalars().all())
 
-    def get_or_create_conversation(
-        self, conversation_id: UUID | None, user_id: str
-    ) -> Conversation:
-        """Get an existing conversation or create a new one.
+    def get_or_create_conversation(self, conversation_id: str, user_id: str) -> Conversation:
+        from sqlalchemy.exc import IntegrityError
 
-        If conversation_id is provided and exists for this user, returns it.
-        If conversation_id is provided but doesn't exist, creates a new conversation WITH that ID.
-        If conversation_id is None, creates a new conversation with auto-generated ID.
-        """
-        if conversation_id:
-            conversation = self.get_conversation(conversation_id, user_id)
-            if conversation:
-                return conversation
-            # ID was provided but conversation doesn't exist - create with that ID
-            return self.create_conversation(user_id=user_id, conversation_id=conversation_id)
+        conversation = self.get_conversation(UUID(conversation_id), user_id)
+        if conversation:
+            return conversation
 
-        # No ID provided - create with auto-generated ID
-        return self.create_conversation(user_id=user_id)
+        try:
+            return self.create_conversation(user_id=user_id, conversation_id=UUID(conversation_id))
+        except IntegrityError:
+            db_conversation = self.get_conversation(UUID(conversation_id), user_id)
+            if not db_conversation:
+                raise
+            return db_conversation  # type: ignore
 
-    def truncate_messages_from(
-        self, conversation_id: UUID, user_id: str, keep_message_ids: list[str]
-    ) -> int:
+    def truncate_messages_from(self, conversation_id: UUID, user_id: str, keep_message_ids: list[str]) -> int:
         """Truncate messages in a conversation, keeping only the specified message IDs.
 
         Used for edit functionality - deletes messages that are not in keep_message_ids.
         Returns the number of deleted messages.
         """
         with get_db_context() as db:
-            # Verify ownership
             conv = db.execute(
-                select(Conversation.id)
-                .where(Conversation.id == conversation_id)
-                .where(Conversation.user_id == user_id)
+                select(Conversation.id).where(Conversation.id == conversation_id).where(Conversation.user_id == user_id)
             ).scalar()
 
             if not conv:
                 return 0
 
-            # Convert string IDs to UUIDs for comparison
             keep_uuids = [UUID(mid) for mid in keep_message_ids]
 
-            # Delete messages NOT in the keep list
             delete_stmt = (
-                delete(Message)
-                .where(Message.conversation_id == conversation_id)
-                .where(Message.id.notin_(keep_uuids))
+                delete(Message).where(Message.conversation_id == conversation_id).where(Message.id.notin_(keep_uuids))
             )
 
             result = db.execute(delete_stmt)
             deleted_count = result.rowcount
 
-            # Update conversation's updated_at
             if deleted_count > 0:
-                from datetime import datetime
-
                 db.execute(
-                    update(Conversation)
-                    .where(Conversation.id == conversation_id)
-                    .values(updated_at=datetime.now(UTC))
+                    update(Conversation).where(Conversation.id == conversation_id).values(updated_at=datetime.now(UTC))
                 )
 
             db.commit()
