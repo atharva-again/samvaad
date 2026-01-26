@@ -84,6 +84,8 @@ export function IconNavRail() {
 			conversations: [],
 			messages: [],
 			currentConversationId: null,
+			pendingConversationId: null,
+			conversationStatus: "idle",
 			hasFetchedConversations: false,
 		});
 		useUIStore.setState({
@@ -101,8 +103,6 @@ export function IconNavRail() {
 		conversations,
 		currentConversationId,
 		isLoadingConversations,
-		loadConversation,
-		startNewChat,
 		fetchConversations,
 		deleteConversation,
 		updateConversationTitle,
@@ -156,7 +156,6 @@ export function IconNavRail() {
 			// New Chat: Alt + N (Option + N)
 			if (e.altKey && (e.key === "n" || e.key === "N")) {
 				e.preventDefault();
-				startNewChat();
 				router.push("/");
 			}
 
@@ -177,7 +176,7 @@ export function IconNavRail() {
 
 		window.addEventListener("keydown", handleKeyDown);
 		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [startNewChat, isMac, setToggleSidebar, router.push, toggleSearch]);
+	}, [isMac, setToggleSidebar, router, toggleSearch]);
 
 	// Fetch conversations on mount (cache-first, then background sync)
 	useEffect(() => {
@@ -291,7 +290,6 @@ export function IconNavRail() {
 							!currentConversationId && !isSearchOpen && !isSourcesPanelOpen
 						}
 						onClick={() => {
-							startNewChat();
 							router.push("/");
 						}}
 						tooltipLabel="New Chat"

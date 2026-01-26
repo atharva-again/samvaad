@@ -1,8 +1,7 @@
 "use client";
 
-import { useScroll, useTransform } from "framer-motion";
-import { useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import { ChatView } from "@/components/chat/ChatView";
 import { SourcesPanel } from "@/components/chat/SourcesPanel";
 import { AppMockup } from "@/components/landing/AppMockup";
@@ -12,6 +11,10 @@ import { Hero } from "@/components/landing/Hero";
 import { Navbar } from "@/components/landing/Navbar";
 import { IconNavRail } from "@/components/navigation/IconNavRail";
 import { useAuth } from "@/contexts/AuthContext";
+import { useConversationStore } from "@/lib/stores/useConversationStore";
+import { useInputBarStore } from "@/lib/stores/useInputBarStore";
+import { useScroll, useTransform } from "framer-motion";
+import { useRef } from "react";
 
 function LandingPage({ onCTA }: { onCTA: () => void }) {
 	const containerRef = useRef<HTMLDivElement>(null);
@@ -48,6 +51,15 @@ function LandingPage({ onCTA }: { onCTA: () => void }) {
 export default function Home() {
 	const { user, isLoading } = useAuth();
 	const router = useRouter();
+	const { prepareNewConversation } = useConversationStore();
+	const { setHasInteracted } = useInputBarStore();
+
+	useEffect(() => {
+		if (user) {
+			prepareNewConversation();
+			setHasInteracted(false);
+		}
+	}, [user, prepareNewConversation, setHasInteracted]);
 
 	if (isLoading) return null;
 
@@ -57,7 +69,9 @@ export default function Home() {
 				<div className="hidden md:flex h-full shrink-0">
 					<IconNavRail />
 				</div>
+
 				<ChatView />
+
 				<SourcesPanel />
 			</main>
 		);

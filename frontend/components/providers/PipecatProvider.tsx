@@ -29,7 +29,7 @@ interface PipecatProviderProps {
 
 export function PipecatProvider({ children }: PipecatProviderProps) {
 	const [client, setClient] = useState<PipecatClient | null>(null);
-	const { setCitations, setSourcesPanelTab, setSourcesPanelOpen } =
+	const { setCitations, setSourcesPanelTab, setPendingVoiceCitations } =
 		useUIStore();
 
 	useEffect(() => {
@@ -68,15 +68,15 @@ export function PipecatProvider({ children }: PipecatProviderProps) {
 						onServerMessage: (data: unknown) => {
 							const msg = data as { type?: string; sources?: CitationItem[]; text?: string };
 							
-							if (msg.type === "citations" && msg.sources) {
-								console.debug(
-									"[PipecatProvider] Received citations:",
-									msg.sources.length,
-								);
-								// Store citations and optionally open the panel
-								setCitations("voice-response", msg.sources);
-								setSourcesPanelTab("citations");
-							} else if (msg.type === "transcript" && msg.text) {
+						if (msg.type === "citations" && msg.sources) {
+							console.debug(
+								"[PipecatProvider] Received citations:",
+								msg.sources.length,
+							);
+							setPendingVoiceCitations(msg.sources);
+							setCitations("voice-response", msg.sources);
+							setSourcesPanelTab("citations");
+						} else if (msg.type === "transcript" && msg.text) {
 								console.debug(
 									"[PipecatProvider] Received transcript with citation markers:",
 									msg.text.substring(0, 100),
@@ -118,6 +118,7 @@ export function PipecatProvider({ children }: PipecatProviderProps) {
 		// Store citations and optionally open the panel
 		setCitations,
 		setSourcesPanelTab,
+		setPendingVoiceCitations,
 	]);
 
 	// While the Pipecat client isn't ready, render children directly. This

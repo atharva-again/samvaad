@@ -67,7 +67,7 @@ def rag_query_pipeline(
     query_text: str,
     top_k: int = 3,
     user_id: str = None,
-    file_ids: list[str] = None,
+    file_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     """
     Search-only RAG pipeline: embed query, search documents.

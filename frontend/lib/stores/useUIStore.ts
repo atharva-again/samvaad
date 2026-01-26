@@ -70,11 +70,15 @@ interface UIState {
 	hoveredCitationMessageId: string | null;
 	citedIndices: number[] | null;
 	hoverSource: "bubble" | "panel" | null;
+	pendingVoiceCitations: CitationItem[];
+	lastVoiceCitations: CitationItem[];
 	setCitations: (
 		messageId: string,
 		citations: CitationItem[],
 		citedIndices?: number[],
 	) => void;
+	setPendingVoiceCitations: (citations: CitationItem[]) => void;
+	consumePendingVoiceCitations: () => CitationItem[];
 	clearCitations: () => void;
 	setHoveredCitationIndex: (
 		index: number | null,
@@ -173,12 +177,21 @@ export const useUIStore = create<UIState>()(
 			hoveredCitationMessageId: null,
 			hoverSource: null,
 			citedIndices: null,
+			pendingVoiceCitations: [],
+			lastVoiceCitations: [],
 			setCitations: (messageId, citations, citedIndices) =>
 				set({
 					citationsMessageId: messageId,
 					currentCitations: citations,
 					citedIndices: citedIndices,
 				}),
+			setPendingVoiceCitations: (citations) =>
+				set({ pendingVoiceCitations: citations, lastVoiceCitations: citations }),
+			consumePendingVoiceCitations: () => {
+				const citations = _get().pendingVoiceCitations;
+				set({ pendingVoiceCitations: [] });
+				return citations;
+			},
 			setHoveredCitationIndex: (index, messageId, source) =>
 				set({
 					hoveredCitationIndex: index,

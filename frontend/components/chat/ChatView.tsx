@@ -10,7 +10,7 @@ import { WelcomeScreen } from "@/components/chat/WelcomeScreen";
 import { type ChatMessage, sendMessage } from "@/lib/api";
 import { useConversationStore } from "@/lib/stores/useConversationStore";
 import { useInputBarStore } from "@/lib/stores/useInputBarStore";
-import { useUIStore } from "@/lib/stores/useUIStore";
+import { useUIStore, type CitationItem } from "@/lib/stores/useUIStore";
 import { cn } from "@/lib/utils";
 
 interface ChatViewProps {
@@ -30,11 +30,10 @@ export function ChatView({ conversationId }: ChatViewProps) {
 		addMessage,
 		addMessageToUI,
 		setCurrentConversation,
-		clearMessages,
 		truncateMessagesAt,
-		addConversationOptimistic,
-		updateConversationId,
 		loadConversation,
+		activateConversation,
+		updateConversationTitle,
 	} = useConversationStore();
 
 	// Convert store messages to ChatMessage format - MEMOIZED to prevent scroll triggers
@@ -53,86 +52,38 @@ export function ChatView({ conversationId }: ChatViewProps) {
 	// Swipe Detection for Sources Panel
 	const touchStart = useRef<number | null>(null);
 	const touchEnd = useRef<number | null>(null);
-	// Track voice conversation ID for creating new conversations during voice sessions
-	const voiceConversationIdRef = useRef<string | null>(null);
 	const {
 		setSourcesPanelOpen,
 		isSidebarOpen,
 		isSourcesPanelOpen,
 		allowedSourceIds,
 		isVoiceSessionActive,
-		activeVoiceConversationId,
 	} = useUIStore();
 	const { setHasInteracted } = useInputBarStore();
 
-	// Reset to mode switcher ONLY when clicking on a DIFFERENT conversation in sidebar
-	// Do NOT reset when:
-	// - Current conversation updates its own URL (new conversation created)
-	// - Voice session is active
-	// - Navigating from home (/) to a new conversation created in this session
 	const prevConversationIdRef = useRef<string | undefined>(undefined);
 	useEffect(() => {
-		const isNavigating = conversationId !== prevConversationIdRef.current;
-		const wasOnHomePage = prevConversationIdRef.current === undefined;
-
-		if (isNavigating && conversationId) {
-			// Check if this is the current conversation updating its URL (not a sidebar click)
-			const storeCurrentId =
-				useConversationStore.getState().currentConversationId;
-			const isCurrentConversationUrlUpdate = storeCurrentId === conversationId;
-
-			// Skip reset if:
-			// 1. This is the current conversation updating its URL after creation
-			// 2. Voice session is active
-			// 3. Voice conversation matches (voice session created this conversation)
-			// 4. Navigating from home page to a new conversation (first message sent)
-			const shouldSkipReset =
-				isCurrentConversationUrlUpdate ||
-				isVoiceSessionActive ||
-				activeVoiceConversationId === conversationId ||
-				(wasOnHomePage && isCurrentConversationUrlUpdate);
-
-			if (!shouldSkipReset) {
-				console.debug(
-					"[ChatView] Navigated to different chat, resetting to mode switcher",
-				);
-				setHasInteracted(false);
-				voiceConversationIdRef.current = null;
-			}
+		const previousId = prevConversationIdRef.current;
+		if (conversationId && previousId && conversationId !== previousId && !isVoiceSessionActive) {
+			setHasInteracted(false);
 		}
 		prevConversationIdRef.current = conversationId;
-	}, [conversationId, setHasInteracted, isVoiceSessionActive, activeVoiceConversationId]);
+	}, [conversationId, setHasInteracted, isVoiceSessionActive]);
 
 	// Load conversation from URL param if provided
 	// Skip during active voice sessions to prevent duplicate messages
 	useEffect(() => {
 		if (conversationId && !isVoiceSessionActive) {
-			console.debug(
-				"[ChatView] loading/syncing conversationId:",
-				conversationId,
-			);
-			loadConversation(conversationId);
-		}
-	}, [conversationId, loadConversation, isVoiceSessionActive]);
-
-	// When on root page (/), ensure we have a clean slate for new chat
-	// IMPORTANT: Only run this cleanup on initial mount, not on every message change
-	// Otherwise it creates a race condition that clears voice messages immediately
-	const didInitialCleanup = useRef(false);
-	useEffect(() => {
-		if (!conversationId && !didInitialCleanup.current) {
-			// On root page - clear any leftover state for fresh start (only once)
-			if (currentConversationId || storeMessages.length > 0) {
-				clearMessages();
+			const isInitialLoad = !storeMessages.length || currentConversationId !== conversationId;
+			if (isInitialLoad) {
+				console.debug(
+					"[ChatView] loading/syncing conversationId:",
+					conversationId,
+				);
+				loadConversation(conversationId);
 			}
-			didInitialCleanup.current = true;
 		}
-	}, [
-		conversationId,
-		clearMessages,
-		currentConversationId,
-		storeMessages.length,
-	]); // Only depend on conversationId, not storeMessages.length
+	}, [conversationId, loadConversation, isVoiceSessionActive, currentConversationId, storeMessages.length]);
 
 	const handleTouchStart = (e: React.TouchEvent) => {
 		touchEnd.current = null;
@@ -163,28 +114,31 @@ export function ChatView({ conversationId }: ChatViewProps) {
 		persona: string = "default",
 		strictMode: boolean = false,
 	) => {
-		// Generate UUIDv7 for new conversation if this is the first message
-		const isNewConversation = !conversationId && !currentConversationId;
-		const newConversationId = isNewConversation ? uuidv7() : null;
-
-		// If new conversation, immediately navigate to the new URL and update state
-		if (isNewConversation && newConversationId) {
-			addConversationOptimistic(
-				newConversationId,
-				text.slice(0, 50) + (text.length > 50 ? "..." : ""),
-			);
-			setCurrentConversation(newConversationId);
-			// [UX-FIX #41] Use Router for safe navigation
-			router.replace(`/chat/${newConversationId}`, { scroll: false });
+		let activeConversationId = conversationId || currentConversationId;
+		if (!activeConversationId) {
+			try {
+				const title = text.slice(0, 50) + (text.length > 50 ? "..." : "");
+				activeConversationId = await activateConversation({
+					mode: "text",
+					title,
+				});
+				router.replace(`/chat/${activeConversationId}`, { scroll: false });
+			} catch (err) {
+				console.error("[ChatView] Failed to activate conversation:", err);
+				toast.error("Failed to start a new conversation");
+				return;
+			}
 		}
 
-		// Use the conversation ID from URL, current state, or newly generated
-		const activeConversationId =
-			conversationId || currentConversationId || newConversationId;
+		if (currentConversationId !== activeConversationId) {
+			setCurrentConversation(activeConversationId);
+		}
 
-		// Optimistic update - add user message to store + cache (write-through)
+		const controller = new AbortController();
+		abortControllerRef.current = controller;
+
 		const userMessageId = uuidv7();
-		const assistantMessageId = uuidv7(); // Generate assistant ID upfront (#4, #5)
+		const assistantMessageId = uuidv7();
 
 		addMessage(
 			{
@@ -193,18 +147,16 @@ export function ChatView({ conversationId }: ChatViewProps) {
 				content: text,
 				createdAt: new Date().toISOString(),
 			},
-			activeConversationId ?? undefined,
+			activeConversationId,
 		);
-		setIsStreaming(true);
 
-		const abortController = new AbortController();
-		abortControllerRef.current = abortController;
+		setIsStreaming(true);
 
 		try {
 			const data = await sendMessage(
 				text,
 				activeConversationId,
-				abortController.signal,
+				controller.signal,
 				persona,
 				strictMode,
 				userMessageId, // Client-generated user message ID
@@ -213,17 +165,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
 			);
 
 			if (data.success) {
-				// For new conversations, update temp ID with real ID from backend if different
-				if (
-					newConversationId &&
-					data.conversation_id &&
-					data.conversation_id !== newConversationId
-				) {
-					// Backend returned a different ID (shouldn't happen with our new logic, but handle gracefully)
-					updateConversationId(newConversationId, data.conversation_id);
-					router.replace(`/chat/${data.conversation_id}`);
-				}
-
 				// Add assistant response with client-generated ID (matches backend)
 				addMessage(
 					{
@@ -262,64 +203,37 @@ export function ChatView({ conversationId }: ChatViewProps) {
 	const handleVoiceMessage = async (message: {
 		role: "user" | "assistant" | "system";
 		content: string;
-		sources?: unknown[];
+		sources?: CitationItem[];
 	}) => {
 		// Guard: Skip empty messages (prevents blank bubbles from partial TTS events)
 		if (!message.content || !message.content.trim()) {
 			console.debug("[ChatView] Empty voice message, skipping");
 			return;
 		}
-
-		const storeState = useConversationStore.getState();
-		const activeConversationId =
-			conversationId || storeState.currentConversationId;
-
-		const isFirstUserMessage =
-			!voiceConversationIdRef.current &&
-			message.role === "user" &&
-			!activeConversationId;
-
-		let targetConversationId = activeConversationId;
-		if (isFirstUserMessage) {
+		let activeConversationId = conversationId || currentConversationId;
+		if (!activeConversationId && message.role === "user") {
 			const title =
 				message.content.slice(0, 50) +
 				(message.content.length > 50 ? "..." : "");
-
-			const newId = await useConversationStore
-				.getState()
-				.createConversation(title, "voice");
-			targetConversationId = newId;
-			voiceConversationIdRef.current = newId;
-
-			if (!conversationId) {
-				router.replace(`/chat/${newId}`, { scroll: false });
-			}
-		} else if (
-			!voiceConversationIdRef.current &&
-			message.role === "user" &&
-			activeConversationId
-		) {
-			voiceConversationIdRef.current = activeConversationId;
-
-			if (!conversationId) {
-				const title =
-					message.content.slice(0, 50) +
-					(message.content.length > 50 ? "..." : "");
-				useConversationStore
-					.getState()
-					.addConversationOptimistic(activeConversationId, title, "voice");
+			try {
+				activeConversationId = await activateConversation({
+					mode: "voice",
+					title,
+				});
+				await updateConversationTitle(activeConversationId, title);
 				router.replace(`/chat/${activeConversationId}`, { scroll: false });
+			} catch (error) {
+				console.error("[ChatView] Failed to activate voice conversation:", error);
+				toast.error("Failed to start voice conversation");
 			}
 		}
 
-		// Use addMessageToUI (UI-only, no cache) for voice mode
-		// Backend saves messages via SamvaadLLMContext, we sync via delta fetch after session ends
 		addMessageToUI({
 			id: uuidv7(),
 			role: message.role,
 			content: message.content,
 			createdAt: new Date().toISOString(),
-			sources: message.sources as Record<string, unknown>[] | undefined,
+			sources: message.sources,
 		});
 	};
 
@@ -399,15 +313,15 @@ export function ChatView({ conversationId }: ChatViewProps) {
 						onEdit={handleEditMessage}
 					/>
 				)}
-				<InputBar
-					onSendMessage={handleSendMessage}
-					isLoading={isStreaming}
-					onStop={handleStop}
-					defaultMessage={editMessageContent}
-					onMessageConsumed={() => setEditMessageContent(null)}
-					onVoiceMessage={handleVoiceMessage}
-					conversationId={currentConversationId}
-				/>
+			<InputBar
+				onSendMessage={handleSendMessage}
+				isLoading={isStreaming}
+				onStop={handleStop}
+				defaultMessage={editMessageContent}
+				onMessageConsumed={() => setEditMessageContent(null)}
+				onVoiceMessage={handleVoiceMessage}
+				conversationId={conversationId || currentConversationId}
+			/>
 			</div>
 		</div>
 	);

@@ -7,11 +7,11 @@ Single source of truth for context management across both text and voice modes.
 import os
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 import tiktoken
-from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
+from pipecat.processors.aggregators.llm_context import LLMContext, NOT_GIVEN
 
 from samvaad.db.conversation_service import ConversationService
 from samvaad.utils.logger import logger
@@ -25,36 +25,57 @@ SLIDING_WINDOW_SIZE = int(os.getenv("HISTORY_WINDOW_SIZE", "6"))
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class SamvaadLLMContext(OpenAILLMContext):
+class SamvaadLLMContext(LLMContext):
     """
     Database-backed LLM context manager for Pipecat voice pipelines.
 
-    Extends OpenAILLMContext with:
+    Extends LLMContext with:
     - Sliding window context management (via UnifiedContextManager)
     - Database persistence for messages
     - Automatic fact extraction & summarization orchestration
 
     Uses the same context logic as text mode for consistency.
+
+    Migration Notes (2025-01):
+    - Migrated from deprecated OpenAILLMContext to LLMContext
+    - Updated to use LLMContextAggregatorPair instead of llm.create_context_aggregator
+    - Tools wrapped in ToolsSchema for compatibility
+    - conversation_id now optional (generates UUID if None)
     """
 
     def __init__(
-        self, conversation_id: str, user_id: str, conversation_service: ConversationService | None = None, **kwargs
+        self,
+        conversation_id: str,
+        user_id: str,
+        conversation_service: ConversationService | None = None,
+        tools=None,
+        tool_choice=None,
     ):
-        """
-        Initialize context with database backing and unified context management.
-
-        Args:
-            conversation_id: UUID of the conversation
-            user_id: UUID of the user
-            conversation_service: Optional injected service (for testing)
-            **kwargs: Passed to OpenAILLMContext (tools, tool_choice, etc.)
-        """
-        super().__init__(**kwargs)
+        super().__init__(
+            messages=[],
+            tools=tools if tools is not None else NOT_GIVEN,
+            tool_choice=tool_choice if tool_choice is not None else NOT_GIVEN,
+        )
         self.conversation_id = conversation_id
         self.user_id = user_id
         self._db = conversation_service or ConversationService()
         self._context_manager = UnifiedContextManager(conversation_id, user_id, conversation_service)
         self._initialized = False
+        self._pending_sources: list[dict] | None = None
+        self._pending_raw_assistant_text: str | None = None
+        self._last_sources: list[dict] | None = None
+
+    def set_pending_sources(self, sources: list[dict]) -> None:
+        self._pending_sources = sources
+        self._last_sources = sources
+
+    def set_pending_raw_assistant_text(self, content: str) -> None:
+        self._pending_raw_assistant_text = content
+
+    def consume_pending_sources(self) -> list[dict] | None:
+        sources = self._pending_sources
+        self._pending_sources = None
+        return sources
 
     def load_history(self):
         """
@@ -70,7 +91,11 @@ class SamvaadLLMContext(OpenAILLMContext):
         recent_messages, older_messages = self._context_manager.get_sliding_window(messages, SLIDING_WINDOW_SIZE)
 
         for msg in recent_messages:
-            super().add_message(msg)
+            # Cast dict to expected type
+            from typing import cast
+            from openai.types.chat import ChatCompletionMessageParam
+
+            super().add_message(cast(ChatCompletionMessageParam, msg))
 
         self._initialized = True
 
@@ -84,18 +109,50 @@ class SamvaadLLMContext(OpenAILLMContext):
         """
         Override: Add message to in-memory context AND trigger background persistence/tasks.
         """
-        role = message.get("role", "")
+        role = ""
+        content = ""
+        sources = None
+
+        # Type guard for message access
+        if isinstance(message, dict):
+            role = message["role"] if "role" in message else ""
+            content = message["content"] if "content" in message else ""
+            sources = message["sources"] if "sources" in message else None
+        else:
+            # Fallback for non-dict messages (though we expect dict)
+            content = str(getattr(message, "content", ""))
+
         # Add to in-memory context (super().add_message handles system messages correctly)
-        super().add_message(message)
+        from typing import cast
+        from openai.types.chat import ChatCompletionMessageParam
+
+        super().add_message(cast(ChatCompletionMessageParam, message))
+
+        if role == "assistant":
+            is_tool_call = isinstance(message, dict) and "tool_calls" in message
+            if is_tool_call:
+                return
+            if self._pending_raw_assistant_text:
+                content = self._pending_raw_assistant_text
+                self._pending_raw_assistant_text = None
+            if not sources:
+                sources = self._pending_sources
+            if not sources and self._last_sources:
+                if "[" in str(content) or "【" in str(content):
+                    sources = self._last_sources
+            if not content or not str(content).strip():
+                return
 
         if role == "assistant" and self.user_id and self.conversation_id:
             # Find the last user message to pair with this assistant response
             messages = self.get_messages()
             user_msg = ""
             for m in reversed(messages[:-1]):
-                if m.get("role") == "user":
-                    user_msg = m.get("content", "")
-                    break
+                if isinstance(m, dict) and (m["role"] if "role" in m else None) == "user":
+                    candidate = str(m["content"] if "content" in m else "")
+                    if candidate.strip():
+                        user_msg = candidate
+                        break
 
             # Trigger centralized orchestration for background tasks
             if user_msg:
@@ -106,14 +163,18 @@ class SamvaadLLMContext(OpenAILLMContext):
                     loop.create_task(
                         self._context_manager.run_post_response_tasks(
                             user_message=user_msg,
-                            assistant_response=message.get("content", ""),
-                            sources=message.get("sources"),
+                            assistant_response=str(content),
+                            sources=sources,
                         )
                     )
+                    self._pending_sources = None
                 except RuntimeError:
                     # Fallback for sync environments
                     self._context_manager.save_message("user", user_msg)
-                    self._context_manager.save_message("assistant", message.get("content", ""))
+                    self._context_manager.save_message("assistant", str(content), sources=sources)
+                    self._pending_sources = None
+                if sources:
+                    self._last_sources = sources
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -211,14 +272,22 @@ class UnifiedContextManager:
     # Database Operations
     # ─────────────────────────────────────────────────────────────────────────
 
-    def save_message(self, role: str, content: str) -> None:
+    def save_message(
+        self, role: str, content: str, message_id: str | None = None, sources: list[dict] | None = None
+    ) -> None:
         """
         Persist message to database with proper UUID handling.
         """
         try:
             # Ensure conversation exists before saving message
-            self._db.get_or_create_conversation(self.conversation_id, self.user_id)
-            self._db.add_message(conversation_id=self.conversation_id, role=role, content=content)
+            self._db.get_or_create_conversation(str(self.conversation_id), self.user_id)
+            self._db.add_message(
+                conversation_id=self.conversation_id,
+                role=role,
+                content=content,
+                sources=sources,
+                message_id=UUID(message_id) if message_id else None,
+            )
         except Exception as e:
             logger.error(f"[Context] Failed to persist message: {e}")
 
@@ -244,6 +313,8 @@ class UnifiedContextManager:
         current_summary: str | None = None,
         current_facts: str | None = None,
         sources: list[dict] | None = None,
+        user_message_id: str | None = None,
+        assistant_message_id: str | None = None,
     ) -> None:
         """
         Orchestrates background tasks after an assistant response.
@@ -253,8 +324,8 @@ class UnifiedContextManager:
         3. Triggering fact extraction
         """
         # 1. Save messages to database
-        self.save_message("user", user_message)
-        self.save_message("assistant", assistant_response)
+        self.save_message("user", user_message, user_message_id)
+        self.save_message("assistant", assistant_response, assistant_message_id, sources=sources)
 
         # 2. Extract facts from this exchange
         import asyncio
@@ -280,7 +351,8 @@ class UnifiedContextManager:
             # Get latest facts from DB if not provided
             if existing_facts is None:
                 conversation = self._db.get_conversation(self.conversation_id, self.user_id)
-                existing_facts = conversation.facts if conversation else ""
+                existing_facts_str: str = str(conversation.facts or "") if conversation else ""
+                existing_facts = existing_facts_str
 
             # LLM merges existing + new facts
             merged_facts = await extract_facts_from_exchange(
@@ -317,7 +389,8 @@ class UnifiedContextManager:
                     if exiting_batch:
                         if existing_summary is None:
                             conversation = self._db.get_conversation(self.conversation_id, self.user_id)
-                            existing_summary = conversation.summary if conversation else ""
+                            existing_summary_str: str = str(conversation.summary or "") if conversation else ""
+                            existing_summary = existing_summary_str
 
                         start_turn = batch_start + 1
                         end_turn = exited_count

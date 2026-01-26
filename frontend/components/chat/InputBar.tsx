@@ -27,6 +27,7 @@ import { ChatMessage, API_BASE_URL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { useUIStore } from "@/lib/stores/useUIStore";
 import { useInputBarStore } from "@/lib/stores/useInputBarStore";
+import { useConversationStore } from "@/lib/stores/useConversationStore";
 import { cn } from "@/lib/utils";
 import { endVoiceMode } from "@/lib/api";
 import { toast } from "sonner";
@@ -45,10 +46,15 @@ interface InputBarProps {
   conversationId?: string | null;
 }
 
-export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onMessageConsumed, onVoiceMessage }: InputBarProps) {
+export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onMessageConsumed, onVoiceMessage, conversationId }: InputBarProps) {
+	const { pendingConversationId } = useConversationStore();
   const USE_MOCK_BACKEND = false; // Toggle this to true for mock backend
   const {
     toggleSourcesPanel,
+    consumePendingVoiceCitations,
+    setPendingVoiceCitations,
+    consumeVoiceTranscript,
+    lastVoiceCitations,
   } = useUIStore();
 
   const {
@@ -85,6 +91,7 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
   const currentBotResponseRef = useRef<string>(""); // Ref to aggregate bot sentences (filtered, for fallback)
   const currentBotLlmTextRef = useRef<string>(""); // Ref to aggregate raw LLM text (with citation markers)
   const currentUserTranscriptRef = useRef<string>(""); // Ref to aggregate user transcripts
+  const assistantMessageSentRef = useRef(false);
   const { processFiles } = useFileProcessor();
 
   // Sync ref with store value for event handler access
@@ -339,6 +346,13 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
     setConnecting(true);
     setVoiceDuration(0);
 
+	const activeConversationId = conversationId || pendingConversationId;
+	if (!activeConversationId) {
+		toast.error("No conversation ID available");
+		setConnecting(false);
+		return;
+	}
+
     try {
       // Request mic permission
       if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
@@ -366,6 +380,7 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
         headers: authToken ? new Headers({ Authorization: `Bearer ${authToken}` }) : undefined,
         requestData: {
           session_id: "default",
+			conversation_id: activeConversationId,
           enable_tts: enableTTS,
           persona: persona,
           strict_mode: strictMode,
@@ -461,23 +476,85 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
     console.debug("[InputBar] RTVIEvent.BotStoppedSpeaking", evt);
     setVoiceState("listening");
 
-    // Use raw LLM text (with citation markers) for transcript display
     const rawLlmText = currentBotLlmTextRef.current.trim();
-    
+    const transcriptText = consumeVoiceTranscript();
+
+    if (assistantMessageSentRef.current) {
+      currentBotLlmTextRef.current = "";
+      currentBotResponseRef.current = "";
+      return;
+    }
+
+    const pendingCitations = consumePendingVoiceCitations();
+    let sources = pendingCitations.length > 0 ? pendingCitations : undefined;
+
+    if (!sources) {
+      const hasMarkers = /\[\d+\]/.test(rawLlmText || transcriptText || "");
+      if (hasMarkers && lastVoiceCitations.length > 0) {
+        sources = lastVoiceCitations;
+      }
+    }
+
     if (rawLlmText) {
       console.debug("[InputBar] Sending raw LLM text with citation markers:", rawLlmText.substring(0, 100));
-      onVoiceMessage?.({ role: "assistant", content: rawLlmText });
+      onVoiceMessage?.({ 
+        role: "assistant", 
+        content: rawLlmText,
+        sources
+      });
+    } else if (transcriptText) {
+      onVoiceMessage?.({
+        role: "assistant",
+        content: transcriptText,
+        sources
+      });
     } else {
       // Fallback to aggregated BotOutput if raw LLM text not available
       const fullResponse = currentBotResponseRef.current.trim();
       if (fullResponse) {
         console.debug("[InputBar] Fallback: Sending filtered bot response:", fullResponse);
-        onVoiceMessage?.({ role: "assistant", content: fullResponse });
+        onVoiceMessage?.({ 
+          role: "assistant", 
+          content: fullResponse,
+          sources
+        });
       }
     }
     
+    assistantMessageSentRef.current = true;
     currentBotLlmTextRef.current = "";
     currentBotResponseRef.current = "";
+  });
+
+  useRTVIClientEvent((RTVIEvent as any).Message, (data: any) => {
+    const message = data?.message || data?.data || data;
+    if (message?.type === "citations" && Array.isArray(message.sources)) {
+      console.debug("[InputBar] Received citations from RTVI:", message.sources.length);
+      setPendingVoiceCitations(message.sources);
+
+      const state = useConversationStore.getState();
+      const lastAssistant = [...state.messages]
+        .reverse()
+        .find((m) => m.role === "assistant");
+
+      if (lastAssistant && (!lastAssistant.sources || lastAssistant.sources.length === 0)) {
+        state.updateMessage(lastAssistant.id, { sources: message.sources });
+      }
+    }
+    if (message?.type === "transcript" && message.text && !assistantMessageSentRef.current) {
+      const pendingCitations = consumePendingVoiceCitations();
+      let sources = pendingCitations.length > 0 ? pendingCitations : undefined;
+      if (!sources) {
+        const hasMarkers = /\[\d+\]/.test(message.text);
+        if (hasMarkers && lastVoiceCitations.length > 0) {
+          sources = lastVoiceCitations;
+        }
+      }
+      onVoiceMessage?.({ role: "assistant", content: message.text, sources });
+      assistantMessageSentRef.current = true;
+      currentBotLlmTextRef.current = "";
+      currentBotResponseRef.current = "";
+    }
   });
 
   // Voice transcript handlers - capture transcripts to display in chat
@@ -501,6 +578,8 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
     
     // Reset LLM text aggregator for new response
     currentBotLlmTextRef.current = "";
+    currentBotResponseRef.current = "";
+    assistantMessageSentRef.current = false;
     
     const fullUserMessage = currentUserTranscriptRef.current.trim();
     if (fullUserMessage) {
@@ -996,4 +1075,3 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
     </div >
   );
 }
-

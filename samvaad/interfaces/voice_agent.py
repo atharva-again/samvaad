@@ -1,6 +1,7 @@
 import asyncio
 import os
 import time
+from typing import Any, cast
 
 import aiohttp
 from pipecat.audio.vad.silero import SileroVADAnalyzer
@@ -8,20 +9,22 @@ from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.pipeline.base_task import PipelineTaskParams
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.task import PipelineParams, PipelineTask
-from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams
+from pipecat.adapters.schemas.function_schema import FunctionSchema
+from pipecat.adapters.schemas.tools_schema import ToolsSchema
+from pipecat.processors.aggregators.llm_context import NOT_GIVEN
+from pipecat.processors.aggregators.llm_response_universal import LLMContextAggregatorPair, LLMUserAggregatorParams
 from pipecat.processors.frameworks.rtvi import (
     RTVIProcessor,
     RTVIServerMessageFrame,
     RTVIObserver,
 )
-from pipecat.processors.frame_processor import FrameProcessor
+from pipecat.processors.frame_processor import FrameDirection
 from pipecat.frames.frames import (
-    Frame,
     LLMFullResponseEndFrame,
     LLMFullResponseStartFrame,
     LLMTextFrame,
-    TextFrame,
 )
+from pipecat.observers.base_observer import BaseObserver, FramePushed
 from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.deepgram.tts import DeepgramTTSService
 from pipecat.services.groq.llm import GroqLLMService
@@ -37,59 +40,40 @@ from samvaad.utils.logger import logger
 from samvaad.utils.text_filters import CitationTextFilter
 
 
-class TranscriptCaptureProcessor(FrameProcessor):
-    """
-    Custom frame processor that captures LLM output text with citation markers
-    and sends it to the frontend via RTVI for display in chat transcript.
-
-    This solves the voice mode citation badge problem:
-    - LLM generates response with [1], [2] markers
-    - CitationTextFilter strips markers for clean TTS audio
-    - This processor captures the original text BEFORE filtering
-    - Sends it to frontend via RTVI message for display with badges
-    """
-
-    def __init__(self, rtvi_processor: RTVIProcessor):
+class LLMTextCaptureObserver(BaseObserver):
+    def __init__(self, llm: GroqLLMService, context: SamvaadLLMContext, rtvi: RTVIProcessor) -> None:
         super().__init__()
-        self.rtvi = rtvi_processor
+        self._llm = llm
+        self._context = context
+        self._rtvi = rtvi
         self._aggregated_text = ""
         self._is_aggregating = False
 
-    async def process_frame(self, frame: Frame, direction):
-        """Process frames and capture LLM text output."""
-        await super().process_frame(frame, direction)
+    async def on_push_frame(self, data: FramePushed):
+        if data.direction != FrameDirection.DOWNSTREAM:
+            return
+        if data.source is not self._llm:
+            return
 
-        # Start aggregating when LLM starts a full response
+        frame = data.frame
         if isinstance(frame, LLMFullResponseStartFrame):
             self._is_aggregating = True
             self._aggregated_text = ""
-            logger.debug("[TranscriptCapture] Started aggregating LLM response")
-
-        # Capture LLM text frames (this is what the LLM outputs)
         elif isinstance(frame, LLMTextFrame) and self._is_aggregating:
             self._aggregated_text += frame.text
-            logger.debug(f"[TranscriptCapture] Aggregated: {self._aggregated_text[:100]}...")
-
-        # When LLM finishes, send the complete response via RTVI
         elif isinstance(frame, LLMFullResponseEndFrame) and self._is_aggregating:
             if self._aggregated_text.strip():
-                logger.info(
-                    f"[TranscriptCapture] Sending transcript ({len(self._aggregated_text)} chars): {self._aggregated_text[:100]}..."
-                )
-                # Send original text with citation markers to frontend
-                transcript_frame = RTVIServerMessageFrame(
-                    data={"type": "transcript", "text": self._aggregated_text.strip()}
-                )
-                await self.rtvi.push_frame(transcript_frame)
-            else:
-                logger.warning("[TranscriptCapture] No text to send (empty aggregation)")
-
-            # Reset for next response
+                text = self._aggregated_text.strip()
+                self._context.set_pending_raw_assistant_text(text)
+                # Send transcript to frontend so it can display immediately
+                try:
+                    frame = RTVIServerMessageFrame(data={"type": "transcript", "text": text})
+                    await self._rtvi.push_frame(frame)
+                    logger.debug(f"[LLMTextCaptureObserver] Sent transcript to frontend: {text[:100]}...")
+                except Exception as e:
+                    logger.error(f"[LLMTextCaptureObserver] Failed to send transcript: {e}")
             self._aggregated_text = ""
             self._is_aggregating = False
-
-        # Pass all frames through to next processor
-        await self.push_frame(frame, direction)
 
 
 async def create_daily_room() -> tuple[str, str | None]:
@@ -193,11 +177,11 @@ async def delete_daily_room(room_url: str) -> bool:
 async def start_voice_agent(
     room_url: str,
     token: str | None,
+    user_id: str,
+    conversation_id: str,
     enable_tts: bool = True,
     persona: str = "default",
     strict_mode: bool = False,
-    user_id: str = None,
-    conversation_id: str = None,  # NEW: For unified context
 ):
     """Entry point to start the bot in a specific Daily room"""
 
@@ -225,8 +209,6 @@ async def start_voice_agent(
             audio_out_enabled=True,
             camera_out_enabled=False,
             vad_analyzer=vad_analyzer,
-            # Increase join timeout for slow networks (default is ~10s)
-            meeting_join_timeout_s=30,
         ),
     )
 
@@ -235,8 +217,10 @@ async def start_voice_agent(
 
     # 3. Define Tools (The RAG Integration)
     RAG_TIMEOUT_SECONDS = 10.0
+    context: SamvaadLLMContext | None = None
 
     async def fetch_context(function_call_params):
+        query = ""
         try:
             # [SECURITY-FIX #74] Strict validation of tool arguments
             args = function_call_params.arguments
@@ -283,12 +267,15 @@ async def start_voice_agent(
         except TimeoutError:
             logger.warning(f"[voice_agent] RAG timeout after {RAG_TIMEOUT_SECONDS}s for query: {query}")
             rag_text = "Search timed out. Please try your question again."
+            sources = []
         except ValueError as e:
             logger.warning(f"[voice_agent] Tool validation error: {e}")
             rag_text = f"Invalid search request: {e}"
+            sources = []
         except Exception as e:
             logger.error(f"[voice_agent] RAG error: {e}")
             rag_text = "An error occurred while searching. Please try again."
+            sources = []
 
         # Send citations to frontend via RTVI custom message
         if sources:
@@ -300,30 +287,33 @@ async def start_voice_agent(
             except Exception as e:
                 logger.error(f"[voice_agent] Failed to send citations: {e}")
 
+            if context:
+                context.set_pending_sources(sources)
+
+        if strict_mode and context:
+            context.set_tool_choice(NOT_GIVEN)
+
         await function_call_params.result_callback(rag_text)
 
     # OpenAI-compatible tool format for Groq
-    tools = [
-        {
-            "type": "function",
-            "function": {
-                "name": "fetch_context",
-                "description": "Search the knowledge base for information. IMPORTANT: Call this tool ONLY ONCE per user question. If the search does not return relevant information, answer based on your own knowledge instead of searching again. Do NOT retry with a modified query.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "The search query - use the user's key terms or topic",
-                        }
-                    },
-                    "required": ["query"],
-                },
-            },
-        }
-    ]
+    fetch_context_schema = FunctionSchema(
+        name="fetch_context",
+        description=(
+            "Search the knowledge base for information. IMPORTANT: Call this tool ONLY ONCE "
+            "per user question. If the search does not return relevant information, answer "
+            "based on your own knowledge instead of searching again. Do NOT retry with a "
+            "modified query."
+        ),
+        properties={
+            "query": {
+                "type": "string",
+                "description": "The search query - use the user's key terms or topic",
+            }
+        },
+        required=["query"],
+    )
 
-    # 3. Define Services (using EU endpoint for better connectivity from India)
+    tools_schema = ToolsSchema(standard_tools=[fetch_context_schema])
     stt = DeepgramSTTService(api_key=deepgram_api_key, base_url="wss://api.eu.deepgram.com/v1/listen")
     md_filter = MarkdownTextFilter()
     citation_filter = CitationTextFilter()
@@ -344,14 +334,12 @@ async def start_voice_agent(
 
     # Context Manager (Keeps track of conversation history)
     # Use SamvaadLLMContext for database persistence
-    if conversation_id:
-        context = SamvaadLLMContext(conversation_id=conversation_id, user_id=user_id, tools=tools, tool_choice="auto")
-        context.load_history()  # Load existing messages from DB
-    else:
-        # Fallback to in-memory only (no persistence)
-        from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
-
-        context = OpenAILLMContext(tools=tools, tool_choice="auto")
+    # Migration (2025-01): Now uses LLMContextAggregatorPair instead of deprecated llm.create_context_aggregator
+    tool_choice = {"type": "function", "function": {"name": "fetch_context"}} if strict_mode else "auto"
+    context = SamvaadLLMContext(
+        conversation_id=conversation_id, user_id=user_id, tools=tools_schema, tool_choice=tool_choice
+    )
+    context.load_history()  # Load existing messages from DB
 
     context.add_message(
         {
@@ -359,12 +347,7 @@ async def start_voice_agent(
             "content": system_instruction,
         }
     )
-    # Disable emulated VAD interruptions to prevent user speech from being
-    # split into multiple messages when there are pauses in speaking
-    context_aggregator = llm.create_context_aggregator(
-        context,
-        user_params=LLMUserAggregatorParams(enable_emulated_vad_interruptions=False),
-    )
+    user_aggregator, assistant_aggregator = LLMContextAggregatorPair(context)
 
     # 6. The Pipeline (Data Flow)
     # RTVIProcessor handles RTVI protocol messages (BotReady, user/bot speaking, etc.)
@@ -374,7 +357,7 @@ async def start_voice_agent(
         transport.input(),
         rtvi,
         stt,
-        context_aggregator.user(),
+        user_aggregator,
         llm,
     ]
 
@@ -388,8 +371,8 @@ async def start_voice_agent(
         )
         processors.append(tts)
 
+    processors.append(assistant_aggregator)
     processors.append(transport.output())  # Audio out (or text frames if TTS missing)
-    processors.append(context_aggregator.assistant())  # Add bot answer to history
 
     pipeline = Pipeline(processors)
 
@@ -464,9 +447,9 @@ async def start_voice_agent(
     task = PipelineTask(
         pipeline,
         params=pipeline_params,
-        observers=[RTVIObserver(rtvi)],
-        idle_timeout_secs=60,  # 1 minute idle timeout
-        cancel_on_idle_timeout=True,  # Cancel task when idle
+        observers=[RTVIObserver(rtvi), LLMTextCaptureObserver(llm, context, rtvi)],
+        idle_timeout_secs=60,
+        cancel_on_idle_timeout=True,
     )
     task_params = PipelineTaskParams(loop=asyncio.get_event_loop())
     await task.run(task_params)
