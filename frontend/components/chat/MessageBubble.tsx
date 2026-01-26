@@ -83,11 +83,11 @@ interface CitationBadgeProps {
 	citationNum: string;
 	messageId: string;
 	hasSources: boolean;
-	sources: unknown;
+	sources: CitationItem[];
 	citedIndices: number[] | undefined;
 	openCitations: (
 		messageId: string,
-		citations: unknown[],
+		citations: CitationItem[],
 		citedIndices?: number[],
 	) => void;
 	setHoveredCitationIndex: (
@@ -135,7 +135,7 @@ function CitationBadge({
 				if (hasSources && messageId && sources) {
 					openCitations(
 						messageId,
-						sources as unknown as CitationItem[],
+						sources,
 						citedIndices,
 					);
 				}
@@ -146,7 +146,7 @@ function CitationBadge({
 					if (hasSources && messageId && sources) {
 						openCitations(
 							messageId,
-							sources as unknown as CitationItem[],
+							sources,
 							citedIndices,
 						);
 					}
@@ -274,9 +274,9 @@ export function MessageBubble({ message, index, onEdit }: MessageBubbleProps) {
 							citationNum={citationNum}
 							messageId={message.id || ""}
 							hasSources={hasSources || false}
-							sources={message.sources}
+							sources={message.sources!}
 							citedIndices={citedIndices}
-							openCitations={openCitations as (messageId: string, citations: unknown[], citedIndices?: number[]) => void}
+							openCitations={openCitations}
 							setHoveredCitationIndex={setHoveredCitationIndex}
 						/>
 					);
@@ -419,7 +419,7 @@ export function MessageBubble({ message, index, onEdit }: MessageBubbleProps) {
 						if (message.id && message.sources) {
 							setCitations(
 								message.id,
-								message.sources as unknown as CitationItem[],
+								message.sources!,
 								citedIndices,
 							);
 						}
@@ -541,7 +541,7 @@ export function MessageBubble({ message, index, onEdit }: MessageBubbleProps) {
 								onClick={() =>
 									openCitations(
 										message.id || `msg-${index}`,
-										message.sources as unknown as CitationItem[],
+										message.sources!,
 										citedIndices,
 									)
 								}

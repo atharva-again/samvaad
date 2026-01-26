@@ -24,12 +24,14 @@ api.interceptors.request.use(async (config) => {
 	return config;
 });
 
+import { type CitationItem } from "@/lib/stores/useUIStore";
+
 export interface ChatMessage {
 	id?: string;
 	role: "user" | "assistant" | "system";
 	content: string;
 	timestamp?: string;
-	sources?: Record<string, unknown>[];
+	sources?: CitationItem[];
 }
 
 export interface ChatResponse {

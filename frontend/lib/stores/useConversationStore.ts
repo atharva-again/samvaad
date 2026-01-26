@@ -3,7 +3,10 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { api } from "@/lib/api";
 import { conversationCache } from "@/lib/cache/conversationCache";
+import { type CachedMessage } from "@/lib/cache/db";
 import { generateNewConversationId, isValidUUID, sanitizeInput } from "@/lib/utils";
+
+import { type CitationItem } from "@/lib/stores/useUIStore";
 
 // ─────────────────────────────────────────────────────────────────────
 // Types
@@ -13,7 +16,7 @@ export interface Message {
 	id: string;
 	role: "user" | "assistant" | "system";
 	content: string;
-	sources?: Record<string, unknown>[];
+	sources?: CitationItem[];
 	createdAt: string;
 	isEphemeral?: boolean;
 }
@@ -48,7 +51,7 @@ interface BackendMessage {
 	id: string;
 	role: string;
 	content: string;
-	sources: Record<string, unknown>[];
+	sources: CitationItem[];
 	created_at: string;
 }
 
@@ -79,7 +82,7 @@ const transformMessage = (msg: BackendMessage): Message => ({
 	id: msg.id,
 	role: msg.role as "user" | "assistant" | "system",
 	content: msg.content,
-	sources: msg.sources || [],
+	sources: msg.sources as CitationItem[] | undefined,
 	createdAt: msg.created_at,
 });
 
@@ -231,7 +234,7 @@ export const useConversationStore = create<ConversationState>()(
 							conversationId,
 							role: message.role,
 							content: message.content,
-							sources: message.sources,
+							sources: message.sources as Record<string, unknown>[] | undefined,
 							createdAt: message.createdAt,
 						});
 					} catch (err) {
@@ -593,7 +596,7 @@ export const useConversationStore = create<ConversationState>()(
 									id: m.id,
 									role: m.role,
 									content: m.content,
-									sources: m.sources,
+									sources: m.sources as CitationItem[] | undefined,
 									createdAt: m.createdAt,
 								})),
 								isLoadingMessages: false,
@@ -617,11 +620,11 @@ export const useConversationStore = create<ConversationState>()(
 							const newUIMessages = deltaResponse.data.map(transformMessage);
 							const currentUserId = get().userId;
 							if (currentUserId) {
-								const newCacheMessages = deltaResponse.data.map((msg) => ({
-									...transformMessage(msg),
-									conversationId: id,
-									userId: currentUserId,
-								}));
+							const newCacheMessages = deltaResponse.data.map((msg) => ({
+								...transformMessage(msg),
+								conversationId: id,
+								userId: currentUserId,
+							})) as CachedMessage[];
 								await conversationCache.appendMessages(id, newCacheMessages);
 							}
 
@@ -649,11 +652,11 @@ export const useConversationStore = create<ConversationState>()(
 						const currentUserId = get().userId;
 
 						if (currentUserId) {
-							const cms = detail.messages.map((m) => ({
-								...transformMessage(m),
-								conversationId: id,
-								userId: currentUserId,
-							}));
+						const cms = detail.messages.map((m) => ({
+							...transformMessage(m),
+							conversationId: id,
+							userId: currentUserId,
+						})) as CachedMessage[];
 							await conversationCache.save(
 								{
 									id: detail.id,
@@ -701,7 +704,7 @@ export const useConversationStore = create<ConversationState>()(
 							...transformMessage(m),
 							conversationId: id,
 							userId: currentUserId,
-						}));
+						})) as CachedMessage[];
 						await conversationCache.save(
 							{
 								id: detail.id,

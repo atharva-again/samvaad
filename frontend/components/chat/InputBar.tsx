@@ -526,7 +526,7 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
     currentBotResponseRef.current = "";
   });
 
-  useRTVIClientEvent(RTVIEvent.Message, (data: any) => {
+  useRTVIClientEvent((RTVIEvent as any).Message, (data: any) => {
     const message = data?.message || data?.data || data;
     if (message?.type === "citations" && Array.isArray(message.sources)) {
       console.debug("[InputBar] Received citations from RTVI:", message.sources.length);

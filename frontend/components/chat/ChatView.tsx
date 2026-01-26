@@ -10,7 +10,7 @@ import { WelcomeScreen } from "@/components/chat/WelcomeScreen";
 import { type ChatMessage, sendMessage } from "@/lib/api";
 import { useConversationStore } from "@/lib/stores/useConversationStore";
 import { useInputBarStore } from "@/lib/stores/useInputBarStore";
-import { useUIStore } from "@/lib/stores/useUIStore";
+import { useUIStore, type CitationItem } from "@/lib/stores/useUIStore";
 import { cn } from "@/lib/utils";
 
 interface ChatViewProps {
@@ -203,7 +203,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
 	const handleVoiceMessage = async (message: {
 		role: "user" | "assistant" | "system";
 		content: string;
-		sources?: unknown[];
+		sources?: CitationItem[];
 	}) => {
 		// Guard: Skip empty messages (prevents blank bubbles from partial TTS events)
 		if (!message.content || !message.content.trim()) {
@@ -233,7 +233,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
 			role: message.role,
 			content: message.content,
 			createdAt: new Date().toISOString(),
-			sources: message.sources as Record<string, unknown>[] | undefined,
+			sources: message.sources,
 		});
 	};
 
