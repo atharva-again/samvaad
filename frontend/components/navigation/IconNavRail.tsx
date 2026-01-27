@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import {
 	DeleteConfirmModal,
 	RenameModal,
+	SettingsModal,
 	UniversalSearchModal,
 } from "@/components/modals";
 import { ActionTooltip } from "@/components/ui/action-tooltip";
@@ -129,6 +130,7 @@ export function IconNavRail() {
 	const [renameTarget, setRenameTarget] = useState<Conversation | null>(null);
 	const [isDeleting, setIsDeleting] = useState(false);
 	const [isRenaming, setIsRenaming] = useState(false);
+	const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
 	const accountMenuRef = useRef<HTMLDivElement>(null);
 	const accountButtonRef = useRef<HTMLButtonElement>(null);
@@ -605,6 +607,7 @@ export function IconNavRail() {
 									<AccountMenu
 										onClose={() => setShowAccountMenu(false)}
 										onLogout={handleLogout}
+										onSettingsOpen={() => setIsSettingsModalOpen(true)}
 									/>
 								</div>
 							</motion.div>
@@ -652,6 +655,10 @@ export function IconNavRail() {
 				currentName={renameTarget?.title || ""}
 			/>
 			<UniversalSearchModal />
+			<SettingsModal
+				isOpen={isSettingsModalOpen}
+				onClose={() => setIsSettingsModalOpen(false)}
+			/>
 		</div>
 	);
 }
