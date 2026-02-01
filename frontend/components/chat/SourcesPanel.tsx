@@ -168,7 +168,12 @@ export function SourcesPanel() {
 		!hasFetchedSources,
 	);
 
-	// Initial fetch
+	React.useEffect(() => {
+		if (hasFetchedSources && isFetchingInfo) {
+			setIsFetchingInfo(false);
+		}
+	}, [hasFetchedSources, isFetchingInfo]);
+
 	React.useEffect(() => {
 		const init = async () => {
 			if (!hasFetchedSources && isSourcesPanelOpen) {

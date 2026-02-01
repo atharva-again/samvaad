@@ -17,6 +17,7 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSettingsStore } from "@/lib/stores/useSettingsStore";
 import { useInputBarStore } from "@/lib/stores/useInputBarStore";
 import { cn } from "@/lib/utils";
 
@@ -31,14 +32,60 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 	const [activeTab, setActiveTab] = useState<Tab>("general");
 	const { user, signOut } = useAuth();
 
-	// General Settings
-	const { strictMode, setStrictMode, persona, setPersona } = useInputBarStore();
+	// Global settings
+	const { settings, updateSettings, loadSettings, isLoading, error } = useSettingsStore();
+	const { syncFromGlobalSettings } = useInputBarStore();
 
+	// Local state for editing (to avoid saving on every change)
+	const [localStrictMode, setLocalStrictMode] = useState<boolean>(false);
+	const [localPersona, setLocalPersona] = useState<string>("default");
+
+	const [pendingFields, setPendingFields] = useState<{ strictMode: boolean; persona: boolean }>({
+		strictMode: false,
+		persona: false,
+	});
+
+	// Load settings when modal opens
 	useEffect(() => {
 		if (isOpen) {
 			setActiveTab("general");
+			loadSettings().catch(console.error);
 		}
-	}, [isOpen]);
+	}, [isOpen, loadSettings]);
+
+	useEffect(() => {
+		if (settings && !pendingFields.strictMode && !pendingFields.persona) {
+			setLocalStrictMode(settings.default_strict_mode);
+			setLocalPersona(settings.default_persona);
+			syncFromGlobalSettings(settings.default_strict_mode, settings.default_persona);
+		}
+	}, [settings, syncFromGlobalSettings, pendingFields.strictMode, pendingFields.persona]);
+
+	useEffect(() => {
+		if (!settings) return;
+
+		const strictModeChanged = localStrictMode !== settings.default_strict_mode;
+		const personaChanged = localPersona !== settings.default_persona;
+
+		setPendingFields({ strictMode: strictModeChanged, persona: personaChanged });
+
+		const timeoutId = setTimeout(async () => {
+			if (!strictModeChanged && !personaChanged) return;
+
+			try {
+				await updateSettings({
+					default_strict_mode: localStrictMode,
+					default_persona: localPersona,
+				});
+				syncFromGlobalSettings(localStrictMode, localPersona);
+				setPendingFields({ strictMode: false, persona: false });
+			} catch (error) {
+				console.error("Failed to save settings:", error);
+			}
+		}, 500);
+
+		return () => clearTimeout(timeoutId);
+	}, [localStrictMode, localPersona, settings, updateSettings, syncFromGlobalSettings]);
 
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
@@ -151,17 +198,28 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 										</div>
 
 										<div className="space-y-6">
+											{!settings && isLoading && (
+												<div className="text-sm text-white/60">Loading settings...</div>
+											)}
+											{settings && (
+												<>
 											<div className="space-y-3">
 												<div className="flex items-start gap-4">
 													<div className="flex-1 space-y-1">
 														<div className="text-sm font-medium text-white">
 															Default Response Mode
 														</div>
-														<div className="text-xs text-white/40">
-															{strictMode
-																? "Answers using only your provided sources for maximum accuracy"
-																: "Uses your sources plus general knowledge for comprehensive answers"}
-														</div>
+													<div className="text-xs text-white/40">
+														{localStrictMode
+															? "Answers using only your provided sources for maximum accuracy"
+															: "Uses your sources plus general knowledge for comprehensive answers"}
+													</div>
+													{isLoading && pendingFields.strictMode && (
+														<div className="text-xs text-blue-400">Saving...</div>
+													)}
+													{error && pendingFields.strictMode && (
+														<div className="text-xs text-red-400">Failed to save: {error}</div>
+													)}
 													</div>
 													<DropdownMenu>
 														<DropdownMenuTrigger asChild>
@@ -170,7 +228,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 																className="appearance-none bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20 cursor-pointer hover:bg-white/10 transition-colors flex items-center gap-2 min-w-[100px]"
 															>
 																<span className="capitalize">
-																	{strictMode ? "Strict" : "Hybrid"}
+																	{localStrictMode ? "Strict" : "Hybrid"}
 																</span>
 																<svg
 																	width="10"
@@ -198,11 +256,11 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 															<DropdownMenuLabel>Choose Mode</DropdownMenuLabel>
 															<DropdownMenuSeparator className="bg-white/10" />
 															<DropdownMenuItem
-																onClick={() => setStrictMode(false)}
+																onClick={() => setLocalStrictMode(false)}
 																className="cursor-pointer hover:bg-white/10 focus:bg-white/10 focus:text-white"
 															>
 																<span>Hybrid</span>
-																{!strictMode && (
+																{!localStrictMode && (
 																	<svg
 																		width="16"
 																		height="16"
@@ -220,11 +278,11 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 																)}
 															</DropdownMenuItem>
 															<DropdownMenuItem
-																onClick={() => setStrictMode(true)}
+																onClick={() => setLocalStrictMode(true)}
 																className="cursor-pointer hover:bg-white/10 focus:bg-white/10 focus:text-white"
 															>
 																<span>Strict</span>
-																{strictMode && (
+																{localStrictMode && (
 																	<svg
 																		width="16"
 																		height="16"
@@ -248,25 +306,31 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
 											<div className="space-y-3">
 												<div className="flex items-start gap-4">
-													<div className="flex-1 space-y-1">
-														<div className="text-sm font-medium text-white">
-															Default AI Persona
-														</div>
-														<div className="text-xs text-white/40">
-															{persona === "default" && "Balanced personality for general conversations"}
-															{persona === "tutor" && "Educational and explanatory approach"}
-															{persona === "coder" && "Technical and programming-focused"}
-															{persona === "friend" && "Casual and conversational tone"}
-															{persona === "expert" && "Professional and authoritative responses"}
-														</div>
+												<div className="flex-1 space-y-1">
+													<div className="text-sm font-medium text-white">
+														Default AI Persona
 													</div>
+													<div className="text-xs text-white/40">
+														{localPersona === "default" && "Balanced personality for general conversations"}
+														{localPersona === "tutor" && "Educational and explanatory approach"}
+														{localPersona === "coder" && "Technical and programming-focused"}
+														{localPersona === "friend" && "Casual and conversational tone"}
+														{localPersona === "expert" && "Professional and authoritative responses"}
+													</div>
+													{isLoading && pendingFields.persona && (
+														<div className="text-xs text-blue-400">Saving...</div>
+													)}
+													{error && pendingFields.persona && (
+														<div className="text-xs text-red-400">Failed to save: {error}</div>
+													)}
+												</div>
 													<DropdownMenu>
 														<DropdownMenuTrigger asChild>
 															<button
 																type="button"
 																className="appearance-none bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20 cursor-pointer hover:bg-white/10 transition-colors flex items-center gap-2 min-w-[100px]"
 															>
-																<span className="capitalize">{persona}</span>
+																<span className="capitalize">{localPersona}</span>
 																<svg
 																	width="10"
 																	height="6"
@@ -295,11 +359,11 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 															{["default", "tutor", "coder", "friend", "expert"].map((p) => (
 																<DropdownMenuItem
 																	key={p}
-																	onClick={() => setPersona(p)}
+																	onClick={() => setLocalPersona(p)}
 																	className="cursor-pointer hover:bg-white/10 focus:bg-white/10 focus:text-white capitalize"
 																>
 																	<span>{p}</span>
-																	{persona === p && (
+																	{localPersona === p && (
 																		<svg
 																			width="16"
 																			height="16"
@@ -321,6 +385,8 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 													</DropdownMenu>
 												</div>
 											</div>
+												</>
+											)}
 										</div>
 									</motion.div>
 								)}

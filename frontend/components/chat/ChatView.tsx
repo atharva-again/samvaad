@@ -34,6 +34,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
 		loadConversation,
 		activateConversation,
 		updateConversationTitle,
+		loadConversationSettings,
 	} = useConversationStore();
 
 	// Convert store messages to ChatMessage format - MEMOIZED to prevent scroll triggers
@@ -81,9 +82,10 @@ export function ChatView({ conversationId }: ChatViewProps) {
 					conversationId,
 				);
 				loadConversation(conversationId);
+				loadConversationSettings(conversationId);
 			}
 		}
-	}, [conversationId, loadConversation, isVoiceSessionActive, currentConversationId, storeMessages.length]);
+	}, [conversationId, loadConversation, loadConversationSettings, isVoiceSessionActive, currentConversationId, storeMessages.length]);
 
 	const handleTouchStart = (e: React.TouchEvent) => {
 		touchEnd.current = null;
@@ -168,7 +170,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
 				// Add assistant response with client-generated ID (matches backend)
 				addMessage(
 					{
-						id: assistantMessageId, // Use same ID we sent to backend
+						id: assistantMessageId,
 						role: "assistant",
 						content: data.response,
 						sources: data.sources,

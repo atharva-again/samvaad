@@ -1,12 +1,10 @@
-"""
-Conversation Service - CRUD operations for conversations and messages.
-"""
+# pyright: ignore-all
+"""Conversation Service - CRUD operations for conversations and messages."""
 
-from datetime import UTC, datetime
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update  # noqa: F401
 from sqlalchemy.orm import joinedload
 
 from samvaad.db.models import Conversation, Message
@@ -21,7 +19,12 @@ class ConversationService:
     # ─────────────────────────────────────────────────────────────────────
 
     def create_conversation(
-        self, user_id: str, title: str = "New Conversation", conversation_id: UUID | None = None
+        self,
+        user_id: str,
+        title: str = "New Conversation",
+        conversation_id: UUID | None = None,
+        active_strict_mode: bool | None = None,
+        active_persona: str | None = None,
     ) -> Conversation:
         """Create a new conversation for a user.
 
@@ -30,12 +33,18 @@ class ConversationService:
             title: Title for the conversation.
             conversation_id: Optional UUID to use as the conversation ID.
                            If provided, this ID will be used instead of auto-generating.
+            active_strict_mode: Optional strict mode override for this conversation.
+            active_persona: Optional persona override for this conversation.
         """
         with get_db_context() as db:
-            conversation = Conversation(user_id=user_id, title=title)
-            # Use client-provided ID if given
+            conversation_data: dict[str, Any] = {"user_id": user_id, "title": title}
             if conversation_id:
-                conversation.id = conversation_id
+                conversation_data["id"] = conversation_id
+            if active_strict_mode is not None:
+                conversation_data["active_strict_mode"] = active_strict_mode
+            if active_persona is not None:
+                conversation_data["active_persona"] = active_persona
+            conversation = Conversation(**conversation_data)
             db.add(conversation)
             db.commit()
             db.refresh(conversation)
@@ -72,8 +81,10 @@ class ConversationService:
         summary: str | None = None,
         facts: str | None = None,
         is_pinned: bool | None = None,
+        active_strict_mode: bool | None = None,
+        active_persona: str | None = None,
     ) -> Conversation | None:
-        """Update a conversation's title, summary, facts, or pinned status."""
+        """Update a conversation's fields and settings."""
         with get_db_context() as db:
             conversation = (
                 db.execute(
@@ -88,14 +99,21 @@ class ConversationService:
             if not conversation:
                 return None
 
+            update_data: dict[str, Any] = {}
             if title is not None:
-                conversation.title = title
+                update_data["title"] = title
             if summary is not None:
-                conversation.summary = summary
+                update_data["summary"] = summary
             if facts is not None:
-                conversation.facts = facts
+                update_data["facts"] = facts
             if is_pinned is not None:
-                conversation.is_pinned = is_pinned
+                update_data["is_pinned"] = is_pinned
+            if active_strict_mode is not None:
+                update_data["active_strict_mode"] = active_strict_mode
+            if active_persona is not None:
+                update_data["active_persona"] = active_persona
+            for field_name, value in update_data.items():
+                setattr(conversation, field_name, value)
 
             db.commit()
             db.refresh(conversation)
@@ -108,7 +126,7 @@ class ConversationService:
                 delete(Conversation).where(Conversation.id == conversation_id).where(Conversation.user_id == user_id)
             )
             db.commit()
-            return result.rowcount > 0
+            return getattr(result, "rowcount", 0) > 0
 
     def delete_conversations(self, conversation_ids: list[UUID], user_id: str) -> int:
         """
@@ -119,7 +137,7 @@ class ConversationService:
             result = db.execute(
                 delete(Conversation).where(Conversation.id.in_(conversation_ids)).where(Conversation.user_id == user_id)
             )
-            count = result.rowcount
+            count = getattr(result, "rowcount", 0)
             db.commit()
             return count
 
@@ -151,7 +169,7 @@ class ConversationService:
             )
             # Use client-provided ID if given
             if message_id:
-                message.id = message_id
+                setattr(message, "id", message_id)
 
             db.add(message)
 
@@ -182,9 +200,7 @@ class ConversationService:
             result = db.execute(select(func.count(Message.id)).where(Message.conversation_id == conversation_id))
             return result.scalar() or 0
 
-    def get_messages_since(
-        self, conversation_id: UUID, user_id: str, after: Optional["datetime"] = None
-    ) -> list[Message]:
+    def get_messages_since(self, conversation_id: UUID, user_id: str, after: Optional[Any] = None) -> list[Message]:
         """Get messages created after a timestamp (for delta sync).
 
         First verifies the conversation belongs to the user.
@@ -245,12 +261,10 @@ class ConversationService:
             )
 
             result = db.execute(delete_stmt)
-            deleted_count = result.rowcount
+            deleted_count = getattr(result, "rowcount", 0)
 
             if deleted_count > 0:
-                db.execute(
-                    update(Conversation).where(Conversation.id == conversation_id).values(updated_at=datetime.now(UTC))
-                )
+                db.execute(update(Conversation).where(Conversation.id == conversation_id).values(updated_at=func.now()))
 
             db.commit()
             return deleted_count

@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { useUIStore } from "@/lib/stores/useUIStore";
 import { useInputBarStore } from "@/lib/stores/useInputBarStore";
 import { useConversationStore } from "@/lib/stores/useConversationStore";
+import { useSettingsStore } from "@/lib/stores/useSettingsStore";
 import { cn } from "@/lib/utils";
 import { endVoiceMode } from "@/lib/api";
 import { toast } from "sonner";
@@ -47,7 +48,8 @@ interface InputBarProps {
 }
 
 export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onMessageConsumed, onVoiceMessage, conversationId }: InputBarProps) {
-	const { pendingConversationId } = useConversationStore();
+	const { pendingConversationId, conversationSettings, updateConversationSettings } = useConversationStore();
+	const { settings: globalSettings } = useSettingsStore();
   const USE_MOCK_BACKEND = false; // Toggle this to true for mock backend
   const {
     toggleSourcesPanel,
@@ -64,6 +66,8 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
     setHasInteracted,
     strictMode,
     persona,
+    setStrictMode,
+    setPersona,
     enableTTS,
     isSessionActive,
     setSessionActive,
@@ -98,6 +102,47 @@ export function InputBar({ onSendMessage, isLoading, onStop, defaultMessage, onM
   useEffect(() => {
     currentRoomUrlRef.current = currentRoomUrl;
   }, [currentRoomUrl]);
+
+  useEffect(() => {
+    if (conversationSettings?.active_strict_mode !== null && conversationSettings?.active_strict_mode !== undefined) {
+      setStrictMode(conversationSettings.active_strict_mode);
+    }
+    if (conversationSettings?.active_persona !== null && conversationSettings?.active_persona !== undefined) {
+      setPersona(conversationSettings.active_persona);
+    }
+  }, [conversationSettings, setStrictMode, setPersona]);
+
+  useEffect(() => {
+    if (!conversationId) {
+      if (globalSettings) {
+        setStrictMode(globalSettings.default_strict_mode);
+        setPersona(globalSettings.default_persona);
+      }
+    } else if (conversationSettings === null) {
+      if (globalSettings) {
+        setStrictMode(globalSettings.default_strict_mode);
+        setPersona(globalSettings.default_persona);
+      }
+    }
+  }, [conversationId, conversationSettings, globalSettings, setStrictMode, setPersona]);
+
+  useEffect(() => {
+    if (!conversationId || !conversationSettings) return;
+
+    const strictModeChanged = strictMode !== conversationSettings.active_strict_mode;
+    const personaChanged = persona !== conversationSettings.active_persona;
+
+    if (!strictModeChanged && !personaChanged) return;
+
+    const timeoutId = setTimeout(() => {
+      updateConversationSettings(conversationId, {
+        active_strict_mode: strictMode,
+        active_persona: persona,
+      }).catch((err) => console.error("Failed to save conversation settings:", err));
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [strictMode, persona, conversationId, conversationSettings, updateConversationSettings]);
 
   // Handle initial mode selection
   const handleModeSelect = (selectedMode: "text" | "voice") => {

@@ -654,7 +654,7 @@ export function IconNavRail() {
 				isRenaming={isRenaming}
 				currentName={renameTarget?.title || ""}
 			/>
-			<UniversalSearchModal />
+			<UniversalSearchModal onSettingsOpen={() => setIsSettingsModalOpen(true)} />
 			<SettingsModal
 				isOpen={isSettingsModalOpen}
 				onClose={() => setIsSettingsModalOpen(false)}

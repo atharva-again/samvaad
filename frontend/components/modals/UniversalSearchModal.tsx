@@ -2,17 +2,23 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import {
+	Brain,
+	Check,
 	ChevronRight,
 	Eye,
 	EyeOff,
 	FileText,
 	FolderOpen,
 	Loader2,
+	LogOut,
 	MessageSquare,
 	Pencil,
 	Pin,
 	Search,
+	Settings,
+	Slash,
 	Trash2,
+	User,
 	X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -27,9 +33,13 @@ import {
 	useConversationStore,
 } from "@/lib/stores/useConversationStore";
 import { type SourceItem, useUIStore } from "@/lib/stores/useUIStore";
+import { useInputBarStore } from "@/lib/stores/useInputBarStore";
+import { useSettingsStore } from "@/lib/stores/useSettingsStore";
+import { useAuth } from "@/contexts/AuthContext";
+import { useFileProcessor } from "@/hooks/useFileProcessor";
 import { cn } from "@/lib/utils";
 
-type SearchCategory = "conversations" | "sources";
+type SearchCategory = "conversations" | "sources" | "settings";
 
 interface SearchResult {
 	id: string;
@@ -103,6 +113,28 @@ const SOURCE_ACTIONS: SourceAction[] = [
 	},
 ];
 
+interface SettingsAction {
+	id: "toggle" | "open-settings";
+	label: string;
+	icon: React.ReactNode;
+	shortcut?: string;
+}
+
+const SETTINGS_ITEMS = [
+	{
+		id: "strict-mode",
+		title: "Strict Mode",
+		subtitle: "Toggle strict/hybrid response mode",
+		icon: <Eye className="w-4 h-4 text-purple-400" />,
+	},
+	{
+		id: "persona",
+		title: "AI Persona",
+		subtitle: "Change AI personality (default, tutor, coder, friend, expert)",
+		icon: <MessageSquare className="w-4 h-4 text-blue-400" />,
+	},
+];
+
 // ─────────────────────────────────────────────────────────────────────
 // Fuzzy Search Implementation
 // ─────────────────────────────────────────────────────────────────────
@@ -159,7 +191,11 @@ function fuzzyMatch(text: string, query: string): number {
 	return score + consecutiveBonus;
 }
 
-export function UniversalSearchModal() {
+interface UniversalSearchModalProps {
+	onSettingsOpen?: () => void;
+}
+
+export function UniversalSearchModal({ onSettingsOpen }: UniversalSearchModalProps) {
 	const router = useRouter();
 	const { isMac } = usePlatform();
 	const inputRef = useRef<HTMLInputElement>(null);
@@ -181,6 +217,16 @@ export function UniversalSearchModal() {
 		togglePinConversation,
 	} = useConversationStore();
 	const { sources } = useUIStore();
+	const { strictMode, toggleStrictMode, persona, setPersona } = useInputBarStore();
+	const { settings: globalSettings, updateSettings } = useSettingsStore();
+	const { signOut } = useAuth();
+	const { refreshSources } = useFileProcessor();
+
+	useEffect(() => {
+		if (isSearchOpen) {
+			refreshSources().catch(console.error);
+		}
+	}, [isSearchOpen, refreshSources]);
 
 	// Local state
 	const [query, setQuery] = useState("");
@@ -194,6 +240,8 @@ export function UniversalSearchModal() {
 	const [selectedResult, setSelectedResult] = useState<SearchResult | null>(
 		null,
 	);
+	const [showPersonaSubmenu, setShowPersonaSubmenu] = useState(false);
+	const [personaSubmenuIndex, setPersonaSubmenuIndex] = useState(0);
 
 	// Rename modal state (inline)
 	const [showRenameInput, setShowRenameInput] = useState(false);
@@ -216,6 +264,8 @@ export function UniversalSearchModal() {
 		showRenameInput: false,
 		showSubmenu: false,
 		submenuIndex: 0,
+		showPersonaSubmenu: false,
+		personaSubmenuIndex: 0,
 		selectedIndex: 0,
 		selectedResult: null as SearchResult | null,
 		renameValue: "",
@@ -231,6 +281,8 @@ export function UniversalSearchModal() {
 			showRenameInput,
 			showSubmenu,
 			submenuIndex,
+			showPersonaSubmenu,
+			personaSubmenuIndex,
 			selectedIndex,
 			selectedResult,
 			renameValue,
@@ -295,17 +347,76 @@ export function UniversalSearchModal() {
 				.slice(0, 10);
 		};
 
+		const getSettingsResults = (): SearchResult[] => {
+			const strictModeIcon = (
+				<div className="relative">
+					<Brain className="w-4 h-4 text-purple-400" />
+					{strictMode && (
+						<div className="absolute inset-0 flex items-center justify-center">
+							<Slash className="w-4 h-4 rotate-90 stroke-[1.5px] text-purple-400" />
+						</div>
+					)}
+				</div>
+			);
+
+			const items = [
+				{
+					id: "strict-mode",
+					title: strictMode ? "Disable Strict Mode" : "Enable Strict Mode",
+					subtitle: strictMode
+						? "Currently using sources only"
+						: "Currently using sources + general knowledge",
+					category: "settings" as SearchCategory,
+					icon: strictModeIcon,
+					score: fuzzyMatch("strict mode", query),
+				},
+			{
+				id: "persona",
+				title: `AI Persona: ${persona}`,
+				subtitle: "Click to change AI personality",
+				category: "settings" as SearchCategory,
+				icon: <User className="w-4 h-4 text-blue-400" />,
+				score: fuzzyMatch(`persona ${persona}`, query),
+			},
+			{
+				id: "logout",
+				title: "Log Out",
+				subtitle: "Sign out of your account",
+				category: "settings" as SearchCategory,
+				icon: <LogOut className="w-4 h-4 text-red-400" />,
+				score: fuzzyMatch("logout sign out", query) || (query.trim() ? 0 : 1),
+			},
+			{
+				id: "open-settings-modal",
+				title: "Open Settings",
+				subtitle: "View all settings",
+				category: "settings" as SearchCategory,
+				icon: <Settings className="w-4 h-4 text-white" />,
+				score: fuzzyMatch("settings open", query) || (query.trim() ? 0 : 1),
+			},
+		];
+
+			if (!query.trim()) {
+				return items;
+			}
+
+			return items.filter((r) => r.score > 0).sort((a, b) => b.score - a.score);
+		};
+
 		return {
 			conversations: getConversationResults(),
 			sources: getSourceResults(),
+			settings: getSettingsResults(),
 		};
-	}, [query, conversations, sources]);
+	}, [query, conversations, sources, strictMode, persona]);
 
 	// Get current category results
 	const filteredResults =
 		activeCategory === "conversations"
 			? allFilteredResults.conversations
-			: allFilteredResults.sources;
+			: activeCategory === "sources"
+				? allFilteredResults.sources
+				: allFilteredResults.settings;
 
 	// Count for tabs
 	const _conversationCount = query.trim()
@@ -425,20 +536,59 @@ export function UniversalSearchModal() {
 		setSubmenuIndex(0);
 	}, []);
 
-	// Handle result selection (Enter key)
+	const handleSettingsAction = useCallback(
+		(result: SearchResult) => {
+			switch (result.id) {
+				case "strict-mode":
+					toggleStrictMode();
+					toast.success(strictMode ? "Switched to hybrid mode" : "Switched to strict mode");
+					break;
+				case "persona":
+					setShowPersonaSubmenu(true);
+					setPersonaSubmenuIndex(0);
+					break;
+				case "open-settings-modal":
+					setSearchOpen(false);
+					onSettingsOpen?.();
+					break;
+				case "logout":
+					signOut().then(() => {
+						toast.success("Logged out successfully");
+						router.push("/");
+					});
+					break;
+			}
+		},
+		[strictMode, toggleStrictMode, setSearchOpen, onSettingsOpen, signOut, router],
+	);
+
+	const handlePersonaSelect = useCallback(
+		(selectedPersona: string) => {
+			setPersona(selectedPersona);
+			toast.success(`Persona changed to ${selectedPersona}`);
+			setShowPersonaSubmenu(false);
+		},
+		[setPersona],
+	);
+
 	const handleSelect = useCallback(
 		(result: SearchResult) => {
 			if (result.category === "conversations") {
-				// Show submenu for conversations
 				setSelectedResult(result);
 				setShowSubmenu(true);
 				setSubmenuIndex(0);
-			} else {
-				// Show submenu for sources too
+			} else if (result.category === "sources") {
 				handleSourceSelect(result);
+			} else if (result.category === "settings") {
+				if (result.id === "persona") {
+					setShowPersonaSubmenu(true);
+					setPersonaSubmenuIndex(0);
+				} else {
+					handleSettingsAction(result);
+				}
 			}
 		},
-		[handleSourceSelect],
+		[handleSourceSelect, handleSettingsAction],
 	);
 
 	// Handle rename submit (for both conversations and sources)
@@ -583,6 +733,33 @@ export function UniversalSearchModal() {
 				return;
 			}
 
+				if (state.showPersonaSubmenu) {
+				const personas = ["default", "tutor", "coder", "friend", "expert"];
+				switch (e.key) {
+					case "ArrowDown":
+						e.preventDefault();
+						setPersonaSubmenuIndex((prev) =>
+							prev < personas.length - 1 ? prev + 1 : 0,
+						);
+						break;
+					case "ArrowUp":
+						e.preventDefault();
+						setPersonaSubmenuIndex((prev) =>
+							prev > 0 ? prev - 1 : personas.length - 1,
+						);
+						break;
+					case "Enter":
+						e.preventDefault();
+						handlePersonaSelect(personas[state.personaSubmenuIndex]);
+						break;
+					case "Escape":
+						e.preventDefault();
+						setShowPersonaSubmenu(false);
+						break;
+				}
+				return;
+			}
+
 			// Handle submenu mode
 			if (state.showSubmenu && state.selectedResult) {
 				const isConversation =
@@ -686,12 +863,14 @@ export function UniversalSearchModal() {
 					e.preventDefault();
 					setSearchOpen(false);
 					break;
-				case "Tab":
-					e.preventDefault();
-					setActiveCategory((prev) =>
-						prev === "conversations" ? "sources" : "conversations",
-					);
-					break;
+			case "Tab":
+				e.preventDefault();
+				setActiveCategory((prev) => {
+					if (prev === "conversations") return "sources";
+					if (prev === "sources") return "settings";
+					return "conversations";
+				});
+				break;
 			}
 		};
 
@@ -707,6 +886,7 @@ export function UniversalSearchModal() {
 		updateConversationTitle,
 		handleSourceAction,
 		updateSource,
+		handlePersonaSelect,
 	]);
 
 	// Highlight matching text with fuzzy support
@@ -783,7 +963,7 @@ export function UniversalSearchModal() {
 								type="text"
 								value={query}
 								onChange={(e) => setQuery(e.target.value)}
-								placeholder="Search conversations and sources..."
+								placeholder="Search conversations, sources, and settings..."
 								className="flex-1 bg-transparent text-white text-sm placeholder:text-white/30 outline-none"
 							/>
 							<button
@@ -836,11 +1016,31 @@ export function UniversalSearchModal() {
 										</span>
 									)}
 								</span>
-							</button>
-							<span className="ml-auto text-[10px] text-white/30 font-mono">
-								Tab to switch
+						</button>
+						<button
+							type="button"
+							onClick={() => setActiveCategory("settings")}
+							className={cn(
+								"px-3 py-1.5 text-xs font-medium rounded-lg transition-all",
+								activeCategory === "settings"
+									? "bg-white/10 text-white"
+									: "text-white/50 hover:text-white/70 hover:bg-white/5",
+							)}
+						>
+							<span className="flex items-center gap-1.5">
+								<Settings className="w-3.5 h-3.5" />
+								Settings
+								{query.trim() && (
+									<span className="ml-1 px-1.5 py-0.5 text-[10px] bg-white/10 rounded-full">
+										{allFilteredResults.settings.length}
+									</span>
+								)}
 							</span>
-						</div>
+						</button>
+						<span className="ml-auto text-[10px] text-white/30 font-mono">
+							Tab to switch
+						</span>
+					</div>
 
 						{/* Results */}
 						<div className="max-h-[50vh] overflow-y-auto">
@@ -849,6 +1049,31 @@ export function UniversalSearchModal() {
 									<p className="text-sm text-white/40">
 										{query ? "No results found" : "No items yet"}
 									</p>
+								</div>
+							) : showPersonaSubmenu ? (
+								<div className="py-2">
+									<div className="px-4 py-2 border-b border-white/5">
+										<p className="text-xs text-white/40">Select AI Persona:</p>
+									</div>
+									{["default", "tutor", "coder", "friend", "expert"].map((p, index) => (
+										<button
+											type="button"
+											key={p}
+											onClick={() => handlePersonaSelect(p)}
+											onMouseEnter={() => setPersonaSubmenuIndex(index)}
+											className={cn(
+												"w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors",
+												personaSubmenuIndex === index
+													? "bg-white/10"
+													: "hover:bg-white/5",
+											)}
+										>
+											<span className="flex-1 text-sm text-white capitalize">{p}</span>
+											{persona === p && (
+												<Check className="w-4 h-4 text-emerald-400" />
+											)}
+										</button>
+									))}
 								</div>
 							) : showSubmenu && selectedResult ? (
 								/* Submenu for conversation actions */
@@ -1160,20 +1385,26 @@ export function UniversalSearchModal() {
 									</kbd>
 									<span className="ml-1">navigate</span>
 								</span>
-								<span className="flex items-center gap-1">
-									<kbd className="px-1.5 py-0.5 bg-white/10 rounded font-mono">
-										↵
-									</kbd>
-									<span className="ml-1">
-										{showSubmenu ? "confirm" : "actions"}
-									</span>
+							<span className="flex items-center gap-1">
+								<kbd className="px-1.5 py-0.5 bg-white/10 rounded font-mono">
+									↵
+								</kbd>
+								<span className="ml-1">
+									{showSubmenu
+										? "confirm"
+										: showPersonaSubmenu
+											? "select"
+											: activeCategory === "settings" && filteredResults[selectedIndex]?.id === "strict-mode"
+												? "toggle"
+												: "actions"}
 								</span>
-								<span className="flex items-center gap-1">
-									<kbd className="px-1.5 py-0.5 bg-white/10 rounded font-mono">
-										esc
-									</kbd>
-									<span className="ml-1">{showSubmenu ? "back" : "close"}</span>
-								</span>
+							</span>
+							<span className="flex items-center gap-1">
+								<kbd className="px-1.5 py-0.5 bg-white/10 rounded font-mono">
+									esc
+								</kbd>
+								<span className="ml-1">{showSubmenu || showPersonaSubmenu ? "back" : "close"}</span>
+							</span>
 							</div>
 							<div className="flex items-center gap-1 text-[10px] text-white/30">
 								<kbd className="px-1.5 py-0.5 bg-white/10 rounded font-mono">

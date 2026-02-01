@@ -8,7 +8,7 @@ interface InputBarState {
 	mode: "text" | "voice";
 	hasInteracted: boolean;
 
-	// Shared Settings (Text & Voice)
+	// Shared Settings (Text & Voice) - now loaded from global settings
 	strictMode: boolean;
 	persona: string;
 
@@ -54,6 +54,9 @@ interface InputBarState {
 	setError: (message: string) => void;
 	clearError: () => void;
 	resetVoiceSession: () => void;
+
+	// Settings sync
+	syncFromGlobalSettings: (globalStrictMode: boolean, globalPersona: string) => void;
 }
 
 export const useInputBarStore = create<InputBarState>()(
@@ -63,7 +66,7 @@ export const useInputBarStore = create<InputBarState>()(
 			mode: "text",
 			hasInteracted: false,
 
-			// Shared Settings
+			// Shared Settings (Text & Voice) - initialized with defaults, synced from global settings
 			strictMode: false,
 			persona: "default",
 
@@ -143,13 +146,15 @@ export const useInputBarStore = create<InputBarState>()(
 					isPTTActive: false,
 					currentRoomUrl: null,
 				}),
+
+			// Settings sync action
+			syncFromGlobalSettings: (globalStrictMode: boolean, globalPersona: string) =>
+				set({ strictMode: globalStrictMode, persona: globalPersona }),
 		}),
 		{
 			name: "samvaad-inputbar-store",
 			partialize: (state) => ({
 				// Only persist user preferences, not runtime state
-				strictMode: state.strictMode,
-				persona: state.persona,
 				enableTTS: state.enableTTS,
 				outputVolume: state.outputVolume,
 			}),
