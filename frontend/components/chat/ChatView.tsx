@@ -7,6 +7,7 @@ import { uuidv7 } from "uuidv7";
 import { InputBar } from "@/components/chat/InputBar";
 import { MessageList } from "@/components/chat/MessageList";
 import { WelcomeScreen } from "@/components/chat/WelcomeScreen";
+import { PinnedMessagesBar } from "@/components/chat/PinnedMessagesBar";
 import { type ChatMessage, sendMessage } from "@/lib/api";
 import { useConversationStore } from "@/lib/stores/useConversationStore";
 import { useInputBarStore } from "@/lib/stores/useInputBarStore";
@@ -242,6 +243,8 @@ export function ChatView({ conversationId }: ChatViewProps) {
 	const [editMessageContent, setEditMessageContent] = useState<string | null>(
 		null,
 	);
+	const [scrollToMessageId, setScrollToMessageId] = useState<string | null>(null);
+	const [pinnedRefreshTrigger, setPinnedRefreshTrigger] = useState(0);
 
 	const handleEditMessage = (index: number, content: string) => {
 		// 1. Truncate messages: remove this message and everything after it
@@ -270,6 +273,17 @@ export function ChatView({ conversationId }: ChatViewProps) {
 		>
 			{/* Chat Area */}
 			<div className="flex-1 flex flex-col overflow-hidden">
+				{/* Pinned Messages Bar */}
+				{conversationId && (
+					<div className="w-full max-w-3xl mx-auto px-6 md:px-4 pt-4">
+						<PinnedMessagesBar
+							conversationId={conversationId}
+							onMessageClick={setScrollToMessageId}
+							refreshTrigger={pinnedRefreshTrigger}
+						/>
+					</div>
+				)}
+
 				{isLoadingMessages ? (
 					/* Skeleton Loader - Pulsating animation */
 					<div className="flex-1 flex flex-col items-center justify-center px-4">
@@ -313,6 +327,8 @@ export function ChatView({ conversationId }: ChatViewProps) {
 						messages={messages}
 						isLoading={isStreaming}
 						onEdit={handleEditMessage}
+						scrollToMessageId={scrollToMessageId}
+						onPinToggle={() => setPinnedRefreshTrigger((prev) => prev + 1)}
 					/>
 				)}
 			<InputBar

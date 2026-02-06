@@ -6,25 +6,45 @@ interface MessageListProps {
 	messages: ChatMessage[];
 	isLoading?: boolean;
 	onEdit?: (index: number, content: string) => void;
+	scrollToMessageId?: string | null;
+	onPinToggle?: () => void;
 }
 
-export function MessageList({ messages, isLoading, onEdit }: MessageListProps) {
+export function MessageList({ messages, isLoading, onEdit, scrollToMessageId, onPinToggle }: MessageListProps) {
 	const bottomRef = useRef<HTMLDivElement>(null);
+	const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
 	// Scroll to bottom only when new messages are added, not on hover/re-renders
 	useEffect(() => {
 		bottomRef.current?.scrollIntoView({ behavior: "smooth" });
 	}, []);
 
+	useEffect(() => {
+		if (scrollToMessageId) {
+			const element = messageRefs.current.get(scrollToMessageId);
+			if (element) {
+				element.scrollIntoView({ behavior: "smooth", block: "center" });
+			}
+		}
+	}, [scrollToMessageId]);
+
+	const setMessageRef = (id: string | undefined) => (el: HTMLDivElement | null) => {
+		if (id && el) {
+			messageRefs.current.set(id, el);
+		}
+	};
+
 	return (
 		<div className="flex-1 w-full max-w-3xl mx-auto px-6 md:px-4 py-8 overflow-y-auto">
 			{messages.map((msg, index) => (
-				<MessageBubble
-					key={msg.id || `message-${index}`}
-					message={msg}
-					index={index}
-					onEdit={onEdit}
-				/>
+				<div key={msg.id || `message-${index}`} ref={setMessageRef(msg.id)}>
+					<MessageBubble
+						message={msg}
+						index={index}
+						onEdit={onEdit}
+						onPinToggle={onPinToggle}
+					/>
+				</div>
 			))}
 
 			{isLoading && (

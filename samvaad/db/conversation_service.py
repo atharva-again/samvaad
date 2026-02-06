@@ -268,3 +268,41 @@ class ConversationService:
 
             db.commit()
             return deleted_count
+
+    def toggle_message_pin(self, message_id: UUID, user_id: str) -> Message | None:
+        with get_db_context() as db:
+            message = (
+                db.execute(
+                    select(Message)
+                    .join(Conversation)
+                    .where(Message.id == message_id)
+                    .where(Conversation.user_id == user_id)
+                )
+                .scalars()
+                .first()
+            )
+
+            if not message:
+                return None
+
+            message.is_pinned = not message.is_pinned
+            db.commit()
+            db.refresh(message)
+            return message
+
+    def get_pinned_messages(self, conversation_id: UUID, user_id: str) -> list[Message]:
+        with get_db_context() as db:
+            conv = db.execute(
+                select(Conversation.id).where(Conversation.id == conversation_id).where(Conversation.user_id == user_id)
+            ).scalar()
+
+            if not conv:
+                return []
+
+            result = db.execute(
+                select(Message)
+                .where(Message.conversation_id == conversation_id)
+                .where(Message.is_pinned == True)
+                .order_by(Message.created_at.desc())
+            )
+            return list(result.scalars().all())

@@ -12,6 +12,7 @@ interface MessageBubbleProps {
 	message: ChatMessage;
 	index: number;
 	onEdit?: (index: number, content: string) => void;
+	onPinToggle?: () => void;
 }
 
 // Props type with index signature for react-markdown compatibility
@@ -194,17 +195,19 @@ import {
 	Copy,
 	Loader2,
 	Pencil,
+	Pin,
 	StopCircle,
 	Volume2,
 } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { API_BASE_URL } from "@/lib/api";
+import { API_BASE_URL, toggleMessagePin } from "@/lib/api";
 
-export function MessageBubble({ message, index, onEdit }: MessageBubbleProps) {
+export function MessageBubble({ message, index, onEdit, onPinToggle }: MessageBubbleProps) {
 	const isUser = message.role === "user";
 	const [isGenerating, setIsGenerating] = useState(false);
 	const [isPlaying, setIsPlaying] = useState(false);
+	const [isPinned, setIsPinned] = useState(message.is_pinned || false);
 	const audioRef = useRef<HTMLAudioElement | null>(null);
 	const messageRef = useRef<HTMLDivElement>(null);
 
@@ -404,6 +407,20 @@ export function MessageBubble({ message, index, onEdit }: MessageBubbleProps) {
 		}
 	};
 
+	const handlePinToggle = async () => {
+		if (!message.id) return;
+
+		try {
+			const result = await toggleMessagePin(message.id);
+			setIsPinned(result.is_pinned);
+			toast.success(result.is_pinned ? "Message pinned" : "Message unpinned");
+			onPinToggle?.();
+		} catch (error) {
+			console.error("Failed to toggle pin:", error);
+			toast.error("Failed to update pin status");
+		}
+	};
+
 	// IntersectionObserver: Auto-update citations when scrolling with Citations tab open
 	React.useEffect(() => {
 		if (!showCitations || !messageRef.current) return;
@@ -506,6 +523,17 @@ export function MessageBubble({ message, index, onEdit }: MessageBubbleProps) {
 								<Pencil className="w-3.5 h-3.5" />
 							</button>
 						)}
+						<button
+							onClick={handlePinToggle}
+							className={cn(
+								"p-1.5 hover:bg-white/10 rounded-md text-text-secondary hover:text-white transition-colors cursor-pointer",
+								isPinned && "text-white"
+							)}
+							title={isPinned ? "Unpin" : "Pin"}
+							type="button"
+						>
+							<Pin className="w-3.5 h-3.5" fill={isPinned ? "currentColor" : "none"} />
+						</button>
 					</div>
 				) : (
 					/* Bot Actions */
@@ -535,6 +563,17 @@ export function MessageBubble({ message, index, onEdit }: MessageBubbleProps) {
 							) : (
 								<Volume2 className="w-3.5 h-3.5" />
 							)}
+						</button>
+						<button
+							onClick={handlePinToggle}
+							className={cn(
+								"p-1.5 hover:bg-white/10 rounded-md text-text-secondary hover:text-white transition-colors cursor-pointer",
+								isPinned && "text-white"
+							)}
+							title={isPinned ? "Unpin" : "Pin"}
+							type="button"
+						>
+							<Pin className="w-3.5 h-3.5" fill={isPinned ? "currentColor" : "none"} />
 						</button>
 					{showCitations && (
 							<button

@@ -41,6 +41,7 @@ class MessageResponse(BaseModel):
     role: str
     content: str
     sources: list[dict] = []
+    is_pinned: bool = False
     created_at: datetime
 
     class Config:
@@ -156,6 +157,7 @@ def get_conversation(conversation_id: UUID, current_user: User = Depends(get_cur
                 role=cast(str, msg.role),
                 content=cast(str, msg.content),
                 sources=cast(list[dict], msg.sources) if cast(list[dict] | None, msg.sources) else [],
+                is_pinned=cast(bool, msg.is_pinned),
                 created_at=cast(datetime, msg.created_at),
             )
             for msg in conversation.messages
@@ -183,6 +185,7 @@ def get_messages_since(
             role=cast(str, msg.role),
             content=cast(str, msg.content),
             sources=cast(list[dict], msg.sources) if cast(list[dict] | None, msg.sources) else [],
+            is_pinned=cast(bool, msg.is_pinned),
             created_at=cast(datetime, msg.created_at),
         )
         for msg in messages
@@ -320,3 +323,37 @@ def bulk_delete_conversations(data: BulkDeleteRequest, current_user: User = Depe
         conversation_ids=data.conversation_ids, user_id=cast(str, current_user.id)
     )
     return {"deleted_count": count, "success": True}
+
+
+@router.post("/messages/{message_id}/pin")
+def toggle_message_pin(message_id: UUID, current_user: User = Depends(get_current_user)):
+    """Toggle the pin status of a message."""
+    message = conversation_service.toggle_message_pin(message_id=message_id, user_id=cast(str, current_user.id))
+
+    if not message:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    return {
+        "success": True,
+        "message_id": str(message.id),
+        "is_pinned": cast(bool, message.is_pinned),
+    }
+
+
+@router.get("/{conversation_id}/pinned", response_model=list[MessageResponse])
+def get_pinned_messages(conversation_id: UUID, current_user: User = Depends(get_current_user)):
+    messages = conversation_service.get_pinned_messages(
+        conversation_id=conversation_id, user_id=cast(str, current_user.id)
+    )
+
+    return [
+        MessageResponse(
+            id=str(msg.id),
+            role=cast(str, msg.role),
+            content=cast(str, msg.content),
+            sources=cast(list[dict], msg.sources) if cast(list[dict] | None, msg.sources) else [],
+            is_pinned=cast(bool, msg.is_pinned),
+            created_at=cast(datetime, msg.created_at),
+        )
+        for msg in messages
+    ]

@@ -32,6 +32,7 @@ export interface ChatMessage {
 	content: string;
 	timestamp?: string;
 	sources?: CitationItem[];
+	is_pinned?: boolean;
 }
 
 export interface ChatResponse {
@@ -180,5 +181,21 @@ export const updateConversationSettings = async (
 	settings: Partial<ConversationSettings>,
 ): Promise<ConversationSettings> => {
 	const response = await api.put<ConversationSettings>(`/conversations/${conversationId}/settings`, settings);
+	return response.data;
+};
+
+export interface TogglePinResponse {
+	success: boolean;
+	message_id: string;
+	is_pinned: boolean;
+}
+
+export const toggleMessagePin = async (messageId: string): Promise<TogglePinResponse> => {
+	const response = await api.post<TogglePinResponse>(`/conversations/messages/${messageId}/pin`);
+	return response.data;
+};
+
+export const getPinnedMessages = async (conversationId: string): Promise<ChatMessage[]> => {
+	const response = await api.get<ChatMessage[]>(`/conversations/${conversationId}/pinned`);
 	return response.data;
 };

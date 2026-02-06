@@ -150,7 +150,8 @@ class Message(Base):
     role = Column(String, nullable=False)  # "user", "assistant", "system"
     content = Column(Text, nullable=False)
     sources = Column(JSON, default=[])  # RAG sources for assistant messages
-    token_count = Column(Integer, nullable=True)  # For context window management
+    token_count = Column(Integer, nullable=True)
+    is_pinned = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     conversation = relationship("Conversation", back_populates="messages")
