@@ -149,3 +149,36 @@ export const uploadFile = async (file: File) => {
 	});
 	return response.data;
 };
+
+export interface UserSettings {
+	default_strict_mode: boolean;
+	default_persona: string;
+}
+
+export const getUserSettings = async (): Promise<UserSettings> => {
+	const response = await api.get<UserSettings>("/users/settings");
+	return response.data;
+};
+
+export const updateUserSettings = async (settings: UserSettings): Promise<UserSettings> => {
+	const response = await api.put<UserSettings>("/users/settings", settings);
+	return response.data;
+};
+
+export interface ConversationSettings {
+	active_strict_mode: boolean | null;
+	active_persona: string | null;
+}
+
+export const getConversationSettings = async (conversationId: string): Promise<ConversationSettings> => {
+	const response = await api.get<ConversationSettings>(`/conversations/${conversationId}/settings`);
+	return response.data;
+};
+
+export const updateConversationSettings = async (
+	conversationId: string,
+	settings: Partial<ConversationSettings>,
+): Promise<ConversationSettings> => {
+	const response = await api.put<ConversationSettings>(`/conversations/${conversationId}/settings`, settings);
+	return response.data;
+};

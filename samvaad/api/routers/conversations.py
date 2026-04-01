@@ -7,6 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from typing import cast
 
 from samvaad.api.deps import get_current_user
 from samvaad.db.conversation_service import ConversationService
@@ -24,11 +25,15 @@ conversation_service = ConversationService()
 class ConversationCreate(BaseModel):
     id: str | None = None
     title: str | None = "New Conversation"
+    active_strict_mode: bool | None = None
+    active_persona: str | None = None
 
 
 class ConversationUpdate(BaseModel):
     title: str | None = None
     is_pinned: bool | None = None
+    active_strict_mode: bool | None = None
+    active_persona: str | None = None
 
 
 class MessageResponse(BaseModel):
@@ -63,6 +68,8 @@ class ConversationDetailResponse(BaseModel):
     created_at: datetime
     updated_at: datetime | None
     messages: list[MessageResponse] = []
+    active_strict_mode: bool | None = None
+    active_persona: str | None = None
 
     class Config:
         from_attributes = True
@@ -73,28 +80,33 @@ def create_conversation(data: ConversationCreate, current_user: User = Depends(g
     """Create a new conversation."""
     from uuid import UUID
 
+    user_id = cast(str, current_user.id)
     conv_id = UUID(data.id) if data.id else None
 
     if conv_id:
-        existing = conversation_service.get_conversation(conv_id, current_user.id)
+        existing = conversation_service.get_conversation(conv_id, user_id)
         if existing:
             return ConversationResponse(
                 id=str(existing.id),
-                title=existing.title,
-                created_at=existing.created_at,
-                updated_at=existing.updated_at,
-                message_count=conversation_service.get_message_count(existing.id),
+                title=cast(str, existing.title),
+                created_at=cast(datetime, existing.created_at),
+                updated_at=cast(datetime | None, existing.updated_at),
+                message_count=conversation_service.get_message_count(cast(UUID, existing.id)),
             )
 
     conversation = conversation_service.create_conversation(
-        user_id=current_user.id, title=data.title or "New Conversation", conversation_id=conv_id
+        user_id=user_id,
+        title=data.title or "New Conversation",
+        conversation_id=conv_id,
+        active_strict_mode=data.active_strict_mode,
+        active_persona=data.active_persona,
     )
 
     return ConversationResponse(
         id=str(conversation.id),
-        title=conversation.title,
-        created_at=conversation.created_at,
-        updated_at=conversation.updated_at,
+        title=cast(str, conversation.title),
+        created_at=cast(datetime, conversation.created_at),
+        updated_at=cast(datetime | None, conversation.updated_at),
         message_count=0,
     )
 
@@ -102,18 +114,19 @@ def create_conversation(data: ConversationCreate, current_user: User = Depends(g
 @router.get("/", response_model=list[ConversationResponse])
 def list_conversations(limit: int = 50, offset: int = 0, current_user: User = Depends(get_current_user)):
     """List user's conversations, ordered by most recent."""
-    conversations = conversation_service.list_conversations(user_id=current_user.id, limit=limit, offset=offset)
+    user_id = cast(str, current_user.id)
+    conversations = conversation_service.list_conversations(user_id=user_id, limit=limit, offset=offset)
 
     result = []
     for conv in conversations:
-        message_count = conversation_service.get_message_count(conv.id)
+        message_count = conversation_service.get_message_count(cast(UUID, conv.id))
         result.append(
             ConversationResponse(
                 id=str(conv.id),
-                title=conv.title,
-                created_at=conv.created_at,
-                updated_at=conv.updated_at,
-                is_pinned=conv.is_pinned,
+                title=cast(str, conv.title),
+                created_at=cast(datetime, conv.created_at),
+                updated_at=cast(datetime | None, conv.updated_at),
+                is_pinned=cast(bool, conv.is_pinned),
                 message_count=message_count,
             )
         )
@@ -124,23 +137,31 @@ def list_conversations(limit: int = 50, offset: int = 0, current_user: User = De
 @router.get("/{conversation_id}", response_model=ConversationDetailResponse)
 def get_conversation(conversation_id: UUID, current_user: User = Depends(get_current_user)):
     """Get a conversation with all its messages."""
-    conversation = conversation_service.get_conversation(conversation_id=conversation_id, user_id=current_user.id)
+    conversation = conversation_service.get_conversation(
+        conversation_id=conversation_id, user_id=cast(str, current_user.id)
+    )
 
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
     return ConversationDetailResponse(
         id=str(conversation.id),
-        title=conversation.title,
-        summary=conversation.summary,
-        created_at=conversation.created_at,
-        updated_at=conversation.updated_at,
+        title=cast(str, conversation.title),
+        summary=cast(str | None, conversation.summary),
+        created_at=cast(datetime, conversation.created_at),
+        updated_at=cast(datetime | None, conversation.updated_at),
         messages=[
             MessageResponse(
-                id=str(msg.id), role=msg.role, content=msg.content, sources=msg.sources or [], created_at=msg.created_at
+                id=str(msg.id),
+                role=cast(str, msg.role),
+                content=cast(str, msg.content),
+                sources=cast(list[dict], msg.sources) if cast(list[dict] | None, msg.sources) else [],
+                created_at=cast(datetime, msg.created_at),
             )
             for msg in conversation.messages
         ],
+        active_strict_mode=cast(bool | None, conversation.active_strict_mode),
+        active_persona=cast(str | None, conversation.active_persona),
     )
 
 
@@ -153,15 +174,61 @@ def get_messages_since(
     If 'after' is not provided, returns all messages.
     """
     messages = conversation_service.get_messages_since(
-        conversation_id=conversation_id, user_id=current_user.id, after=after
+        conversation_id=conversation_id, user_id=cast(str, current_user.id), after=after
     )
 
     return [
         MessageResponse(
-            id=str(msg.id), role=msg.role, content=msg.content, sources=msg.sources or [], created_at=msg.created_at
+            id=str(msg.id),
+            role=cast(str, msg.role),
+            content=cast(str, msg.content),
+            sources=cast(list[dict], msg.sources) if cast(list[dict] | None, msg.sources) else [],
+            created_at=cast(datetime, msg.created_at),
         )
         for msg in messages
     ]
+
+
+class ConversationSettingsResponse(BaseModel):
+    active_strict_mode: bool | None = None
+    active_persona: str | None = None
+
+
+@router.get("/{conversation_id}/settings", response_model=ConversationSettingsResponse)
+def get_conversation_settings(conversation_id: UUID, current_user: User = Depends(get_current_user)):
+    conversation = conversation_service.get_conversation(
+        conversation_id=conversation_id, user_id=cast(str, current_user.id)
+    )
+
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    return ConversationSettingsResponse(
+        active_strict_mode=cast(bool | None, conversation.active_strict_mode),
+        active_persona=cast(str | None, conversation.active_persona),
+    )
+
+
+@router.put("/{conversation_id}/settings", response_model=ConversationSettingsResponse)
+def update_conversation_settings_endpoint(
+    conversation_id: UUID,
+    data: ConversationSettingsResponse,
+    current_user: User = Depends(get_current_user),
+):
+    conversation = conversation_service.update_conversation(
+        conversation_id=conversation_id,
+        user_id=cast(str, current_user.id),
+        active_strict_mode=data.active_strict_mode,
+        active_persona=data.active_persona,
+    )
+
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    return ConversationSettingsResponse(
+        active_strict_mode=cast(bool | None, conversation.active_strict_mode),
+        active_persona=cast(str | None, conversation.active_persona),
+    )
 
 
 class TruncateMessagesRequest(BaseModel):
@@ -185,7 +252,9 @@ def truncate_messages(
     Used for edit functionality - removes messages not in keep_message_ids.
     """
     deleted_count = conversation_service.truncate_messages_from(
-        conversation_id=conversation_id, user_id=current_user.id, keep_message_ids=request.keep_message_ids
+        conversation_id=conversation_id,
+        user_id=cast(str, current_user.id),
+        keep_message_ids=request.keep_message_ids,
     )
 
     return TruncateMessagesResponse(deleted_count=deleted_count)
@@ -197,20 +266,25 @@ def update_conversation(
 ):
     """Update a conversation's title."""
     conversation = conversation_service.update_conversation(
-        conversation_id=conversation_id, user_id=current_user.id, title=data.title, is_pinned=data.is_pinned
+        conversation_id=conversation_id,
+        user_id=cast(str, current_user.id),
+        title=data.title,
+        is_pinned=data.is_pinned,
+        active_strict_mode=data.active_strict_mode,
+        active_persona=data.active_persona,
     )
 
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    message_count = conversation_service.get_message_count(conversation.id)
+    message_count = conversation_service.get_message_count(cast(UUID, conversation.id))
 
     return ConversationResponse(
         id=str(conversation.id),
-        title=conversation.title,
-        is_pinned=conversation.is_pinned,
-        created_at=conversation.created_at,
-        updated_at=conversation.updated_at,
+        title=cast(str, conversation.title),
+        is_pinned=cast(bool, conversation.is_pinned),
+        created_at=cast(datetime, conversation.created_at),
+        updated_at=cast(datetime | None, conversation.updated_at),
         message_count=message_count,
     )
 
@@ -218,7 +292,9 @@ def update_conversation(
 @router.delete("/{conversation_id}")
 def delete_conversation(conversation_id: UUID, current_user: User = Depends(get_current_user)):
     """Delete a conversation and all its messages."""
-    success = conversation_service.delete_conversation(conversation_id=conversation_id, user_id=current_user.id)
+    success = conversation_service.delete_conversation(
+        conversation_id=conversation_id, user_id=cast(str, current_user.id)
+    )
 
     if not success:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -240,5 +316,7 @@ def bulk_delete_conversations(data: BulkDeleteRequest, current_user: User = Depe
     if not data.conversation_ids:
         return {"deleted_count": 0}
 
-    count = conversation_service.delete_conversations(conversation_ids=data.conversation_ids, user_id=current_user.id)
+    count = conversation_service.delete_conversations(
+        conversation_ids=data.conversation_ids, user_id=cast(str, current_user.id)
+    )
     return {"deleted_count": count, "success": True}

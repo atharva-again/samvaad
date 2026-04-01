@@ -4,14 +4,15 @@ import { cn } from "@/lib/utils";
 interface AccountMenuProps {
 	onClose: () => void;
 	onLogout: () => void;
+	onSettingsOpen: () => void;
 }
 
-export function AccountMenu({ onClose, onLogout }: AccountMenuProps) {
+export function AccountMenu({ onClose, onLogout, onSettingsOpen }: AccountMenuProps) {
 	const menuItems = [
 		{
 			icon: <Settings className="w-4 h-4" />,
 			label: "Settings",
-			onClick: () => {},
+			onClick: onSettingsOpen,
 		},
 		{
 			icon: <HelpCircle className="w-4 h-4" />,
@@ -31,7 +32,8 @@ export function AccountMenu({ onClose, onLogout }: AccountMenuProps) {
 		<div className="py-2 min-w-[160px]">
 			{menuItems.map((item, i) => (
 				<button
-					key={i}
+					key={item.label}
+					type="button"
 					onClick={() => {
 						onClose();
 						item.onClick();

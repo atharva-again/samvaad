@@ -12,11 +12,13 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 import React, { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
 	DeleteConfirmModal,
 	RenameModal,
+	SettingsModal,
 	UniversalSearchModal,
 } from "@/components/modals";
 import { ActionTooltip } from "@/components/ui/action-tooltip";
@@ -128,6 +130,7 @@ export function IconNavRail() {
 	const [renameTarget, setRenameTarget] = useState<Conversation | null>(null);
 	const [isDeleting, setIsDeleting] = useState(false);
 	const [isRenaming, setIsRenaming] = useState(false);
+	const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
 	const accountMenuRef = useRef<HTMLDivElement>(null);
 	const accountButtonRef = useRef<HTMLButtonElement>(null);
@@ -259,7 +262,19 @@ export function IconNavRail() {
 				isExpanded ? "w-60" : "w-14",
 			)}
 		>
-			<div className="h-14 border-b border-white/5 shrink-0" />
+			<Link
+				href="/"
+				className={cn(
+					"h-14 border-b border-white/5 shrink-0 flex items-center hover:bg-white/5 transition-colors",
+					isExpanded ? "px-5 justify-start" : "justify-center"
+				)}
+			>
+				{isExpanded ? (
+					<span className="text-white font-bold text-lg tracking-tight">Samvaad</span>
+				) : (
+					<span className="text-white font-bold text-xl">S</span>
+				)}
+			</Link>
 
 			{/* Navigation */}
 			<nav
@@ -592,6 +607,7 @@ export function IconNavRail() {
 									<AccountMenu
 										onClose={() => setShowAccountMenu(false)}
 										onLogout={handleLogout}
+										onSettingsOpen={() => setIsSettingsModalOpen(true)}
 									/>
 								</div>
 							</motion.div>
@@ -638,7 +654,11 @@ export function IconNavRail() {
 				isRenaming={isRenaming}
 				currentName={renameTarget?.title || ""}
 			/>
-			<UniversalSearchModal />
+			<UniversalSearchModal onSettingsOpen={() => setIsSettingsModalOpen(true)} />
+			<SettingsModal
+				isOpen={isSettingsModalOpen}
+				onClose={() => setIsSettingsModalOpen(false)}
+			/>
 		</div>
 	);
 }

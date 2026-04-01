@@ -1,7 +1,7 @@
 import { toast } from "sonner";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { api } from "@/lib/api";
+import { api, type ConversationSettings, getConversationSettings, updateConversationSettings } from "@/lib/api";
 import { conversationCache } from "@/lib/cache/conversationCache";
 import { type CachedMessage } from "@/lib/cache/db";
 import { generateNewConversationId, isValidUUID, sanitizeInput } from "@/lib/utils";
@@ -142,6 +142,11 @@ interface ConversationState {
 	selectAll: () => void;
 	deselectAll: () => void;
 	deleteSelectedConversations: () => Promise<void>;
+
+	conversationSettings: ConversationSettings | null;
+	isLoadingConversationSettings: boolean;
+	loadConversationSettings: (id: string) => Promise<void>;
+	updateConversationSettings: (id: string, settings: Partial<ConversationSettings>) => Promise<void>;
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -165,6 +170,8 @@ export const useConversationStore = create<ConversationState>()(
 
 			isSelectMode: false,
 			selectedIds: new Set(),
+			conversationSettings: null,
+			isLoadingConversationSettings: false,
 
 			// ─────────────────────────────────────────────────────────────
 			// Local State Actions
@@ -823,18 +830,44 @@ export const useConversationStore = create<ConversationState>()(
 						console.warn("[Store] Failed to update cache pin:", err),
 					);
 
-				try {
-					await api.patch(`/conversations/${id}`, {
-						is_pinned: newPinnedParam,
-					});
-				} catch (error) {
-					// Rollback on error
-					console.error("Failed to toggle pin:", error);
-					set({ conversations: previousConversations });
-					throw error;
-				}
-			},
-		}),
+			try {
+				await api.patch(`/conversations/${id}`, {
+					is_pinned: newPinnedParam,
+				});
+			} catch (error) {
+				// Rollback on error
+				console.error("Failed to toggle pin:", error);
+				set({ conversations: previousConversations });
+				throw error;
+			}
+		},
+
+		loadConversationSettings: async (id: string) => {
+			if (!isValidUUID(id)) return;
+			set({ isLoadingConversationSettings: true });
+			try {
+				const settings = await getConversationSettings(id);
+				set({ conversationSettings: settings, isLoadingConversationSettings: false });
+			} catch (error) {
+				console.error("Failed to load conversation settings:", error);
+				set({ isLoadingConversationSettings: false });
+			}
+		},
+
+		updateConversationSettings: async (id: string, settings: Partial<ConversationSettings>) => {
+			if (!isValidUUID(id)) return;
+			const previousSettings = get().conversationSettings;
+			set({ conversationSettings: { ...previousSettings, ...settings } as ConversationSettings });
+			try {
+				const updated = await updateConversationSettings(id, settings);
+				set({ conversationSettings: updated });
+			} catch (error) {
+				console.error("Failed to update conversation settings:", error);
+				set({ conversationSettings: previousSettings });
+				throw error;
+			}
+		},
+	}),
 		{
 			name: "samvaad-conversations",
 			// NO persistence of currentConversationId - rely on URL
