@@ -67,7 +67,7 @@ export function Navbar({ signInWithGoogle }: NavbarProps) {
 					</Link>
 
 					<Link
-						href="https://github.com/atharva-again/samvaad"
+						href="https://git.new/samvaad"
 						target="_blank"
 						className={cn(
 							"text-sm font-medium transition-colors hover:text-white",
