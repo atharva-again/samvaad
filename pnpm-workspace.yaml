@@ -1,0 +1,28 @@
+packages:
+  - "packages/*"
+
+# Avoid installing optional framework peers (e.g. Next.js from Better Auth).
+autoInstallPeers: false
+
+allowBuilds:
+  "@livekit/blingfire": true
+  "@livekit/local-inference": true
+  esbuild: true
+  onnxruntime-node: true
+  sharp: true
+  unrs-resolver: true
+catalog:
+  vite: npm:@voidzero-dev/vite-plus-core@1.6.0
+  vitest: 5.1.0
+  vite-plus: 1.6.0
+overrides:
+  "@livekit/protocol": 1.54.0
+  vite@*: "catalog:"
+  vitest@*: "catalog:"
+peerDependencyRules:
+  allowAny:
+    - vite
+    - vitest
+  allowedVersions:
+    vite: "*"
+    vitest: "*"

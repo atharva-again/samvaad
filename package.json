@@ -1,0 +1,22 @@
+{
+  "name": "samvaad",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vp run --parallel --filter @samvaad/web --filter @samvaad/api dev",
+    "dev:all": "vp run --parallel --filter @samvaad/web --filter @samvaad/api --filter @samvaad/voice-agent dev",
+    "dev:web": "vp run --filter @samvaad/web dev",
+    "dev:api": "vp run --filter @samvaad/api dev",
+    "dev:voice": "vp run --filter @samvaad/voice-agent dev",
+    "db:migrate": "vp run --filter @samvaad/db db:migrate",
+    "test": "vp test",
+    "build": "vp run --filter @samvaad/db --filter @samvaad/voice-protocol --filter @samvaad/api --filter @samvaad/voice-agent --filter @samvaad/web build"
+  },
+  "devDependencies": {
+    "vite-plus": "catalog:"
+  },
+  "engines": {
+    "node": "^22.18.0 || ^24.11.0 || >=26.0.0"
+  },
+  "packageManager": "pnpm@12.21.0"
+}
