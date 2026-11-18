@@ -1,70 +1,66 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-01-12T17:12:56Z
-**Commit:** 5b9b2c1
-**Branch:** docs/update
-
 ## OVERVIEW
-Samvaad is a full-stack RAG (Retrieval-Augmented Generation) application with voice and text modes. 
-The backend is built with FastAPI and Python, while the frontend is a Next.js application.
+
+Samvaad is a TypeScript full-stack RAG application with text and LiveKit voice
+modes. The pnpm workspace contains a Vite/React web app, a self-hostable Hono
+API, a LiveKit TypeScript worker, and shared PostgreSQL/Drizzle and protocol
+packages.
+Better Auth handles Google OAuth and cookie-based sessions.
 
 ## STRUCTURE
-```
+
+```text
 .
-├── samvaad/           # Core backend logic (FastAPI, Pipeline, DB)
-│   ├── api/           # API routes and entry points
-│   ├── core/          # Authentication, memory, and shared logic
-│   ├── db/            # Database models and services (Supabase/PostgreSQL)
-│   ├── pipeline/      # RAG pipeline (Ingestion, Retrieval, Deletion)
-│   ├── prompts/       # AI persona and mode definitions
-│   └── utils/         # Citations, text processing, and hashing utilities
-├── frontend/          # Next.js/React frontend application
-├── tests/             # Unit and integration test suites
-├── data/              # Document storage and local data
-└── PLANS/             # Project roadmap and technical designs
+├── packages/
+│   ├── api/             # Hono API, Better Auth, RAG, ingestion, persistence
+│   ├── web/             # Vite, React, TanStack Router, Base UI
+│   ├── voice-agent/     # LiveKit Agents TypeScript worker
+│   ├── db/              # Drizzle schema and migrations
+│   └── voice-protocol/  # Shared LiveKit data-channel protocol
 ```
 
 ## WHERE TO LOOK
-| Task | Location | Notes |
-|------|----------|-------|
-| API Endpoints | `samvaad/api/main.py` | FastAPI app definition |
-| Database Ops | `samvaad/db/service.py` | Core DB service logic |
-| AI Prompting | `samvaad/prompts/` | Persona and style definitions |
-| RAG Pipeline | `samvaad/pipeline/` | Document ingestion and retrieval |
-| UI Components | `frontend/components/` | React components |
-| Auth Logic | `samvaad/core/auth.py` | Backend authentication |
 
-## CODE MAP
-| Symbol | Type | Location | Role |
-|--------|------|----------|------|
-| `app` | Variable | `samvaad/api/main.py` | FastAPI application |
-| `DBService` | Class | `samvaad/db/service.py` | Primary database interface |
-| `TextMessageRequest` | Class | `samvaad/api/main.py` | Schema for text chat requests |
-| `VoiceModeRequest` | Class | `samvaad/api/main.py` | Schema for voice session setup |
+| Task                  | Location                                                       | Notes                                                |
+| --------------------- | -------------------------------------------------------------- | ---------------------------------------------------- |
+| API routes/middleware | `packages/api/src/app.ts`, `packages/api/src/routes/`          | Hono API                                             |
+| Auth                  | `packages/api/src/auth.ts`, `packages/web/lib/auth-client.ts`  | Better Auth, Google OAuth, cookie sessions           |
+| Database              | `packages/db/src/`, `packages/db/drizzle/`                     | PostgreSQL, pgvector, Drizzle                        |
+| RAG                   | `packages/api/src/rag.ts`                                      | Voyage embeddings/rerank and user-scoped search      |
+| Ingestion             | `packages/api/src/ingestion.ts`                                | LlamaCloud parse, structural chunking, deduplication |
+| Text agent/memory     | `packages/api/src/text-agent.ts`, `packages/api/src/memory.ts` | Groq and conversation context                        |
+| Voice worker          | `packages/voice-agent/src/index.ts`                            | LiveKit, citations, Deepgram, Groq                   |
+| UI                    | `packages/web/components/`                                     | React chat and voice controls                        |
 
 ## CONVENTIONS
-- **Python**: Uses `uv` for dependency management. Strict typing with `mypy`.
-- **Formatting**: `Black` (88 char) for Python, `Biome` for Frontend.
-- **Linting**: `Ruff` for Python, `ESLint` and `Biome` for Frontend.
-- **Testing**: `pytest` for backend unit and integration tests.
 
-## ANTI-PATTERNS (THIS PROJECT)
-- **Database**: Avoid simple check-then-insert. Use `ON CONFLICT DO NOTHING` for concurrency.
-- **Frontend**: Do not depend on hover state in markdown memoization to prevent DOM recreation.
-- **AI Responses**: NEVER use filenames in citations (e.g., `[file.pdf]`). Use numeric IDs like `[1]`.
+- **TypeScript**: strict mode; keep API payloads validated at the boundary.
+- **Database**: PostgreSQL is self-hosted; Drizzle owns schema and migrations.
+  Preserve existing user data and use parameterized SQL for specialized RAG
+  queries.
+- **RAG**: keep user/file ownership filters in database queries; never expose
+  another user's chunks.
+- **Auth**: use Better Auth sessions, not bearer tokens. Browser API requests
+  must include credentials; API routes must verify the session.
+- **Citations**: never cite filenames in model text; use numeric IDs. Preserve
+  raw response/citations for UI and persistence; strip markers only from TTS.
+- **Self-hosting**: don't add cloud-only dependencies. Keep LiveKit Cloud
+  optional and the Node services containerizable with `Containerfile`s.
+- **Product parity**: preserve API contracts and UX while porting behavior;
+  test uploads, history, citations, auth boundaries, and voice persistence.
 
 ## COMMANDS
+
 ```bash
-# Backend Dev
-uvicorn samvaad.api.main:app --reload
-
-# Frontend Dev
-cd frontend && pnpm dev
-
-# Tests
-pytest
+vp install
+vpr db:migrate
+vpr dev
+vpr dev:all
+vpr dev:api
+vpr dev:web
+vpr dev:voice
+vp check
+vp test
+vpr build
 ```
-
-## NOTES
-- References to `requirements.txt` in README are deprecated; use `pyproject.toml`.
-- `PLANS/` directory contains living architecture documents.

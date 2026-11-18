@@ -9,58 +9,38 @@ permissions:
   contents: read
 
 jobs:
-  tests:
-    name: Tests
+  checks:
+    name: Workspace tests, types, and builds
     runs-on: ubuntu-latest
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
         with:
-          python-version: '3.11'
+          version: 12.21.0
 
-      - name: Cache uv and pip
-        uses: actions/cache@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          path: |
-            ~/.cache/uv
-            ~/.cache/pip
-          key: deps-${{ runner.os }}-py311-${{ hashFiles('pyproject.toml') }}
-          restore-keys: |
-            deps-${{ runner.os }}-py311-
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: "latest"
+      - name: Install workspace
+        run: pnpm install --frozen-lockfile
 
-      - name: Install dependencies
-        run: |
-          uv venv venv
-          source venv/bin/activate
-          uv pip install -e . --index-strategy unsafe-best-match
+      - name: Vite+ checks
+        run: pnpm exec vp check
 
-      - name: Run tests
+      - name: Test
         env:
-          # Mock API keys for tests (tests mock the actual API calls)
-          VOYAGE_API_KEY: "test-key"
-          GROQ_API_KEY: "test-key"
-          LLAMA_CLOUD_API_KEY: "test-key"
-          DEEPGRAM_API_KEY: "test-key"
-          DAILY_API_KEY: "test-key"
-          SUPABASE_URL: "https://test.supabase.co"
-          # Mock DB vars for URL parsing
-          user: "mock_user"
-          password: "mock_password"
-          host: "localhost"
-          port: "5432"
-          dbname: "mock_db"
-          # Pytest-asyncio settings
-          PYTEST_ASYNCIO_MODE: "auto"
-          PYTHONWARNINGS: default
-        run: |
-          source venv/bin/activate
-          pytest tests/ -v
+          BETTER_AUTH_SECRET: ci-only-secret-that-is-long-enough-for-tests
+        run: pnpm test
+
+      - name: Build
+        env:
+          VITE_API_URL: http://localhost:18765
+        run: pnpm build
