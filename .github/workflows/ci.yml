@@ -32,6 +32,11 @@ jobs:
       - name: Install workspace
         run: pnpm install --frozen-lockfile
 
+      - name: Build shared workspace packages
+        run: |
+          pnpm --filter @samvaad/db build
+          pnpm --filter @samvaad/voice-protocol build
+
       - name: Vite+ checks
         run: pnpm exec vp check
 
