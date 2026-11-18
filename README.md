@@ -1,129 +1,120 @@
 # Samvaad (संवाद)
 
-> **Dialogue-Based Learning Facilitated by Real-Time AI**
+> Dialogue-based learning through text and real-time voice.
 
-Samvaad is a sophisticated, full-stack Retrieval-Augmented Generation (RAG) platform that transforms static documents into interactive, dialogue-driven learning experiences. By combining state-of-the-art vector retrieval with ultra-low-latency WebRTC voice conversations, Samvaad allows you to talk to your knowledge—literally.
+Samvaad turns uploaded documents into a conversational learning experience.
+Users can chat with their documents, inspect numeric citations, and talk to a
+LiveKit voice agent.
 
-## Key Features
+## Stack
 
-- **Real-Time Voice Mode**: Ultra-low latency voice conversations using WebRTC (Daily) and the Pipecat framework. Interact naturally with your documents using voice.
-- **Deep RAG Pipeline**: Advanced document ingestion supporting PDF, Docx, Images (OCR), and more via LlamaParse and Docling.
-- **Intelligent Deduplication**: Content-addressable storage (SHA-256) ensures zero-redundancy in document chunks across users.
-- **Multi-Model Intelligence**: Optimized for Gemini, Groq, and OpenAI, with high-quality embeddings via Voyage AI.
-- **Neural TTS & STT**: Crystal-clear speech synthesis and high-accuracy transcription using Deepgram for a human-like conversational experience.
-- **Verified Citations**: Every claim is backed by atomic citations linked directly to your source documents to eliminate hallucinations.
-- **Modern Full-Stack Architecture**: A high-performance FastAPI backend paired with a premium Next.js 15+ frontend.
+- **Web:** React, Vite, TanStack Router, Base UI, TypeScript, Tailwind CSS
+- **API:** Hono on Node.js and TypeScript
+- **Auth:** Better Auth with Google OAuth and cookie sessions
+- **Database:** self-hosted PostgreSQL + pgvector, Drizzle ORM/schema/migrations
+- **Voice:** LiveKit Agents for TypeScript, Deepgram STT/TTS, Groq, and Silero VAD
+- **Document parsing:** LlamaCloud / LlamaParse
+- **Embeddings and reranking:** Voyage AI
+- **Workspace:** pnpm monorepo
 
-## Tech Stack
+Groq, Deepgram, Voyage AI, and LlamaCloud remain the product providers. The app,
+PostgreSQL, and LiveKit server/agent can all be self-hosted; LiveKit Cloud is
+optional.
 
-### Backend (Python)
-- **Framework**: FastAPI (Asynchronous, High Performance)
-- **Package Manager**: [uv](https://astral.sh/uv) (Extremely fast Python package installer)
-- **Database**: PostgreSQL with `pgvector` (Vector similarity search)
-- **Voice Framework**: [Pipecat](https://github.com/pipecat-ai/pipecat) & [Daily](https://www.daily.co/)
-- **AI/LLM**: Google Gemini, Voyage AI (Embeddings), Deepgram (STT/TTS)
-
-### Frontend (TypeScript)
-- **Framework**: Next.js 15 (App Router)
-- **Styling**: Tailwind CSS with a custom "Void" Dark Theme
-- **UI Components**: Shadcn/ui & Framer Motion
-- **Auth**: Supabase (OAuth & Email)
-
-## Getting Started
-
-### Prerequisites
-- Python 3.11+
-- Node.js 18+ & pnpm
-- Supabase Account
-- API Keys: Gemini, Voyage AI, Deepgram, Daily, Supabase
-
-### Installation
-
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/atharva-again/samvaad.git
-   cd samvaad
-   ```
-
-2. **Setup Backend:**
-   ```bash
-   # Install uv if you haven't
-   curl -LsSf https://astral.sh/uv/install.sh | sh
-
-   # Sync dependencies and create venv
-   uv sync
-   ```
-
-3. **Setup Frontend:**
-   ```bash
-   cd frontend
-   pnpm install
-   ```
-
-### Configuration
-
-Create a `.env` file in the root directory (for backend) and `frontend/.env.local` (for frontend).
-
-**Backend `.env`:**
-```env
-# AI & Pipeline
-GEMINI_API_KEY=...
-VOYAGE_API_KEY=...
-DEEPGRAM_API_KEY=...
-DAILY_API_KEY=...
-
-# Database
-DATABASE_URL=...
-SUPABASE_URL=...
-SUPABASE_SERVICE_ROLE_KEY=...
-```
-
-## Development
-
-### Run Backend
-```bash
-# From the root
-uvicorn samvaad.api.main:app --reload
-```
-
-### Run Frontend
-```bash
-# From the frontend directory
-pnpm dev
-```
-
-### Interactive CLI (Internal testing)
-```bash
-# From the root
-samvaad
-```
-
-## Project Structure
+## Repository layout
 
 ```text
-.
-├── samvaad/           # Core Backend Logic
-│   ├── api/           # FastAPI Routes & App Initialization
-│   ├── core/          # Shared Logic (Auth, Memory, Unified Context)
-│   ├── db/            # Database Models & Service Layer (pgvector)
-│   ├── pipeline/      # RAG Pipeline (Ingestion, Retrieval, Deletion)
-│   ├── prompts/       # AI Personas & System Prompt Engineering
-│   └── utils/         # Citation Handling, Text Processing, Hashing
-├── frontend/          # Next.js Application
-├── tests/             # Pytest Unit & Integration Suites
-├── PLANS/             # Living Architecture & Development Roadmap
-└── AGENTS.md          # Developer Knowledge Base for AI Assistants
+packages/
+  api/             Hono API and Better Auth server
+  web/             Vite + React SPA
+  voice-agent/     LiveKit Agents TypeScript worker
+  db/              Drizzle schema and PostgreSQL migrations
+  voice-protocol/  Shared LiveKit data-channel protocol
 ```
 
-## Developer Knowledge Base
+## Local development
 
-This project maintains a hierarchical set of `AGENTS.md` files that act as a "source of truth" for code conventions, architecture, and anti-patterns.
+Requirements: Node.js 22.18+ (or 24.11+ / 26+), pnpm 12.21+, the Vite+ `vp`
+CLI, PostgreSQL with the `vector` extension, and provider credentials.
 
-- **Root Context**: [`AGENTS.md`](./AGENTS.md)
-- **API Context**: [`samvaad/api/AGENTS.md`](./samvaad/api/AGENTS.md)
-- **DB Context**: [`samvaad/db/AGENTS.md`](./samvaad/db/AGENTS.md)
-- **Frontend Context**: [`frontend/app/AGENTS.md`](./frontend/app/AGENTS.md)
+```bash
+vp install
+```
 
-## License
+Vite+ is pinned in the workspace. `vp dev` starts the web app on port 5177;
+`vp check` handles formatting, lint, and type checks; `vp test` runs the
+workspace tests. Normal development uses the web and API only. The LiveKit
+worker is opt-in.
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Create one repository-root `.env` from [`.env.example`](.env.example). The API,
+web app, voice worker, and database tooling all read that file; do not create
+package-specific env files.
+
+In the Google OAuth client, add
+`http://localhost:5177/api/auth/callback/google` as an authorized redirect URI.
+For production, use the corresponding `BETTER_AUTH_URL`.
+
+Apply database migrations once:
+
+```bash
+vpr db:migrate
+```
+
+In separate terminals, run:
+
+```bash
+vpr dev:web
+vpr dev:api
+```
+
+The web dev server runs on port 5177 and proxies API requests to the API on
+port 18765, so only the web port needs an SSH tunnel. `vp dev` is Vite+'s
+built-in command for the default web package; use `vpr dev:web` to run its
+workspace script. The LiveKit worker is not started by `vpr dev`; start it
+separately with `vpr dev:voice` only when testing voice.
+
+Samvaad expects its own PostgreSQL instance on port 55432, separate from
+services using the conventional 5432 port. The API binds to loopback on port
+18765; the web proxy reaches it there.
+
+For production deployments on sibling subdomains (for example,
+`app.example.com` and `api.example.com`), set `AUTH_COOKIE_DOMAIN=.example.com`.
+Prefer serving the web app and API on the same site; unrelated domains can be
+blocked from sharing cookies by browser third-party-cookie policies.
+Also set `ALLOWED_HOSTS` to the API host names that should be accepted.
+If reusing the existing Vercel project, set its Root Directory to
+`packages/web` and set `VITE_API_URL` to the public API origin.
+
+## Checks and containers
+
+```bash
+vp check
+vp test
+vpr build
+```
+
+Build with Podman from the repository root:
+
+```bash
+podman build --format docker -f Containerfile -t samvaad-api .
+podman build --format docker -f packages/web/Containerfile \
+  --build-arg VITE_API_URL=https://api.example.com -t samvaad-web .
+podman build --format docker -f packages/voice-agent/Containerfile \
+  -t samvaad-voice-agent .
+```
+
+These `Containerfile`s are intended for Podman builds. PostgreSQL and LiveKit
+remain separately self-hostable services. Pass the same root `.env` to runtime
+containers with `podman run --env-file .env`; do not copy it into an image.
+
+## Data and migration notes
+
+The Better Auth migration adds auth fields and session/account tables to the
+existing `users` table without replacing conversation, file, message, or
+pgvector data. New Google sign-ins use Better Auth user IDs. If an existing
+database contains users from the previous auth provider, those identities need
+an explicit account/data-linking migration before those users can sign in; do
+not blindly delete the old user rows.
+
+Voice citations remain in stored/displayed answers; only the speech stream strips
+numeric citation markers.

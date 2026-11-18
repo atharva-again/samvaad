@@ -1,0 +1,21 @@
+{
+  "name": "@samvaad/voice-protocol",
+  "version": "0.1.0",
+  "private": true,
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/voice-protocol.d.ts",
+      "import": "./dist/voice-protocol.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}

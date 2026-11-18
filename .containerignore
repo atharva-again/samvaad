@@ -1,0 +1,8 @@
+.git
+**/node_modules
+**/dist
+coverage
+.pi
+.env
+.env.*
+!.env.example

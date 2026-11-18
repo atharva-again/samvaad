@@ -1,0 +1,38 @@
+{
+  "name": "@samvaad/api",
+  "version": "0.1.0",
+  "private": true,
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "scripts": {
+    "predev": "vp run --filter @samvaad/db build",
+    "dev": "DOTENV_CONFIG_PATH=../../.env vpx --watch src/index.ts",
+    "start": "DOTENV_CONFIG_PATH=../../.env node dist/src/index.js",
+    "test": "vp test run",
+    "prebuild": "vp run --filter @samvaad/db build",
+    "build": "tsc",
+    "db:migrate": "vp run --filter @samvaad/db db:migrate"
+  },
+  "dependencies": {
+    "@better-auth/drizzle-adapter": "^1.7.23",
+    "@hono/node-server": "^2.1.8",
+    "@hono/zod-validator": "^0.9.1",
+    "@livekit/protocol": "1.54.0",
+    "@llamaindex/llama-cloud": "^2.19.0",
+    "@samvaad/db": "workspace:*",
+    "better-auth": "^1.7.23",
+    "dotenv": "^18.0.10",
+    "groq-sdk": "^1.6.0",
+    "hono": "^4.13.18",
+    "livekit-server-sdk": "^2.19.3",
+    "uuidv7": "^1.2.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2",
+    "vite-plus": "catalog:"
+  }
+}
