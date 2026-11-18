@@ -23,12 +23,17 @@ function ApplicationOutlet() {
   );
 }
 
+function UserWalkthroughController() {
+  const { user } = useAuth();
+  return <WalkthroughController key={user?.id ?? "anonymous"} />;
+}
+
 export function RootLayout() {
   return (
     <>
       <AuthProvider>
         <ApplicationOutlet />
-        <WalkthroughController />
+        <UserWalkthroughController />
       </AuthProvider>
       <ChatToaster />
     </>

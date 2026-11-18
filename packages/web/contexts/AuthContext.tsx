@@ -17,6 +17,7 @@ type AuthContextType = {
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   hasSeenWalkthrough: boolean;
+  isWalkthroughStatusLoading: boolean;
   markWalkthroughSeen: () => Promise<void>;
 };
 
@@ -33,6 +34,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   } | null>(null);
   const hasSeenWalkthrough =
     !!user && walkthroughStatus?.userId === user.id && walkthroughStatus.hasSeen;
+  const isWalkthroughStatusLoading = !!user && walkthroughStatus?.userId !== user.id;
   const navigate = useNavigate();
   const pathname = useLocation({ select: (location) => location.pathname });
 
@@ -52,6 +54,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       })
       .catch((error: unknown) => {
         console.error("Failed to fetch user profile", error);
+        if (active) {
+          setWalkthroughStatus({ userId, hasSeen: false });
+        }
       });
 
     return () => {
@@ -108,6 +113,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signInWithGoogle,
         signOut,
         hasSeenWalkthrough,
+        isWalkthroughStatusLoading,
         markWalkthroughSeen,
       }}
     >
