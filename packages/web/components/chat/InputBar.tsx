@@ -679,6 +679,7 @@ export function InputBar({
           <div className="h-16 w-full max-w-lg bg-black/40 backdrop-blur-2xl border border-white/10 rounded-full p-1.5 flex items-center justify-center gap-1 shadow-2xl ring-1 ring-white/5">
             {/* Text Mode Option */}
             <button
+              id="walkthrough-text-mode"
               onClick={() => handleModeSelect("text")}
               className="relative flex-1 h-full rounded-full flex items-center justify-center gap-2 transition-all duration-300 group hover:bg-white/5 text-white cursor-pointer"
             >
@@ -692,6 +693,7 @@ export function InputBar({
 
             {/* Voice Mode Option */}
             <button
+              id="walkthrough-voice-mode"
               onClick={() => handleModeSelect("voice")}
               className="relative flex-1 h-full rounded-full flex items-center justify-center gap-2 transition-all duration-300 group hover:bg-white/5 text-white cursor-pointer"
             >
@@ -730,6 +732,7 @@ export function InputBar({
             className="flex-1 bg-surface/80 backdrop-blur-md border border-white/10 rounded-[32px] shadow-lg transition-all focus-within:ring-1 focus-within:ring-white/20 flex flex-row items-end min-h-[3.5rem] md:min-h-[4rem] overflow-hidden md:overflow-visible"
           >
             <textarea
+              id="walkthrough-text-mode"
               ref={(el) => {
                 // Determine if we need to auto-focus on first mount
                 textareaRef.current = el;
@@ -822,6 +825,7 @@ export function InputBar({
           </form>
 
           <Button
+            id="walkthrough-voice-mode"
             type="button"
             size="icon"
             className="relative group h-14 w-14 md:h-16 md:w-16 rounded-full bg-black/40 backdrop-blur-2xl border border-white/10 hover:bg-white/10 text-text-primary shadow-lg shrink-0"
@@ -855,7 +859,10 @@ export function InputBar({
         />
 
         {/* Main Voice Control Bar */}
-        <div className="flex-1 h-14 md:h-16 bg-surface/80 backdrop-blur-md border border-white/10 rounded-full shadow-2xl flex items-center p-1.5 gap-4 relative ring-1 ring-white/5">
+        <div
+          id="walkthrough-voice-mode"
+          className="flex-1 h-14 md:h-16 bg-surface/80 backdrop-blur-md border border-white/10 rounded-full shadow-2xl flex items-center p-1.5 gap-4 relative ring-1 ring-white/5"
+        >
           {/* Dynamic Background Glow */}
           <div
             className={cn(
@@ -997,6 +1004,7 @@ export function InputBar({
 
         {/* Switch to Text Button */}
         <Button
+          id="walkthrough-text-mode"
           type="button"
           size="icon"
           className="relative group h-14 w-14 md:h-16 md:w-16 rounded-full bg-black/40 backdrop-blur-2xl border border-white/10 hover:bg-white/10 text-text-primary shadow-lg shrink-0"

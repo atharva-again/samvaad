@@ -53,7 +53,8 @@ const getSteps = (isMac: boolean) => {
 };
 
 export function WalkthroughController() {
-  const { hasSeenWalkthrough, markWalkthroughSeen, isLoading, user } = useAuth();
+  const { hasSeenWalkthrough, isWalkthroughStatusLoading, markWalkthroughSeen, isLoading, user } =
+    useAuth();
   const { isMac } = usePlatform();
   const { setSourcesPanelOpen } = useUIStore();
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
@@ -61,7 +62,7 @@ export function WalkthroughController() {
 
   const STEPS = getSteps(isMac);
 
-  if (isLoading || !user || !isVisible || hasSeenWalkthrough) {
+  if (isLoading || isWalkthroughStatusLoading || !user || !isVisible || hasSeenWalkthrough) {
     return null;
   }
 
@@ -71,10 +72,7 @@ export function WalkthroughController() {
     // Handle special actions before moving to next step
     if (currentStep.action === "openSources") {
       setSourcesPanelOpen(true);
-      // Small delay to let panel animate in
-      setTimeout(() => {
-        setCurrentStepIndex((prev) => prev + 1);
-      }, 300);
+      setCurrentStepIndex((prev) => prev + 1);
       return;
     }
 
@@ -98,16 +96,6 @@ export function WalkthroughController() {
   const currentStep = STEPS[currentStepIndex];
 
   if (!currentStep) return null;
-
-  // Skip steps where target doesn't exist
-  if (typeof document !== "undefined" && !document.getElementById(currentStep.targetId)) {
-    if (currentStepIndex < STEPS.length - 1) {
-      setTimeout(() => setCurrentStepIndex((prev) => prev + 1), 50);
-    } else {
-      handleComplete();
-    }
-    return null;
-  }
 
   return (
     <ScribbleOverlay

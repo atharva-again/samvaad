@@ -100,6 +100,7 @@ export function ScribbleOverlay({
 }: ScribbleOverlayProps) {
   const [position, setPosition] = useState<Position | null>(null);
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
+  const [fallbackTargetId, setFallbackTargetId] = useState<string | null>(null);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -121,12 +122,16 @@ export function ScribbleOverlay({
       const element = document.getElementById(targetId);
       if (element) {
         const rect = element.getBoundingClientRect();
-        setPosition({
-          x: rect.left,
-          y: rect.top,
-          width: rect.width,
-          height: rect.height,
-        });
+        setPosition(
+          rect.width > 0 && rect.height > 0
+            ? {
+                x: rect.left,
+                y: rect.top,
+                width: rect.width,
+                height: rect.height,
+              }
+            : null,
+        );
       } else {
         setPosition(null);
       }
@@ -149,10 +154,29 @@ export function ScribbleOverlay({
     };
   }, [targetId, handleKeyDown]);
 
-  if (typeof document === "undefined" || !position) return null;
+  useEffect(() => {
+    if (position) return;
 
-  const tooltip = calculateTooltipPosition(position, viewport);
-  const spotlightRadius = Math.max(position.width, position.height) / 2 + 16;
+    const timeout = window.setTimeout(() => setFallbackTargetId(targetId), 1000);
+    return () => window.clearTimeout(timeout);
+  }, [position, targetId]);
+
+  const showFallback = !position && fallbackTargetId === targetId;
+
+  if (typeof document === "undefined" || viewport.width === 0 || (!position && !showFallback)) {
+    return null;
+  }
+
+  const tooltip = position
+    ? calculateTooltipPosition(position, viewport)
+    : {
+        x: Math.max(20, (viewport.width - 320) / 2),
+        y: Math.max(20, (viewport.height - 180) / 2),
+        arrowDirection: "top" as const,
+        arrowX: "50%",
+        arrowY: "50%",
+      };
+  const spotlightRadius = position ? Math.max(position.width, position.height) / 2 + 16 : 0;
 
   return createPortal(
     <AnimatePresence>
@@ -166,25 +190,29 @@ export function ScribbleOverlay({
           onClick={onNext}
           style={{
             cursor: "pointer",
-            background: `radial-gradient(circle at ${position.x + position.width / 2}px ${position.y + position.height / 2}px, transparent ${spotlightRadius}px, rgba(0,0,0,0.75) ${spotlightRadius + 80}px)`,
+            background: position
+              ? `radial-gradient(circle at ${position.x + position.width / 2}px ${position.y + position.height / 2}px, transparent ${spotlightRadius}px, rgba(0,0,0,0.75) ${spotlightRadius + 80}px)`
+              : "rgba(0,0,0,0.75)",
           }}
         />
 
         {/* Ring */}
-        <motion.div
-          layout
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ type: "spring", stiffness: 300, damping: 30 }}
-          className="absolute pointer-events-none rounded-xl"
-          style={{
-            left: position.x - 6,
-            top: position.y - 6,
-            width: position.width + 12,
-            height: position.height + 12,
-            boxShadow: "0 0 0 1px rgba(255,255,255,0.4)",
-          }}
-        />
+        {position && (
+          <motion.div
+            layout
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            className="absolute pointer-events-none rounded-xl"
+            style={{
+              left: position.x - 6,
+              top: position.y - 6,
+              width: position.width + 12,
+              height: position.height + 12,
+              boxShadow: "0 0 0 1px rgba(255,255,255,0.4)",
+            }}
+          />
+        )}
 
         {/* Clean Glass Tooltip */}
         <motion.div
@@ -259,40 +287,42 @@ export function ScribbleOverlay({
           </div>
 
           {/* Arrow */}
-          <div
-            className="absolute w-3 h-3 transform rotate-45"
-            style={{
-              background: "rgba(30, 30, 30, 0.9)",
-              ...(tooltip.arrowDirection === "left" && {
-                left: -6,
-                top: tooltip.arrowY, // Dynamic Y
-                marginTop: -6,
-                borderLeft: "1px solid rgba(255,255,255,0.1)",
-                borderBottom: "1px solid rgba(255,255,255,0.1)",
-              }),
-              ...(tooltip.arrowDirection === "right" && {
-                right: -6,
-                top: tooltip.arrowY, // Dynamic Y
-                marginTop: -6,
-                borderRight: "1px solid rgba(255,255,255,0.1)",
-                borderTop: "1px solid rgba(255,255,255,0.1)",
-              }),
-              ...(tooltip.arrowDirection === "top" && {
-                top: -6,
-                left: tooltip.arrowX, // Dynamic X
-                marginLeft: -6,
-                borderLeft: "1px solid rgba(255,255,255,0.1)",
-                borderTop: "1px solid rgba(255,255,255,0.1)",
-              }),
-              ...(tooltip.arrowDirection === "bottom" && {
-                bottom: -6,
-                left: tooltip.arrowX, // Dynamic X
-                marginLeft: -6,
-                borderRight: "1px solid rgba(255,255,255,0.1)",
-                borderBottom: "1px solid rgba(255,255,255,0.1)",
-              }),
-            }}
-          />
+          {position && (
+            <div
+              className="absolute w-3 h-3 transform rotate-45"
+              style={{
+                background: "rgba(30, 30, 30, 0.9)",
+                ...(tooltip.arrowDirection === "left" && {
+                  left: -6,
+                  top: tooltip.arrowY,
+                  marginTop: -6,
+                  borderLeft: "1px solid rgba(255,255,255,0.1)",
+                  borderBottom: "1px solid rgba(255,255,255,0.1)",
+                }),
+                ...(tooltip.arrowDirection === "right" && {
+                  right: -6,
+                  top: tooltip.arrowY,
+                  marginTop: -6,
+                  borderRight: "1px solid rgba(255,255,255,0.1)",
+                  borderTop: "1px solid rgba(255,255,255,0.1)",
+                }),
+                ...(tooltip.arrowDirection === "top" && {
+                  top: -6,
+                  left: tooltip.arrowX,
+                  marginLeft: -6,
+                  borderLeft: "1px solid rgba(255,255,255,0.1)",
+                  borderTop: "1px solid rgba(255,255,255,0.1)",
+                }),
+                ...(tooltip.arrowDirection === "bottom" && {
+                  bottom: -6,
+                  left: tooltip.arrowX,
+                  marginLeft: -6,
+                  borderRight: "1px solid rgba(255,255,255,0.1)",
+                  borderBottom: "1px solid rgba(255,255,255,0.1)",
+                }),
+              }}
+            />
+          )}
         </motion.div>
       </div>
     </AnimatePresence>,
